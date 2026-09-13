@@ -3,6 +3,7 @@ const PREF_KEYS=['view','recentCollapsed','filterMode'];
 const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
 const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
 const intervalOf=data=>[1,3,24,168,720].includes(data.backupIntervalHours)?data.backupIntervalHours:[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays*24:1;
+const policyState=data=>({mode:modeOf(data),auto:modeOf(data)!=='local'&&data.backupAuto!==false,intervalHours:intervalOf(data),device:String(data.backupDevice||'')});
 async function contentHash(text){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 function randomDeviceName() {
   const words=[
@@ -42,7 +43,7 @@ async function captureSnapshot(reason='手动备份') {
     return {uid,id:n.id,title:n.title,dateAdded:n.dateAdded,...(n.url?{url:n.url}:{children:(n.children||[]).map(convert)})};
   };
   const children=bar.children.map(convert);
-  await chrome.storage.local.set({bookmarkIdentity:next});
+  if(BK.stableStringify(identity)!==BK.stableStringify(next))await chrome.storage.local.set({bookmarkIdentity:next});
   return {format:'newtab-bookmarks',version:1,id:crypto.randomUUID(),createdAt:new Date().toISOString(),reason,children,
     meta:data.meta||{items:{},groups:{},tags:[]},prefs:Object.fromEntries(PREF_KEYS.filter(k=>data[k]!==undefined).map(k=>[k,data[k]])),folderState,...device,barId:bar.id};
 }
@@ -71,15 +72,16 @@ async function maybeBackup() {
   const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','backupIntervalHours','webdav','pendingCloudBackup','backups']);
   if(data.restoreInProgress||data.syncInProgress||modeOf(data)==='local')return;
   try {
-    const due=data.backupAuto!==false&&!(Date.now()-Date.parse(data.lastBackupAt||0)<intervalOf(data)*3600e3);
+    const schedule=await automationStatus();
+    const due=schedule.backup.state==='waiting'&&Date.now()>=schedule.backup.nextAt;
     // Keep creating local protection even when the cloud remains unavailable.
     const snapshot=due?await makeSnapshot('定时自动备份'):null;
     if(modeOf(data)==='webdav'&&data.webdav?.enabled){
       const pending=snapshot||(data.backups||[]).find(b=>b.id===data.pendingCloudBackup);
-      if(pending)await uploadSnapshot(pending);
-      else if(data.pendingCloudBackup)await chrome.storage.local.remove('pendingCloudBackup');
+      if(pending&&(snapshot||(schedule.retry.state==='waiting'&&Date.now()>=schedule.retry.nextAt)))await uploadSnapshot(pending);
+      else if(!pending&&data.pendingCloudBackup)await chrome.storage.local.remove('pendingCloudBackup');
     }
-  } catch(error) { await chrome.storage.local.set({lastBackupError:error.message}); throw error; }
+  } catch(error) { await chrome.storage.local.set({lastBackupError:error.message}); await deferFailedAutomation(); throw error; }
 }
 function davURL(value) {
   const url=new URL(value);
@@ -115,7 +117,7 @@ async function uploadSnapshot(snapshot) {
   const period=new Date(snapshot.createdAt).toISOString().slice(0,7);
   const name=period+'/bookmarks-'+snapshot.createdAt.replace(/[^0-9TZ]/g,'')+'-'+snapshot.id+'.json';
   const body=JSON.stringify(portable(snapshot));
-  await chrome.storage.local.set({pendingCloudBackup:snapshot.id});
+  await chrome.storage.local.set({pendingCloudBackup:snapshot.id,lastCloudAttemptAt:new Date().toISOString()});
   try{
     await ensureDavDirectory(config);await davRequest(config,'MKCOL',period+'/');
     const equalCopy=async response=>{
@@ -147,13 +149,15 @@ async function backupAction(message) {
       const receipt=data.lastBackupReceipt;delete data.lastBackupReceipt;
       const {endpoint,account,...safeReceipt}=receipt||{};
       const backupReceipt=endpoint===cfg.url&&account===cfg.username?safeReceipt:null;
-      return {...data,backupReceipt,backupMode:modeOf(data),backupIntervalHours:intervalOf(data),backupIntervalDays:intervalOf(data)/24,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
+      return {...data,policyState:policyState(data),backupReceipt,backupMode:modeOf(data),backupIntervalHours:intervalOf(data),backupIntervalDays:intervalOf(data)/24,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
     }
     case 'BACKUP_POLICY_SAVE': {
       const hours=message.intervalHours??(message.intervalDays*24);
       if(!['webdav','browser','local'].includes(message.mode)||![1,3,24,168,720].includes(hours))throw Error('备份方案或频率不正确');
-      const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
       const identity=await ensureBackupDevice();
+      const saved=await chrome.storage.local.get(['webdav','backupMode','backupAuto','backupIntervalDays','backupIntervalHours','backupDevice']);
+      if(message.expectedPolicy&&BK.stableStringify(message.expectedPolicy)!==BK.stableStringify(policyState(saved)))throw Error('方案已在其他页面更新，未覆盖新设置。请先留存草稿，再刷新页面核对后保存。');
+      const {webdav=DAV_DEFAULT}=saved;
       await chrome.storage.local.set({backupMode:message.mode,...(message.mode!=='webdav'?{syncAuto:false}:{}),backupAuto:message.mode!=='local'&&!!message.auto,backupIntervalHours:hours,backupIntervalDays:hours/24,backupDevice:String(message.device||'').trim().slice(0,60)||identity.device,webdav:{...webdav,enabled:message.mode==='webdav'&&webdav.enabled}});
       return true;
     }

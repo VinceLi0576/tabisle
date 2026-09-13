@@ -819,6 +819,7 @@ chrome:// ⚙️`;
     if (r && r.name.trim()) await store.create({ parentId: bar.id, title: r.name.trim() });
   });
   $('#backup-btn').addEventListener('click', () => window.open('backup.html', '_blank'));
+  $('#sync-pill').addEventListener('click', () => window.open('backup.html', '_blank'));
   $('#more-btn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu([
@@ -1296,7 +1297,28 @@ chrome:// ⚙️`;
     itemMeta, setItemMeta, saveMeta, savePrefs, tagList, tagDef, findNode, refresh, render, openDetail, toast, MAX_TAGS, PALETTE, isLocked,
     parseEmojiRules, setEmojiRules(txt) { meta.emojiRules = txt; emojiRules = parseEmojiRules(txt); saveMeta(); },
   };
-  if (store.kind === 'chrome') chrome.runtime.sendMessage({ type: 'APP_READY' }).catch(() => {});
+  async function updateSyncPill() {
+    if (store.kind !== 'chrome') return;
+    const pill=$('#sync-pill');
+    try {
+      const status=await chrome.runtime.sendMessage({type:'SYNC_STATUS'});
+      if(!status?.ok||!status.data.initialized||status.data.verified===false){pill.hidden=true;return;}
+      let state='attention',text='同步待处理';
+      if(status.data.inProgress)text='正在同步';
+      else if(status.data.error)text='同步待处理';
+      else {
+        const latest=await chrome.runtime.sendMessage({type:'SYNC_LATEST_STATUS'});
+        if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
+        state=latest.data.state;text={latest:'云端最新版','cloud-new':'云端有新版','local-new':'等待上传',diverged:'等待合并'}[state]||'同步待处理';
+      }
+      pill.dataset.state=state;pill.textContent=text;pill.hidden=false;
+    } catch {pill.dataset.state='attention';pill.textContent='同步待处理';pill.hidden=false;}
+  }
+  if (store.kind === 'chrome') {
+    chrome.runtime.sendMessage({ type: 'APP_READY' }).catch(() => {}).finally(updateSyncPill);
+    let pillTimer=null;
+    chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState'].some(k=>k in changes)){clearTimeout(pillTimer);pillTimer=setTimeout(updateSyncPill,250);}});
+  }
   window.dispatchEvent(new Event('bm-ready'));
   if (store.kind === 'mock') $('#total').textContent += ' · 离线预览';
 })();

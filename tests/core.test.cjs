@@ -22,9 +22,10 @@ class Bookmarks {
 }
 function storage(initial={}){const data=structuredClone(initial);return {data,async get(keys){if(keys==null)return structuredClone(data);if(typeof keys==='string')return {[keys]:structuredClone(data[keys])};if(Array.isArray(keys))return Object.fromEntries(keys.map(k=>[k,structuredClone(data[k])]));return {...structuredClone(keys),...Object.fromEntries(Object.keys(keys).filter(k=>k in data).map(k=>[k,structuredClone(data[k])]))};},async set(obj){Object.assign(data,structuredClone(obj));},async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])delete data[k];}};}
 async function worker(){const api=new Bookmarks(),local=storage({meta:{items:{},groups:{},tags:[]}}),session=storage(),requests=[];
- const chrome={bookmarks:{getTree:()=>api.getTree(),get:async id=>[await api.get(id)],getChildren:id=>api.children(id),create:p=>api.create(p),update:(id,p)=>api.update(id,p),move:(id,p)=>api.move(id,p),remove:id=>api.remove(id),removeTree:id=>api.removeTree(id)},storage:{local,session},permissions:{contains:async()=>true},alarms:{get:async()=>({}),create:async()=>{}}};
+ const chrome={bookmarks:{getTree:()=>api.getTree(),get:async id=>[await api.get(id)],getChildren:id=>api.children(id),create:p=>api.create(p),update:(id,p)=>api.update(id,p),move:(id,p)=>api.move(id,p),remove:id=>api.remove(id),removeTree:id=>api.removeTree(id)},storage:{local,session},permissions:{contains:async()=>true},alarms:{get:async()=>({}),create:async()=>{},clear:async()=>{}}};
  const context=vm.createContext({chrome,crypto:webcrypto,TextEncoder,URL,AbortSignal,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),fetch:async(url,options)=>{requests.push({url,options});return {ok:options.method!=='GET',status:options.method==='GET'?404:201,text:async()=>'<d:multistatus xmlns:d="DAV:"/>',json:async()=>({})};}});
- for(const f of ['bookmark-core.js','backup-worker.js','sync-core.js','sync-worker.js','editor-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
+ for(const f of ['bookmark-core.js','backup-worker.js','sync-core.js','sync-worker.js','editor-worker.js','automation-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
+ vm.runInContext('automationJitter=()=>0',context);
  const call=(name,m)=>{context.message=m;return vm.runInContext(name+'(message)',context);};return {api,local,session,requests,call,context};
 }
 test('diff distinguishes rename, URL, move, delete; adding a sibling does not mark others reordered',()=>{
@@ -101,13 +102,13 @@ test('failed WebDAV verification preserves previous credentials and policy; succ
  assert.deepEqual(w.requests.map(r=>[r.options.method,r.url]),[['MKCOL','https://dav.jianguoyun.com/dav/TabIsle/'],['MKCOL',config.url],['PROPFIND',config.url]]);
 });
 test('cloud retry is idempotent after a lost response, and cloud failures never stop scheduled local versions',async()=>{
- const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
+ const w=await worker(),clock=clockFor(w);w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
  const remote=new Map();let fail=true;
  w.context.fetch=async(url,options)=>{w.requests.push({url,options});if(options.method==='PUT'){if(remote.has(url))return {ok:false,status:412};remote.set(url,options.body);if(fail)throw Error('lost response');}return {ok:options.method!=='GET'||remote.has(url),status:options.method==='GET'&&!remote.has(url)?404:201,text:async()=>remote.get(url)||''};};
  const first=await w.call('backupAction',{type:'BACKUP_CREATE'});assert(first.warning);assert(w.local.data.pendingCloudBackup);
- fail=false;await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,1);assert.equal(remote.size,1);assert(!w.local.data.pendingCloudBackup);assert(w.requests.some(r=>r.options.method==='GET'));
- w.local.data.lastBackupAt='2020-01-01';w.context.fetch=async()=>{throw Error('offline')};await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,2);
- w.local.data.lastBackupAt='2020-01-01';await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,3);assert.equal(w.local.data.pendingCloudBackup,w.local.data.backups[0].id);
+ fail=false;w.local.data.lastCloudAttemptAt='2020-01-01';await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,1);assert.equal(remote.size,1);assert(!w.local.data.pendingCloudBackup);assert(w.requests.some(r=>r.options.method==='GET'));
+ clock.now+=3600001;w.context.fetch=async()=>{throw Error('offline')};await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,2);
+ clock.now+=3600001;await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,3);assert.equal(w.local.data.pendingCloudBackup,w.local.data.backups[0].id);
 });
 test('monthly cloud listing is read-only and rejects path traversal; conflicting existing files are never overwritten',async()=>{
  const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
@@ -157,7 +158,7 @@ function davServer(){
  async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?(rawTags?file?.etag.replaceAll('"',''):file?.etag):null},text:async()=>file?.body||''});
   if(o.method==='MKCOL')return response(201);
   if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==(rawTags?old?.etag.replaceAll('"',''):old?.etag)))return response(412);
-  if(o.method==='GET')return response(old?200:404);
+  if(['GET','HEAD'].includes(o.method))return response(old?200:404);
   if(o.method==='MOVE'){if(!old)return response(404);if(o.headers.Overwrite==='F'&&files.has(o.headers.Destination))return response(409);files.set(o.headers.Destination,old);files.delete(url);return response(201,old);}
   if(o.method==='PUT'){files.set(url,{body:o.body,etag:'"'+(++revision)+'"'});if(loseStateResponse&&url.endsWith('/sync/state.json')){loseStateResponse=false;throw Error('lost sync response');}return response(201,files.get(url));}
   if(o.method==='DELETE'){files.delete(url);return response(204);}throw Error(o.method);
@@ -323,4 +324,88 @@ test('sync receipt proves matching remote and local content; corrupted accepted 
  await a.api.update(x.id,{title:'Changed'});const p=await a.call('syncAction',{type:'SYNC_PREVIEW'});const old=a.local.data.lastSyncAt;
  a.context.fetch=async(url,o)=>{const r=await server.fetch(url,o);if(o.method==='PUT'&&url.endsWith('/sync/state.json')){const f=server.files.get(url),doc=JSON.parse(f.body);doc.snapshot.children[0].title='Corrupted';f.body=JSON.stringify(doc);}return r;};
  await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/读回校验/);assert.equal(a.local.data.lastSyncAt,old);assert.equal(a.local.data.syncAuto,false);assert(a.local.data.syncInProgress);
+});
+test('observers never see a new successful sync receipt with an unfinished marker',async()=>{
+ const w=await syncedWorker(davServer());await w.api.seed([link('n','Name','https://example.test')]);
+ const set=w.local.set.bind(w.local);let observed=false;
+ w.local.set=async patch=>{await set(patch);if(patch.lastSyncReceipt){observed=true;assert.equal(!!w.local.data.syncInProgress,false);assert(w.local.data.syncState.base);}};
+ const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert(observed);
+});
+test('stale policy submissions cannot overwrite a newer device name or backup interval',async()=>{
+ const w=await worker();const old=(await w.call('backupAction',{type:'BACKUP_STATUS'})).policyState;
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalHours:3,device:'New name',expectedPolicy:old});
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'webdav',auto:false,intervalHours:1,device:'Old name',expectedPolicy:old}),/其他页面更新/);
+ assert.equal(w.local.data.backupDevice,'New name');assert.equal(w.local.data.backupIntervalHours,3);assert.equal(w.local.data.backupMode,'browser');
+ const fresh=(await w.call('backupAction',{type:'BACKUP_STATUS'})).policyState;
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalHours:24,device:'Confirmed',expectedPolicy:fresh});assert.equal(w.local.data.backupDevice,'Confirmed');
+});
+function clockFor(w,start=Date.parse('2026-09-13T00:00:00Z')) {
+ let now=start;const RealDate=Date;
+ w.context.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+ return {get now(){return now},set now(value){now=value}};
+}
+test('device deadlines persist across page reads and worker restarts, and differ across devices',async()=>{
+ const a=await worker(),b=await worker(),ca=clockFor(a),cb=clockFor(b);
+ vm.runInContext('automationJitter=()=>30000',a.context);vm.runInContext('automationJitter=()=>210000',b.context);
+ a.local.data.lastBackupAt=b.local.data.lastBackupAt=new Date(ca.now).toISOString();
+ const first=await a.call('automationStatus'),second=await b.call('automationStatus');
+ assert.equal(first.backup.nextAt,ca.now+3600000+30000);assert.equal(second.backup.nextAt,cb.now+3600000+210000);
+ ca.now+=10000;assert.equal((await a.call('automationStatus')).backup.nextAt,first.backup.nextAt);
+ vm.runInContext(fs.readFileSync(require.resolve('../automation-worker.js'),'utf8'),a.context);
+ assert.equal((await a.call('automationStatus')).backup.nextAt,first.backup.nextAt);
+ const portable=await a.call('backupAction',{type:'BACKUP_EXPORT_CURRENT'});assert(!JSON.stringify(portable).includes('automationSchedule'));
+});
+test('missed deadlines are staggered once after sleep, then execute at their persisted time',async()=>{
+ const w=await worker(),clock=clockFor(w);vm.runInContext('automationJitter=()=>45000',w.context);
+ const first=await w.call('automationStatus');await w.call('maybeBackup');assert(!w.local.data.backups);
+ clock.now=first.backup.nextAt+120000;
+ const resumed=await w.call('automationStatus');assert.equal(resumed.backup.nextAt,clock.now+45000);
+ assert.equal((await w.call('automationStatus')).backup.nextAt,resumed.backup.nextAt);
+ await w.call('maybeBackup');assert(!w.local.data.backups);
+ clock.now=resumed.backup.nextAt;await w.call('maybeBackup');assert.equal(w.local.data.backups.length,1);
+ assert.equal((await w.call('automationStatus')).backup.nextAt,clock.now+3600000+45000);
+});
+test('paused and disabled tasks have no countdown; alarm targets earliest active deadline',async()=>{
+ const w=await worker(),clock=clockFor(w),alarms=new Map();
+ w.context.chrome.alarms={get:async k=>alarms.get(k),create:async(k,o)=>alarms.set(k,{scheduledTime:o.when}),clear:async k=>alarms.delete(k)};
+ vm.runInContext('automationJitter=()=>60000',w.context);
+ await w.call('refreshAutomationAlarm');assert.equal(alarms.get('bookmark-task-due').scheduledTime,clock.now+60000);
+ w.local.data.restoreInProgress={id:'test'};await w.call('refreshAutomationAlarm');assert(!alarms.has('bookmark-task-due'));assert.equal((await w.call('automationStatus')).backup.state,'paused');
+ delete w.local.data.restoreInProgress;w.local.data.backupAuto=false;assert.equal((await w.call('automationStatus')).backup.state,'off');
+});
+test('cloud retry uses its own delay instead of firing on every page visit',async()=>{
+ const w=await worker(),clock=clockFor(w);w.local.data.backupAuto=false;w.local.data.webdav={enabled:true};w.local.data.pendingCloudBackup='pending';w.local.data.lastCloudAttemptAt=new Date(clock.now).toISOString();
+ vm.runInContext('automationJitter=()=>90000',w.context);
+ const plan=await w.call('automationStatus');assert.equal(plan.retry.nextAt,clock.now+300000+90000);assert.equal(plan.backup.state,'off');
+ clock.now+=60000;assert.equal((await w.call('automationStatus')).retry.nextAt,plan.retry.nextAt);
+});
+test('continuous sync respects its deadline without changing backup frequency',async()=>{
+ const w=await syncedWorker(davServer()),clock=clockFor(w);await w.api.seed([link('x','X','https://example.test')]);
+ const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});await w.call('syncAction',{type:'SYNC_AUTO',enabled:true});
+ vm.runInContext('automationJitter=()=>30000',w.context);
+ const old=w.local.data.lastSyncAt,plan=await w.call('automationStatus');assert.equal(plan.sync.nextAt,clock.now+60000+30000);
+ clock.now+=60000;await w.call('maybeSync');assert.equal(w.local.data.lastSyncAt,old);
+ clock.now=plan.sync.nextAt;await w.call('maybeSync');assert.notEqual(w.local.data.lastSyncAt,old);assert.equal(w.local.data.syncAuto,true);
+});
+test('latest status uses a lightweight HEAD check and minute sync merges pending local and remote versions',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);const [x]=await a.api.seed([link('x','X','https://x.test')]);
+ const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
+ await sync(a);let shared=JSON.parse(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body);
+ assert.equal(shared.parentRevision,null);assert.match(shared.sha256,/^[a-f0-9]{64}$/);assert(shared.updatedAt);assert(shared.updatedBy.id);assert(shared.updatedBy.name);
+ const gets=()=>server.requests.filter(r=>r.method==='GET'&&r.url.endsWith('/sync/state.json')).length;
+ const before=gets(),current=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(current.state,'latest');assert.equal(gets(),before);assert.equal(server.requests.at(-1).method,'HEAD');
+ await sync(b);await b.api.seed([link('y','Y','https://y.test')]);await sync(b);
+ const newer=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(newer.state,'cloud-new');assert.equal(newer.remote.updatedBy.id,b.local.data.backupDeviceId);
+ await a.api.update(x.id,{title:'X local'});assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'diverged');
+ const clock=clockFor(a);a.local.data.lastSyncAt=new Date(clock.now).toISOString();a.local.data.syncAuto=true;delete a.local.data.automationSchedule;vm.runInContext('automationJitter=()=>5000',a.context);
+ const plan=await a.call('automationStatus');assert.equal(plan.sync.nextAt,clock.now+65000);clock.now=plan.sync.nextAt;await a.call('maybeSync');
+ assert.equal((await a.api.children('1')).length,2);assert.equal((await a.api.get(x.id)).title,'X local');assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'latest');assert.equal(a.local.data.syncAuto,true);
+});
+test('a failed automatic snapshot backs off instead of retrying at every status read',async()=>{
+ const w=await worker(),clock=clockFor(w);let attempts=0;
+ w.context.chrome.bookmarks.getTree=async()=>{attempts++;throw Error('temporarily unavailable');};
+ await assert.rejects(()=>w.call('maybeBackup'),/temporarily unavailable/);assert.equal(attempts,1);
+ const schedule=await w.call('automationStatus');assert.equal(schedule.backup.nextAt,clock.now+300000);
+ await w.call('maybeBackup');await w.call('automationStatus');assert.equal(attempts,1);
+ clock.now=schedule.backup.nextAt;await assert.rejects(()=>w.call('maybeBackup'),/temporarily unavailable/);assert.equal(attempts,2);
 });
