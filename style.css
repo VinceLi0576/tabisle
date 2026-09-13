@@ -30,9 +30,16 @@
     --shadow: 0 1px 2px #00000040; --shadow-hover: 0 8px 18px #00000066;
   }
 }
-/* 列数写死：视口 1280 → 4 列，1440 起 5 列，再宽也 5 列 */
+/* 所有文件夹层级共用列数，让卡片在大屏上保持约 260–280px 宽。 */
 @media (min-width: 1260px) { :root { --cols: 4; } }
 @media (min-width: 1560px) { :root { --cols: 5; } }
+@media (min-width: 1900px) { :root { --cols: 6; } }
+@media (min-width: 2200px) { :root { --cols: 7; } }
+@media (min-width: 2500px) { :root { --cols: 8; } }
+@media (min-width: 2800px) { :root { --cols: 9; } }
+@media (min-width: 3100px) { :root { --cols: 10; } }
+@media (min-width: 3400px) { :root { --cols: 11; } }
+@media (min-width: 3700px) { :root { --cols: 12; } }
 
 * { box-sizing: border-box; }
 html { margin: 0; }
@@ -58,7 +65,7 @@ a { color: inherit; text-decoration: none; }
 .search-wrap { flex: 0 1 260px; }
 #search { width: 100%; height: 34px; padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); outline: none; }
 #search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
-.topright { margin-left: 8px; display: flex; align-items: center; gap: 22px; }
+.topright { margin-left: auto; display: flex; align-items: center; gap: 22px; }
 .weather { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
 .weather:hover { background: var(--card); }
 .weather .w-ico { font-size: 22px; line-height: 1; }
@@ -201,8 +208,7 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .sub-head .swatch { display: block; width: 7px; height: 7px; border-radius: 50%; }
 .sub-head .title { font-size: 13px; font-weight: 600; color: var(--text); }
 .sub-head .n { font-size: 11px; }
-.sub > .body { padding: 2px 0 0; border-left: 0; margin-left: 0;
-  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); }
+.sub > .body { padding: 2px 0 0; border-left: 0; margin-left: 0; }
 .sub .sub { margin-top: 10px; }
 
 /* 一级分组的段标题也给一条浅底带，跟子夹同一套语言、只是更浅 */
