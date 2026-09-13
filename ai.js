@@ -183,8 +183,56 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
       }
     } catch (e) { addMsg('sys', '出错：' + (e.message || e)); }
     thinking.remove(); busy = false; $('#ai-send').disabled = false; paintStatus();
-    if (history.length > 40) history = history.slice(-30);
+    history = AiCore.trimHistory(history, 8);   // 🚫 别按条数裸切，会切断 tool_calls 配对
   }
+  // ── 粘网址直接入库：不弹面板、不问话；AI 只在事后补备注名与说明（附属数据，本来就自动保存）──
+  function inboxFolder() {
+    const bar = BM.bar; if (!bar) return null;
+    const hit = (bar.children || []).find((c) => !c.url && String(c.title || '').trim().toLowerCase() === 'inbox');
+    return hit ? hit.id : bar.id;     // 没有 Inbox 就放书签栏末尾，🚫 不自动建夹
+  }
+  async function stashUrls(urls) {
+    if (busy) return;
+    const parentId = inboxFolder();
+    if (!parentId) { BM.toast('书签栏还没读好，稍后再试'); return; }
+    const where = parentId === BM.bar.id ? '书签栏' : 'Inbox';
+    const made = [];
+    try {
+      for (const url of urls) {
+        const node = await BM.store.create({ parentId, title: AiCore.nameFromUrl(url), url });
+        made.push(node.id);
+      }
+    } catch (e) { BM.toast('加书签失败：' + (e.message || e)); return; }
+    await BM.refresh();
+    BM.toast(`已加 ${made.length} 条到「${where}」`, { t: '撤销', f: async () => {
+      for (const id of made) { try { await BM.store.remove(id); } catch {} }
+      await BM.refresh(); BM.toast('已撤销');
+    } });
+    if (ai.key) enrich(urls, made, where);       // 没配钥匙也能用，只是没有备注名
+  }
+  // 让 Kimi 给这批网址起备注名、写一句话说明。只写附属数据，🚫 不动书签树、🚫 不移动位置
+  async function enrich(urls, ids, where) {
+    const tip = BM.toast ? null : null;
+    try {
+      const c = await callKimi([{ role: 'user', content:
+        '给下面每个网址起一个 4～6 字的中文短名，并写一句不超过 20 字的用途说明。\n' +
+        '只回 JSON 数组，形如 [{"url":"...","name":"...","desc":"..."}]，不要别的字。\n' + urls.join('\n') }]);
+      const raw = (c.message.content || '').replace(/^[^\[]*/, '').replace(/[^\]]*$/, '');
+      const list = JSON.parse(raw);
+      let done = 0;
+      for (const it of Array.isArray(list) ? list : []) {
+        if (!it || !it.url) continue;
+        const patch = {};
+        if (it.name) patch.name = String(it.name).slice(0, 20);
+        if (it.desc) patch.desc = String(it.desc).slice(0, 60);
+        if (Object.keys(patch).length) { BM.setItemMeta(it.url, patch); done++; }
+      }
+      if (done) { BM.render(); BM.toast(`已为 ${done} 条补上备注名和说明`, { t: '看看', f: () => { const n = BM.findNode(ids[0]); if (n) BM.openDetail(n.id); } }); }
+    } catch (e) {
+      BM.toast('书签已入库；AI 补说明没成功：' + String(e.message || e).slice(0, 60));
+    }
+  }
+
   function showPanel(on = true) { $('#ai-panel').hidden = !on; $('#ai-toggle').textContent = on ? '▴' : '▾'; }
   function addMsg(who, text) {
     showPanel(true);
@@ -229,7 +277,12 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   $('#ai-input').addEventListener('focus', () => { if (history.length || !ai.key) showPanel(true); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#ai-panel').hidden && !document.activeElement.closest?.('dialog')) showPanel(false); });
   document.addEventListener('pointerdown', (e) => { if (!$('#ai-panel').hidden && !e.target.closest('#ai-panel, .ai-bar, dialog') && !proposal) showPanel(false); });
-  $('#ai-send').addEventListener('click', () => { const t = $('#ai-input').value.trim(); if (!t) return; $('#ai-input').value = ''; send(t); });
+  $('#ai-send').addEventListener('click', () => {
+    const t = $('#ai-input').value.trim(); if (!t) return;
+    $('#ai-input').value = '';
+    const urls = AiCore.parseUrls(t);
+    if (urls) stashUrls(urls); else send(t);     // 粘网址＝直接入库；打整句话才走对话
+  });
   $('#ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#ai-send').click(); } });
   $('#ai-clear').addEventListener('click', () => { history = []; $('#ai-log').innerHTML = ''; proposal = null; renderProposal(); usage = { in: 0, out: 0 }; paintStatus(); });
   $$('#ai-quick button').forEach((b) => b.addEventListener('click', () => { $('#ai-input').value = b.dataset.q; $('#ai-send').click(); }));
