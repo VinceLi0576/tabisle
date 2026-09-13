@@ -157,6 +157,25 @@
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
+  function setupPageToc(){
+    const entries=[...document.querySelectorAll('.page-toc nav a')].map(link=>({link,target:document.querySelector(link.getAttribute('href'))})).filter(x=>x.target);
+    let frame=0;
+    const update=()=>{
+      frame=0;
+      const visible=entries.filter(({link,target})=>{const show=target.getClientRects().length>0;link.hidden=!show;return show;});
+      if(!visible.length)return;
+      const marker=scrollY+Math.min(innerHeight*.24,190);let current=visible[0];
+      for(const item of visible)if(item.target.getBoundingClientRect().top+scrollY<=marker)current=item;
+      if(innerHeight+scrollY>=document.documentElement.scrollHeight-4)current=visible.at(-1);
+      for(const item of entries){const active=item===current;item.link.toggleAttribute('aria-current',active);if(active)item.link.setAttribute('aria-current','location');}
+    };
+    const schedule=()=>{if(!frame)frame=requestAnimationFrame(update);};
+    for(const {link,target}of entries)link.onclick=e=>{e.preventDefault();target.scrollIntoView({behavior:'smooth',block:'start'});history.replaceState(null,'','#'+target.id);link.setAttribute('aria-current','location');};
+    addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule,{passive:true});
+    new MutationObserver(schedule).observe(document.body,{subtree:true,attributes:true,attributeFilter:['hidden']});
+    update();
+  }
+  setupPageToc();
   $('recovery-history').onclick=()=>{setTab(false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
   $('recovery-sync').onclick=()=>$('sync-preview').click();
   $('refresh-receipts').onclick=()=>run(()=>refresh());
