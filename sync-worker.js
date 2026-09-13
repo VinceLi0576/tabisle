@@ -14,7 +14,7 @@ async function syncRequest(c,method,name,body,headers={}){
   if(!/^(?:state|(?:probe|stage)-[a-zA-Z0-9-]+)\.json$/.test(name))throw Error('同步文件路径不正确');
   let auth='';for(const b of new TextEncoder().encode(c.username+':'+c.password))auth+=String.fromCharCode(b);
   const r=await fetch(davURL(c.url).href+'sync/'+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});
-  if(!r.ok&&![404,412].includes(r.status)&&!(method==='MOVE'&&r.status===409))throw Error('坚果云同步请求失败（'+r.status+'）');return r;
+  if(!r.ok&&![404,412].includes(r.status)&&!(method==='HEAD'&&r.status===405)&&!(method==='MOVE'&&r.status===409))throw Error('坚果云同步请求失败（'+r.status+'）');return r;
 }
 // Jianguoyun returns bare opaque tags. Use the server's exact token, after a
 // real valid/stale conditional-write test; do not add quotes or accept weak tags.
@@ -72,7 +72,17 @@ async function readSync(c){
   const r=await syncRequest(c,'GET','state.json');if(r.status===404)return {snapshot:null,etag:null,revision:null};
   if(!r.ok)throw Error('无法读取云端同步文件');const etag=syncTag(r),text=await r.text();if(text.length>12e6)throw Error('云端同步文件超过 12 MB');
   const doc=JSON.parse(text);if(doc.format!=='tabisle-sync'||doc.version!==1||typeof doc.revision!=='string')throw Error('云端同步文件格式不正确，未覆盖');
-  return {snapshot:BK.validate(doc.snapshot),etag,revision:doc.revision};
+  const snapshot=BK.validate(doc.snapshot),sha256=await contentHash(syncContent(snapshot));
+  if(doc.sha256&&doc.sha256!==sha256)throw Error('云端同步文件读回校验失败：内容指纹不一致，未应用');
+  const updatedBy=doc.updatedBy&&typeof doc.updatedBy==='object'?{id:String(doc.updatedBy.id||'').slice(0,80),name:String(doc.updatedBy.name||'').slice(0,60)}:null;
+  return {snapshot,etag,revision:doc.revision,parentRevision:typeof doc.parentRevision==='string'?doc.parentRevision:null,updatedAt:doc.updatedAt||snapshot.createdAt||null,updatedBy,sha256};
+}
+async function readSyncHead(c){
+  const r=await syncRequest(c,'HEAD','state.json');
+  if(r.status===404)return {etag:null};
+  if(r.status===405)return {etag:null,unsupported:true};
+  if(!r.ok)throw Error('无法检查云端最新版本');
+  return {etag:syncTag(r)};
 }
 function syncContent(s){
   if(!s)return null;
@@ -85,6 +95,21 @@ async function syncConfiguration(){
   if(modeOf(data)!=='webdav'||!data.webdav?.enabled)throw Error('请先连接坚果云并启用 WebDAV 方案');
   if(data.restoreInProgress)throw Error('请先处理未完成的恢复，再进行同步');
   return {data,c:await davConfig()};
+}
+function syncStateRemote(state,etag){
+  return {snapshot:state.base,etag,revision:state.revision||null,parentRevision:state.parentRevision||null,updatedAt:state.updatedAt||state.base?.createdAt||null,updatedBy:state.updatedBy||null,sha256:state.sha256||null};
+}
+async function latestSyncStatus(){
+  const {data,c}=await syncConfiguration(),endpoint=syncEndpoint(c),state=data.syncState?.endpoint===endpoint?data.syncState:null;
+  const current=await captureSnapshot('同步状态检查'),localDirty=!state||syncContent(current)!==syncContent(state.base);
+  const head=await readSyncHead(c);let remote;
+  if(state&&head.etag&&state.etag===head.etag)remote=syncStateRemote(state,head.etag);
+  else remote=await readSync(c);
+  const cloudNew=!state||remote.etag!==state.etag||remote.revision!==state.revision;
+  if(state&&!cloudNew&&(state.etag!==remote.etag||(!state.sha256&&remote.sha256))){
+    await chrome.storage.local.set({syncState:{...state,etag:remote.etag,revision:remote.revision,parentRevision:remote.parentRevision,updatedAt:remote.updatedAt,updatedBy:remote.updatedBy,sha256:remote.sha256}});
+  }
+  return {state:localDirty&&cloudNew?'diverged':localDirty?'local-new':cloudNew?'cloud-new':'latest',checkedAt:new Date().toISOString(),localDirty,cloudNew,localRevision:state?.revision||null,remote:{revision:remote.revision,updatedAt:remote.updatedAt,updatedBy:remote.updatedBy,sha256:remote.sha256}};
 }
 async function prepareSync(choices={},verify=false){
   const {data,c}=await syncConfiguration();
@@ -120,7 +145,8 @@ async function applySync(token,auto=false){
   const operation=crypto.randomUUID();await chrome.storage.local.set({syncInProgress:{operation,endpoint:p.endpoint,startedAt:new Date().toISOString()},syncAuto:false});
   try{
     if(changed){
-      const payload={format:'tabisle-sync',version:1,revision:operation,snapshot:{...p.candidate,id:operation,createdAt:new Date().toISOString(),reason:'同步版本',prefs:{},folderState:{}}};
+      const updatedAt=new Date().toISOString(),shared=syncContent(p.candidate);
+      const payload={format:'tabisle-sync',version:1,revision:operation,parentRevision:latest.revision||null,updatedAt,updatedBy:{id:String(p.candidate.deviceId||'').slice(0,80),name:String(p.candidate.device||'').slice(0,60)},sha256:await contentHash(shared),snapshot:{...p.candidate,id:operation,createdAt:updatedAt,reason:'同步版本',prefs:{},folderState:{}}};
       const response=latest.etag?await syncRequest(c,'PUT','state.json',JSON.stringify(payload),{'Content-Type':'application/json','If-Match':latest.etag}):await createSyncFile(c,JSON.stringify(payload),operation);
       if(response.status===412){await chrome.storage.local.remove('syncInProgress');throw Error('另一台设备刚刚更新了云端，本次未覆盖，请重新预览');}
       if(!response.ok)throw Error('云端写入失败，保留未完成标记，请重新预览');
@@ -152,7 +178,7 @@ async function applySync(token,auto=false){
     if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
     if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
-    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied)},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
+    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});throw error;}finally{syncGuard=null;}
 }
@@ -160,13 +186,21 @@ async function maybeSync(){
   const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
   const schedule=await automationStatus();if(schedule.sync.state!=='waiting'||Date.now()<schedule.sync.nextAt)return;
-  try{const p=await prepareSync();await applySync(p.token,true);}catch(e){await chrome.storage.local.set({syncError:e.message,syncAuto:false});}
+  try{
+    const latest=await latestSyncStatus();
+    if(latest.state==='latest'){
+      await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:''});
+      return;
+    }
+    const p=await prepareSync();await applySync(p.token,true);
+  }catch(e){await chrome.storage.local.set({syncError:e.message,syncAuto:false});}
 }
 async function syncAction(message){
   switch(message.type){
     case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);
+    case 'SYNC_LATEST_STATUS':return latestSyncStatus();
     case 'SYNC_AUTO':{
       if(message.enabled){const {data,c}=await syncConfiguration();if(data.syncInProgress||data.syncState?.endpoint!==syncEndpoint(c)||data.syncVerified!==syncVerification(c))throw Error('请先完成一次同步');}
       await chrome.storage.local.set({syncAuto:!!message.enabled,syncError:''});return true;

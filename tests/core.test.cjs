@@ -158,7 +158,7 @@ function davServer(){
  async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?(rawTags?file?.etag.replaceAll('"',''):file?.etag):null},text:async()=>file?.body||''});
   if(o.method==='MKCOL')return response(201);
   if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==(rawTags?old?.etag.replaceAll('"',''):old?.etag)))return response(412);
-  if(o.method==='GET')return response(old?200:404);
+  if(['GET','HEAD'].includes(o.method))return response(old?200:404);
   if(o.method==='MOVE'){if(!old)return response(404);if(o.headers.Overwrite==='F'&&files.has(o.headers.Destination))return response(409);files.set(o.headers.Destination,old);files.delete(url);return response(201,old);}
   if(o.method==='PUT'){files.set(url,{body:o.body,etag:'"'+(++revision)+'"'});if(loseStateResponse&&url.endsWith('/sync/state.json')){loseStateResponse=false;throw Error('lost sync response');}return response(201,files.get(url));}
   if(o.method==='DELETE'){files.delete(url);return response(204);}throw Error(o.method);
@@ -383,9 +383,23 @@ test('continuous sync respects its deadline without changing backup frequency',a
  const w=await syncedWorker(davServer()),clock=clockFor(w);await w.api.seed([link('x','X','https://example.test')]);
  const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});await w.call('syncAction',{type:'SYNC_AUTO',enabled:true});
  vm.runInContext('automationJitter=()=>30000',w.context);
- const old=w.local.data.lastSyncAt,plan=await w.call('automationStatus');assert.equal(plan.sync.nextAt,clock.now+900000+30000);
- clock.now+=900000;await w.call('maybeSync');assert.equal(w.local.data.lastSyncAt,old);
+ const old=w.local.data.lastSyncAt,plan=await w.call('automationStatus');assert.equal(plan.sync.nextAt,clock.now+60000+30000);
+ clock.now+=60000;await w.call('maybeSync');assert.equal(w.local.data.lastSyncAt,old);
  clock.now=plan.sync.nextAt;await w.call('maybeSync');assert.notEqual(w.local.data.lastSyncAt,old);assert.equal(w.local.data.syncAuto,true);
+});
+test('latest status uses a lightweight HEAD check and minute sync merges pending local and remote versions',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);const [x]=await a.api.seed([link('x','X','https://x.test')]);
+ const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
+ await sync(a);let shared=JSON.parse(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body);
+ assert.equal(shared.parentRevision,null);assert.match(shared.sha256,/^[a-f0-9]{64}$/);assert(shared.updatedAt);assert(shared.updatedBy.id);assert(shared.updatedBy.name);
+ const gets=()=>server.requests.filter(r=>r.method==='GET'&&r.url.endsWith('/sync/state.json')).length;
+ const before=gets(),current=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(current.state,'latest');assert.equal(gets(),before);assert.equal(server.requests.at(-1).method,'HEAD');
+ await sync(b);await b.api.seed([link('y','Y','https://y.test')]);await sync(b);
+ const newer=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(newer.state,'cloud-new');assert.equal(newer.remote.updatedBy.id,b.local.data.backupDeviceId);
+ await a.api.update(x.id,{title:'X local'});assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'diverged');
+ const clock=clockFor(a);a.local.data.lastSyncAt=new Date(clock.now).toISOString();a.local.data.syncAuto=true;delete a.local.data.automationSchedule;vm.runInContext('automationJitter=()=>5000',a.context);
+ const plan=await a.call('automationStatus');assert.equal(plan.sync.nextAt,clock.now+65000);clock.now=plan.sync.nextAt;await a.call('maybeSync');
+ assert.equal((await a.api.children('1')).length,2);assert.equal((await a.api.get(x.id)).title,'X local');assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'latest');assert.equal(a.local.data.syncAuto,true);
 });
 test('a failed automatic snapshot backs off instead of retrying at every status read',async()=>{
  const w=await worker(),clock=clockFor(w);let attempts=0;

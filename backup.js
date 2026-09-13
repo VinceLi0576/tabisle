@@ -52,6 +52,15 @@
     if(automationReading)return;automationReading=true;
     try{automation=await ask('AUTOMATION_STATUS');renderCountdowns();}finally{automationReading=false;}
   }
+  function renderLatest(latest,sync){
+    const card=$('latest-card'),labels={latest:'已是最新版','cloud-new':'云端有新版','local-new':'本机有待上传修改',diverged:'本机和云端都有修改',attention:'同步需要处理',off:'尚未建立共同版本'};
+    const state=latest?.state||(!sync.initialized?'off':sync.error||sync.inProgress?'attention':'off');
+    card.dataset.state=state;$('latest-state').textContent=labels[state]||'正在检查最新版';
+    if(latest?.error){$('latest-detail').textContent=latest.error;return;}
+    const remote=latest?.remote,source=remote?.updatedBy?.name?' · 来源：'+remote.updatedBy.name:'',time=remote?.updatedAt?' · '+date(remote.updatedAt):'',revision=remote?.revision?' · 版本 '+remote.revision.slice(0,8):'';
+    const help={latest:'本机与坚果云内容一致。', 'cloud-new':'可以立即同步，或等待后台自动拉取。','local-new':'后台会先确认云端版本，再合并上传。',diverged:'后台会尝试三方合并；同一字段冲突时暂停确认。',attention:sync.error||'上次同步未完成，请重新预览。',off:'先完成一次“验证并预览同步”，建立共同版本。'}[state]||'';
+    $('latest-detail').textContent=help+source+time+revision+(latest?.checkedAt?' · 检查于 '+date(latest.checkedAt):'');
+  }
   async function refresh({forms=false,preferWebdav=false}={}){
     current=await ask('BACKUP_STATUS');const data=current;
     $('credential-state').textContent=data.webdav.hasPassword
@@ -61,6 +70,9 @@
       ? '应用密码已保存，无需重新填写。密码框留空是正常的，验证时会使用已保存的密码；只有更换账号或密码时才需要填写。'
       : '填写坚果云的第三方应用密码，验证成功后保存在这台浏览器。';
     const sync=await ask('SYNC_STATUS');syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
+    let latest=null;
+    if(syncReady&&!sync.error){try{latest=await ask('SYNC_LATEST_STATUS');}catch(error){latest={state:'attention',error:error.message||String(error)};}}
+    renderLatest(latest,sync);
     $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后先预览，两端内容会合并。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；请重新预览合并。':'')+(sync.error?'\n'+sync.error:'');
     const receipt=sync.receipt;
     const counts=changes=>Object.entries(changes||{}).map(([op,n])=>op+' '+n+' 项').join('、')||'书签结构无变化';
@@ -138,9 +150,10 @@
     $('sync-review').scrollIntoView({behavior:'smooth',block:'start'});
   }
   $('sync-preview').onclick=()=>run(async()=>{syncChoices={};await showSync();});
+  $('latest-check').onclick=()=>run(async()=>{await refresh();$('status').textContent='最新版状态已重新检查。';});
   $('sync-update').onclick=()=>run(showSync);
   $('sync-cancel').onclick=()=>{$('sync-review').hidden=true;syncToken=null;availability();};
-  $('sync-apply').onclick=()=>run(async()=>{if(!syncToken)throw Error('请先更新预览');await ask('SYNC_APPLY',{token:syncToken});syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='两端已完成同步。可开启每 15 分钟自动同步；出现冲突时会暂停，等待你确认。';});
+  $('sync-apply').onclick=()=>run(async()=>{if(!syncToken)throw Error('请先更新预览');await ask('SYNC_APPLY',{token:syncToken});syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='两端已完成同步。可开启每分钟自动跟随最新版；出现冲突时会暂停，等待你确认。';});
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
@@ -150,5 +163,7 @@
   setInterval(renderCountdowns,1000);
   setInterval(()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});},15000);
   document.addEventListener('visibilitychange',()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});});
+  let syncRefreshTimer=null;
+  chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState'].some(k=>k in changes)&&!busy){clearTimeout(syncRefreshTimer);syncRefreshTimer=setTimeout(()=>refresh().catch(()=>{}),250);}});
   run(()=>refresh({forms:true,preferWebdav:true}));
 })();

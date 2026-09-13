@@ -1,10 +1,15 @@
 // Local deadlines are deliberately excluded from backup/sync data.
-function automationJitter() { return 30000 + crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296 * 270000; }
+// A short sync stagger keeps the one-minute cadence responsive while avoiding
+// several devices hitting the shared file in the same second.
+function automationJitter(kind) {
+  const ratio=crypto.getRandomValues(new Uint32Array(1))[0]/4294967296;
+  return kind==='sync'?5000+ratio*20000:30000+ratio*270000;
+}
 async function automationStatus() {
   const d=await chrome.storage.local.get(['automationSchedule','backupMode','backupAuto','backupIntervalHours','backupIntervalDays','lastBackupAt','syncAuto','lastSyncAt','webdav','pendingCloudBackup','lastCloudAttemptAt','restoreInProgress','syncInProgress']);
   const now=Date.now(),saved=d.automationSchedule||{},next={},result={};
   const paused=!!(d.restoreInProgress||d.syncInProgress),cloud=modeOf(d)==='webdav'&&!!d.webdav?.enabled;
-  const specs={backup:{enabled:modeOf(d)!=='local'&&d.backupAuto!==false,period:intervalOf(d)*3600e3,anchor:d.lastBackupAt},sync:{enabled:cloud&&!!d.syncAuto,period:15*60e3,anchor:d.lastSyncAt},retry:{enabled:cloud&&!!d.pendingCloudBackup,period:5*60e3,anchor:d.lastCloudAttemptAt,identity:d.pendingCloudBackup}};
+  const specs={backup:{enabled:modeOf(d)!=='local'&&d.backupAuto!==false,period:intervalOf(d)*3600e3,anchor:d.lastBackupAt},sync:{enabled:cloud&&!!d.syncAuto,period:60e3,anchor:d.lastSyncAt},retry:{enabled:cloud&&!!d.pendingCloudBackup,period:5*60e3,anchor:d.lastCloudAttemptAt,identity:d.pendingCloudBackup}};
   for(const [kind,s] of Object.entries(specs)) {
     const state=paused?'paused':s.enabled?'waiting':'off';
     if(state!=='waiting'){result[kind]={state,nextAt:null};continue;}
@@ -12,10 +17,10 @@ async function automationStatus() {
     let entry=saved[kind];
     if(!entry||entry.signature!==signature||!Number.isFinite(entry.at)) {
       const anchor=Date.parse(s.anchor);
-      entry={signature,at:Math.max(now,Number.isFinite(anchor)?anchor+s.period:now)+automationJitter()};
+      entry={signature,at:Math.max(now,Number.isFinite(anchor)?anchor+s.period:now)+automationJitter(kind)};
     } else if(now-entry.at>60000) {
       // A missed alarm after sleep/restart gets one fresh, persisted stagger.
-      entry={signature,at:now+automationJitter()};
+      entry={signature,at:now+automationJitter(kind)};
     }
     next[kind]=entry;result[kind]={state,nextAt:entry.at};
   }

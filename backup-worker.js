@@ -43,7 +43,7 @@ async function captureSnapshot(reason='手动备份') {
     return {uid,id:n.id,title:n.title,dateAdded:n.dateAdded,...(n.url?{url:n.url}:{children:(n.children||[]).map(convert)})};
   };
   const children=bar.children.map(convert);
-  await chrome.storage.local.set({bookmarkIdentity:next});
+  if(BK.stableStringify(identity)!==BK.stableStringify(next))await chrome.storage.local.set({bookmarkIdentity:next});
   return {format:'newtab-bookmarks',version:1,id:crypto.randomUUID(),createdAt:new Date().toISOString(),reason,children,
     meta:data.meta||{items:{},groups:{},tags:[]},prefs:Object.fromEntries(PREF_KEYS.filter(k=>data[k]!==undefined).map(k=>[k,data[k]])),folderState,...device,barId:bar.id};
 }
