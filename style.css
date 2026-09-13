@@ -423,3 +423,8 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .fchip.drop-after::after { right: -6px; }
 #organize-btn.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
 @media (max-width: 900px) { .fgrp { flex-direction: column; gap: 4px; } .fgrp-lab { width: auto; text-align: left; padding: 0 0 0 8px; border-right: 0; border-left: 3px solid var(--gc, var(--border-2)); } }
+
+/* 同步状态条：检查/上传/下载/读回核验期间的进行态 */
+.sync-pill[data-state="busy"]{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
+.sync-pill[data-state="busy"]::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:currentColor;animation:pill-pulse 1s ease-in-out infinite;vertical-align:middle}
+@keyframes pill-pulse{0%,100%{opacity:.25}50%{opacity:1}}

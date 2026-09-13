@@ -819,7 +819,7 @@ chrome:// ⚙️`;
     if (r && r.name.trim()) await store.create({ parentId: bar.id, title: r.name.trim() });
   });
   $('#backup-btn').addEventListener('click', () => window.open('backup.html', '_blank'));
-  $('#sync-pill').addEventListener('click', () => window.open('backup.html', '_blank'));
+  $('#sync-pill').addEventListener('click', () => runSyncPill());
   $('#more-btn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu([
@@ -1297,25 +1297,84 @@ chrome:// ⚙️`;
     itemMeta, setItemMeta, saveMeta, savePrefs, tagList, tagDef, findNode, refresh, render, openDetail, toast, MAX_TAGS, PALETTE, isLocked,
     parseEmojiRules, setEmojiRules(txt) { meta.emojiRules = txt; emojiRules = parseEmojiRules(txt); saveMeta(); },
   };
-  async function updateSyncPill() {
+  // 后台可能正在冷启动甚至没起来：超时也要有结论，🚫 别让状态条静默消失
+  const askBg=(type,ms=6000)=>Promise.race([
+    chrome.runtime.sendMessage({type}),
+    new Promise((_,rej)=>setTimeout(()=>rej(Error('后台无响应')),ms)),
+  ]);
+  const hhmm=(v)=>{const d=new Date(v||Date.now());return isNaN(d)?'':d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});};
+  let pillBusy=false,pillFailed=false;
+  function setPill(state,text,title){
+    const pill=$('#sync-pill');
+    pill.dataset.state=state;pill.textContent=text;pill.hidden=false;
+    pill.title=title||text;
+  }
+  async function updateSyncPill(retry=true) {
     if (store.kind !== 'chrome') return;
     const pill=$('#sync-pill');
+    if(pillBusy)return;
     try {
-      const status=await chrome.runtime.sendMessage({type:'SYNC_STATUS'});
-      if(!status?.ok||!status.data.initialized||status.data.verified===false){pill.hidden=true;return;}
-      let state='attention',text='同步待处理';
-      if(status.data.inProgress)text='正在同步';
-      else if(status.data.error)text='同步待处理';
-      else {
-        const latest=await chrome.runtime.sendMessage({type:'SYNC_LATEST_STATUS'});
-        if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
-        state=latest.data.state;text={latest:'云端最新版','cloud-new':'云端有新版','local-new':'等待上传',diverged:'等待合并'}[state]||'同步待处理';
+      const status=await askBg('SYNC_STATUS');
+      // 只有后台明确答「没初始化」才隐藏；读不到多半是 service worker 冷启动，显示读取中并重试一次
+      if(!status?.ok){
+        if(retry){setPill('busy','同步状态读取中…','后台正在启动，稍后自动重试');setTimeout(()=>updateSyncPill(false),1500);return;}
+        setPill('attention','同步状态读不到','点一下打开「备份与恢复」查看详情');pillFailed=true;return;
       }
-      pill.dataset.state=state;pill.textContent=text;pill.hidden=false;
-    } catch {pill.dataset.state='attention';pill.textContent='同步待处理';pill.hidden=false;}
+      if(!status.data.initialized||status.data.verified===false){pill.hidden=true;return;}
+      const d=status.data;
+      if(d.inProgress){setPill('attention','上次同步未完成','点一下按云端共同版本恢复；写入前会先留本机保护副本');return;}
+      if(d.error){pillFailed=true;setPill('attention','同步失败 · 点开查看','最近一次同步没有成功：'+d.error);return;}
+      const latest=await askBg('SYNC_LATEST_STATUS',15000);
+      if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
+      pillFailed=false;
+      const st=latest.data.state,at=hhmm(latest.data.checkedAt);
+      const map={latest:['ok','云端最新版 · '+at],'cloud-new':['warn','云端有新版 · 点一下同步'],'local-new':['warn','本机待上传 · 点一下同步'],diverged:['warn','两端有修改 · 点一下合并']};
+      const [tone,text]=map[st]||['attention','同步待处理'];
+      const r=d.receipt;
+      setPill(tone,text,(r?'最近核验 '+hhmm(r.verifiedAt)+' · '+r.count+' 条':'尚无核验回执')+'　右边「备份与恢复」是设置入口');
+    } catch (e) {pillFailed=true;setPill('attention','同步待处理',(e&&e.message)||'无法检查云端');}
+  }
+  // 点一下：先主动查云端；确有差异再走既有的 SYNC_NOW（冲突保留云端、先存保护副本、写后完整读回核验）
+  async function runSyncPill(){
+    if (store.kind !== 'chrome') return;
+    if(pillBusy)return;
+    if(pillFailed){window.open('backup.html','_blank');return;}   // 失败态点开设置页看详情，🚫 不盲目重试
+    pillBusy=true;
+    try{
+      setPill('busy','检查云端…');
+      const status=await askBg('SYNC_STATUS');
+      if(!status?.ok)throw Error(status?.error||'无法读取同步状态');
+      let need=status.data.inProgress;
+      if(!need){
+        const latest=await askBg('SYNC_LATEST_STATUS',15000);
+        if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
+        if(latest.data.state==='latest'){
+          setPill('ok','云端最新版 · '+hhmm(latest.data.checkedAt));
+          toast('云端已是最新版，无需同步');
+          return;
+        }
+        need=true;
+        setPill('busy',{'cloud-new':'下载合并中…','local-new':'上传中…',diverged:'合并中…'}[latest.data.state]||'同步中…');
+      } else setPill('busy','按云端版本恢复中…');
+      const done=await askBg('SYNC_NOW',180000);
+      if(!done?.ok)throw Error(done?.error||'同步失败');
+      setPill('busy','读回核验中…');
+      const after=await askBg('SYNC_STATUS');
+      const r=after?.ok?after.data.receipt:null;
+      pillFailed=false;
+      setPill('ok','已核验 · '+hhmm(r?.verifiedAt), r?'云端版本 '+String(r.revision||'').slice(0,8)+' · '+r.count+' 条 · 已重新下载核对一致':'');
+      toast(r?('同步完成，已读回核验 '+r.count+' 条'):'同步完成');
+      await refresh();
+    }catch(e){
+      pillFailed=true;
+      setPill('attention','同步失败 · 点开查看',(e&&e.message)||String(e));
+      toast('同步失败：'+((e&&e.message)||e), { t:'查看', f:()=>window.open('backup.html','_blank') });
+    }finally{pillBusy=false;}
   }
   if (store.kind === 'chrome') {
-    chrome.runtime.sendMessage({ type: 'APP_READY' }).catch(() => {}).finally(updateSyncPill);
+    // 🚫 别把状态条挂在 APP_READY 的 finally 上：后台睡死时它永不落定，状态条会一直停在隐藏态
+    chrome.runtime.sendMessage({ type: 'APP_READY' }).catch(() => {});
+    updateSyncPill();
     let pillTimer=null;
     chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState'].some(k=>k in changes)){clearTimeout(pillTimer);pillTimer=setTimeout(updateSyncPill,250);}});
   }

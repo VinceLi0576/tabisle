@@ -59,3 +59,6 @@ body.backup-page{max-width:none;margin:0;padding:0 32px 28px}
 #help-section .connection-guide{padding:0;border:0;background:none}
 @media(max-width:760px){.overview{grid-template-columns:repeat(2,minmax(0,1fr))}.section-card>summary{flex-wrap:wrap;gap:8px;padding:14px 16px}.section-card>summary h2{font-size:16px}.section-status{order:4;flex-basis:100%;max-width:100%;margin-left:38px}.section-card>summary::after{margin-left:auto}.section-content{padding:18px 16px}.overview-action{padding:14px 16px;align-items:flex-start;flex-direction:column}.section-tools{justify-content:flex-start}.page-toc nav a{font-size:12px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.section-card>summary::after{transition:none}}
+
+/* 最后一段也要能滚到目录判定线，否则目录高亮会停在倒数第二段 */
+.backup-main{padding-bottom:max(260px,45vh)}

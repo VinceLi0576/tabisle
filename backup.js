@@ -1,6 +1,6 @@
 (()=>{
   const $=id=>document.getElementById(id);
-  let policyBaseline=null;
+  let policyBaseline=null,configLoaded=false,syncLoaded=false;
   let token=null,busy=false,current=null,dirty=false,cloudLoaded=false,syncToken=null,syncUnresolved=0,syncReady=false,syncChoices={};
   const staleMessage='插件刚刚更新，当前页面与后台的连接已失效。请重新加载此页面，再读取已保存的账号配置；未保存的输入请先自行留存。';
   const ask=async(type,extra={})=>{
@@ -20,15 +20,21 @@
   const date=value=>{const d=new Date(value);return isNaN(d)?String(value):d.toLocaleString('zh-CN',{hour12:false});};
   const size=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':Math.max(1,Math.round(n/1e3))+' KB';
   const selected=()=>document.querySelector('[name=mode]:checked')?.value||'webdav';
+  // 🔴 没读到本机已保存配置之前，一律不许写：此时表单里是空值/默认值，保存下去会覆盖真实设置
+  const WRITE_BUTTONS=['policy-save','dav-save','forget','create','clear-local','restore','sync-now','sync-preview','sync-apply','recovery-sync'];
   function availability(){
     document.querySelectorAll('button').forEach(b=>b.disabled=busy);
     document.querySelectorAll('#policy-form input,#policy-form select,#dav-form input,#cloud-period,#import,.sync-conflict select').forEach(n=>n.disabled=busy);
-    $('restore').disabled=busy||!token||!$('sync-paused').checked;
-    $('sync-apply').disabled=busy||!syncToken||syncUnresolved>0;
-    $('sync-auto').disabled=busy||!syncReady;
-    $('sync-preview').disabled=busy||!current?.webdav.enabled;
+    const blocked=busy||!configLoaded;
+    for(const id of WRITE_BUTTONS){const b=$(id);if(b)b.disabled=blocked;}
+    $('restore').disabled=blocked||!token||!$('sync-paused').checked;
+    $('sync-apply').disabled=blocked||!syncToken||syncUnresolved>0;
+    $('sync-auto').disabled=blocked||!syncLoaded||!syncReady;
+    $('sync-preview').disabled=blocked||!current?.webdav.enabled;
     $('auto').disabled=busy||selected()==='local';$('interval').disabled=busy||selected()==='local';
-    $('forget').disabled=busy||!current?.webdav.hasPassword;
+    $('forget').disabled=blocked||!current?.webdav.hasPassword;
+    $('policy-save').disabled=blocked||!policyBaseline;
+    $('config-gate').hidden=configLoaded;
   }
   async function run(fn){if(busy)return;busy=true;$('error').textContent='';availability();try{await fn();}catch(e){$('error').textContent=e.message||String(e);}finally{busy=false;availability();}}
   function button(text,fn){const b=document.createElement('button');b.textContent=text;b.onclick=()=>run(fn);return b;}
@@ -62,39 +68,50 @@
     $('latest-detail').textContent=help+source+time+revision+(latest?.checkedAt?' · 检查于 '+date(latest.checkedAt):'');
   }
   async function refresh({forms=false,preferWebdav=false}={}){
-    current=await ask('BACKUP_STATUS');const data=current;
+    // 第一段：本机已保存的配置。读不到就保持页面原样并禁写，🚫 不清空表单、🚫 不当成「未配置」
+    let data;
+    try{data=await ask('BACKUP_STATUS');}
+    catch(error){configLoaded=false;syncLoaded=false;availability();throw error;}
+    current=data;configLoaded=true;
     $('credential-state').textContent=data.webdav.hasPassword
       ? '坚果云账号与应用密码已保存在本机。'+(data.webdav.enabled?'云备份已启用。':'当前云备份上传关闭，保存的连接信息仍然保留。')
       : '这台浏览器还没有保存完整的坚果云连接信息。其他浏览器的配置不会自动复制到这里。';
     $('password-state').textContent=data.webdav.hasPassword
       ? '应用密码已保存，无需重新填写。密码框留空是正常的，验证时会使用已保存的密码；只有更换账号或密码时才需要填写。'
       : '填写坚果云的第三方应用密码，验证成功后保存在这台浏览器。';
-    const sync=await ask('SYNC_STATUS');syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
-    let latest=null;
-    if(syncReady&&!sync.error){try{latest=await ask('SYNC_LATEST_STATUS');}catch(error){latest={state:'attention',error:error.message||String(error)};}}
-    renderLatest(latest,sync);
-    $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后点击立即同步。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；点击立即同步以云端版本恢复。':'')+(sync.error?'\n'+sync.error:'');
-    const receipt=sync.receipt;
+    let sync=null,latest=null;
+    try{
+      sync=await ask('SYNC_STATUS');syncLoaded=true;
+      syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
+    }catch(error){
+      syncLoaded=false;syncReady=false;
+      $('sync-status').textContent='同步状态暂时读不到：'+(error.message||String(error))+'\n已保存的账号、方案和本机备份不受影响。';
+    }
+    if(sync&&syncReady&&!sync.error){try{latest=await ask('SYNC_LATEST_STATUS');}catch(error){latest={state:'attention',error:error.message||String(error)};}}
+    if(sync)renderLatest(latest,sync);
+    if(sync)$('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后点击立即同步。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；点击立即同步以云端版本恢复。':'')+(sync.error?'\n'+sync.error:'');
+    const receipt=sync?.receipt;
     const counts=changes=>Object.entries(changes||{}).map(([op,n])=>op+' '+n+' 项').join('、')||'书签结构无变化';
-    $('sync-receipt').textContent=receipt?date(receipt.verifiedAt)+' · '+receipt.count+' 条书签\n'+(receipt.uploaded?'云端已写入，并重新下载核对一致。':'已重新读取云端，内容一致，无需上传。')+'\n'+(receipt.localApplied?'本机已应用并核对一致。':'本机内容一致，无需修改。')+'\n本机：'+counts(receipt.localChanges)+'\n云端：'+counts(receipt.cloudChanges)+(sync.error?'\n注意：这是上次成功回执，当前同步有异常。':''):'尚无读回校验记录。旧版的成功时间不作为新版核验回执；完成下一次同步后显示。';
+    $('sync-receipt').textContent=receipt?date(receipt.verifiedAt)+' · '+receipt.count+' 条书签\n'+(receipt.uploaded?'云端已写入，并重新下载核对一致。':'已重新读取云端，内容一致，无需上传。')+'\n'+(receipt.localApplied?'本机已应用并核对一致。':'本机内容一致，无需修改。')+'\n本机：'+counts(receipt.localChanges)+'\n云端：'+counts(receipt.cloudChanges)+(sync?.error?'\n注意：这是上次成功回执，当前同步有异常。':''):'尚无读回校验记录。旧版的成功时间不作为新版核验回执；完成下一次同步后显示。';
     $('sync-proof').textContent=receipt?'云端版本：'+receipt.revision+'\n内容指纹（SHA-256）：'+receipt.sha256:'尚无记录';
     const br=data.backupReceipt;
     $('backup-receipt').textContent=br?'最近云备份核验：'+date(br.verifiedAt)+' · '+br.count+' 条书签 · 已重新下载，完整内容一致。'+(data.lastBackupError?' 上次成功记录；当前备份有异常。':''):'尚无云备份读回核验记录。完成下一次上传后显示。';
     $('mode-status').textContent={webdav:data.webdav.enabled?'坚果云 · 云备份已启用':'坚果云 · 待连接',browser:'浏览器账号 · 本机备份',local:'纯本地 · 自动备份关闭'}[data.backupMode];
     $('local-status').textContent=data.lastBackupAt?date(data.lastBackupAt):'尚无本机版本';$('remote-status').textContent=data.lastCloudBackupAt?date(data.lastCloudBackupAt):'尚无完整备份上传记录';
     $('connection-state').textContent=data.webdav.enabled?'账号与目录已验证':data.webdav.hasPassword?'连接已保存 · 上传关闭':'待连接';
-    const recovery=data.restoreInProgress||sync.inProgress;
+    const recovery=data.restoreInProgress||sync?.inProgress;
     $('recovery-notice').hidden=!recovery;
     $('recovery-note').textContent=data.restoreInProgress
       ? '上次恢复未完成，自动备份和持续同步已暂停，保护副本仍保留。请查看本机历史，预览「恢复前自动保护」或其他完整版本，再确认恢复。恢复成功后自动备份可继续；持续同步需重新预览。'
       : '上次同步未完成，自动备份和持续同步已暂停。点击立即同步，以云端共同版本恢复；写入前自动保留本机保护副本，核验成功后恢复持续同步。';
     $('recovery-sync').hidden=!!data.restoreInProgress;
     if(data.lastBackupError)$('error').textContent=data.lastBackupError+(data.pendingCloudBackup?'；本机副本已保留，云备份启用时会重试。':'');
-    if(forms){policyBaseline=data.policyState;const displayMode=preferWebdav?'webdav':data.backupMode;document.querySelector(`[name=mode][value=${displayMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalHours);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=displayMode!==data.backupMode;}
+    if(forms&&!dirty){policyBaseline=data.policyState;const displayMode=preferWebdav?'webdav':data.backupMode;document.querySelector(`[name=mode][value=${displayMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalHours);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=displayMode!==data.backupMode;}
+    else if(forms)policyBaseline=data.policyState;   // 有草稿：只更新并发基线，不动输入框
     $('dav-pass').placeholder=data.webdav.hasPassword?'已保存，留空保留；更换账号须重新填写':'不是坚果云登录密码';
     $('history').replaceChildren(...data.backups.map(b=>{const row=document.createElement('div');row.className='backup-item';const info=document.createElement('div'),p=document.createElement('p'),small=document.createElement('small');p.textContent=date(b.createdAt);small.textContent=[b.device,b.reason,b.count+' 条书签',size(b.bytes)].join(' · ');info.append(p,small);const actions=document.createElement('div');actions.className='action-row';actions.append(button('预览恢复',async()=>preview(await ask('BACKUP_GET',{id:b.id}),'本机历史')),button('下载',async()=>download(await ask('BACKUP_GET',{id:b.id}))));if(data.backupMode==='webdav'&&data.webdav.enabled)actions.append(button('上传',async()=>{await ask('BACKUP_DAV_UPLOAD',{id:b.id});await refresh();$('status').textContent='这个版本已上传到坚果云。';}));row.append(info,actions);return row;}));
-    await readAutomation();
-    window.BackupPage?.render(data,sync,latest);
+    try{await readAutomation();}catch{}
+    window.BackupPage?.render(data,sync,latest);availability();
     if(!data.backups.length){const p=document.createElement('p');p.className='empty';p.textContent='还没有本机版本。点击「立即备份」保存第一份。';$('history').append(p);}syncMode();
   }
   async function preview(snapshot,source='导入 JSON'){
@@ -123,9 +140,9 @@
     if(!entries.length){const p=document.createElement('p');p.className='empty';p.textContent='这个目录还没有书签首页备份。';$('cloud-history').append(p);}
   }
   $('policy-form').oninput=()=>{dirty=true;syncMode();};
-  $('policy-form').onsubmit=e=>{e.preventDefault();run(async()=>{await ask('BACKUP_POLICY_SAVE',{mode:selected(),auto:$('auto').checked,intervalHours:Number($('interval').value),device:$('device').value,expectedPolicy:policyBaseline});await refresh({forms:true});$('status').textContent='方案已保存。浏览器账号同步可在浏览器设置中按需调整。';});};
+  $('policy-form').onsubmit=e=>{e.preventDefault();run(async()=>{if(!configLoaded||!policyBaseline)throw Error('尚未读到本机已保存的设置，暂不能保存，以免覆盖。请先点「重新加载此页面」。');await ask('BACKUP_POLICY_SAVE',{mode:selected(),auto:$('auto').checked,intervalHours:Number($('interval').value),device:$('device').value,expectedPolicy:policyBaseline});await refresh({forms:true});$('status').textContent='方案已保存。浏览器账号同步可在浏览器设置中按需调整。';});};
   document.querySelectorAll('.sync-settings').forEach(b=>b.onclick=()=>run(async()=>{await chrome.tabs.create({url:/Edg\//.test(navigator.userAgent)?'edge://settings/profiles/sync':'chrome://settings/syncSetup/advanced'});}));
-  $('dav-form').onsubmit=e=>{e.preventDefault();if(busy)return;const config={url:$('dav-url').value,username:$('dav-user').value,password:$('dav-pass').value};
+  $('dav-form').onsubmit=e=>{e.preventDefault();if(busy||!configLoaded)return;const config={url:$('dav-url').value,username:$('dav-user').value,password:$('dav-pass').value};
     // Optional permission must be requested within the user's submit gesture.
     const permission=chrome.permissions.request({origins:['https://dav.jianguoyun.com/*']});
     run(async()=>{if(!await permission)throw Error('没有获得坚果云访问权限');await ask('BACKUP_DAV_CONNECT',{config});if(policyBaseline)policyBaseline={...policyBaseline,mode:'webdav'};$('dav-pass').value='';cloudLoaded=false;const preserveDraft=dirty;await refresh({forms:!preserveDraft});$('status').textContent='连接已验证，云备份已启用。'+(preserveDraft?'上面的方案草稿尚未保存，请点击「保存方案」确认。':'备份频率和设备名保持已保存的设置。')+' 点击「立即备份」保存云端版本。';});
@@ -168,6 +185,13 @@
   setInterval(()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});},15000);
   document.addEventListener('visibilitychange',()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});});
   let syncRefreshTimer=null;
-  chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState','lastBackupAt','lastCloudBackupAt','lastBackupError','pendingCloudBackup','backupReceipt','restoreInProgress'].some(k=>k in changes)&&!busy){clearTimeout(syncRefreshTimer);syncRefreshTimer=setTimeout(()=>refresh().catch(()=>{}),250);}});
-  run(()=>refresh({forms:true,preferWebdav:true}));
+  try{chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState','lastBackupAt','lastCloudBackupAt','lastBackupError','pendingCloudBackup','backupReceipt','restoreInProgress'].some(k=>k in changes)&&!busy){clearTimeout(syncRefreshTimer);syncRefreshTimer=setTimeout(()=>refresh().catch(()=>{}),250);}});}catch{/* 旧页面 context 已失效，靠「重新加载此页面」恢复 */}
+  run(async()=>{
+    try{await refresh({forms:true,preferWebdav:true});}
+    catch(error){
+      $('reconnect-page').hidden=false;
+      $('mode-status').textContent='暂时读不到';
+      throw Error('没能读到这台浏览器已保存的设置：'+(error.message||String(error))+' 已保存的账号、密码和备份不受影响，请点上面的「重新加载此页面」。');
+    }
+  });
 })();
