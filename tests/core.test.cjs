@@ -178,6 +178,33 @@ test('servers ignoring conditions cannot enable sync or overwrite the shared fil
  const server=davServer();server.ignoreConditions=true;const w=await syncedWorker(server);
  await assert.rejects(()=>w.call('syncAction',{type:'SYNC_PREVIEW'}),/防覆盖验证/);assert(!w.local.data.syncVerified);assert(![...server.files.keys()].some(k=>k.endsWith('state.json')));
 });
+test('account sync arrivals before WebDAV align new folders and links, preserve notes and stop echo writes',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.unresolved,0);await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
+ await sync(a);await sync(b);
+ await a.api.seed([folder('f','Research',[link('x','Article','https://article.test')])]);
+ a.local.data.meta.items['https://article.test']={name:'My note',tags:['reading']};await sync(a);
+ // Google delivers the same native tree without the extension's UUIDs or metadata.
+ const [arrived]=await b.api.seed([folder('google-f','Research',[link('google-x','Article','https://article.test')])]);
+ const writes=()=>server.requests.filter(r=>r.method==='PUT'&&r.url.endsWith('/sync/state.json')).length;
+ const before=writes();await sync(b);await sync(a);await sync(b);
+ assert.equal((await b.api.children('1')).length,1);assert.equal((await b.api.children(arrived.id)).length,1);
+ assert.equal((await b.api.children(arrived.id))[0].id,arrived.children[0].id);
+ assert.equal(b.local.data.meta.items['https://article.test'].name,'My note');assert.equal(writes(),before);
+});
+test('account sync reintroducing a deleted bookmark pauses automatic WebDAV sync for review',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.unresolved,0);await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
+ const [x]=await a.api.seed([link('x','Article','https://article.test')]);await sync(a);await sync(b);
+ await a.api.remove(x.id);await sync(a);await sync(b);
+ const before=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body;
+ await b.api.create({parentId:'1',title:'Article',url:'https://article.test'});
+ await b.call('syncAction',{type:'SYNC_AUTO',enabled:true});b.local.data.lastSyncAt='2020-01-01';await b.call('maybeSync',{});
+ assert.equal(b.local.data.syncAuto,false);assert(b.local.data.syncError);
+ assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,before);
+ assert.equal((await b.api.children('1')).length,1);
+ const p=await b.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.conflicts.some(c=>c.field.includes('回流')));assert(p.unresolved>0);
+});
 test('stale local or remote sync previews never apply; failed write response keeps recovery marker and stops automation',async()=>{
  const server=davServer(),a=await syncedWorker(server);const [n]=await a.api.seed([link('x','X','https://x.test')]);let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.api.update(n.id,{title:'Changed'});
  await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/本机数据已变化/);

@@ -61,7 +61,7 @@
   }
   $('policy-form').oninput=()=>{dirty=true;syncMode();};
   $('policy-form').onsubmit=e=>{e.preventDefault();run(async()=>{await ask('BACKUP_POLICY_SAVE',{mode:selected(),auto:$('auto').checked,intervalDays:Number($('interval').value),device:$('device').value});await refresh({forms:true});$('status').textContent='方案已保存。浏览器账号同步可在浏览器设置中按需调整。';});};
-  document.querySelectorAll('.sync-settings').forEach(b=>b.onclick=()=>run(async()=>{await chrome.tabs.create({url:/Edg\//.test(navigator.userAgent)?'edge://settings/profiles/sync':'chrome://settings/syncSetup'});}));
+  document.querySelectorAll('.sync-settings').forEach(b=>b.onclick=()=>run(async()=>{await chrome.tabs.create({url:/Edg\//.test(navigator.userAgent)?'edge://settings/profiles/sync':'chrome://settings/syncSetup/advanced'});}));
   $('dav-form').onsubmit=e=>{e.preventDefault();if(busy)return;const config={url:$('dav-url').value,username:$('dav-user').value,password:$('dav-pass').value};
     const policy={mode:'webdav',auto:$('auto').checked,intervalDays:Number($('interval').value),device:$('device').value};
     // Optional permission must be requested within the user's submit gesture.
