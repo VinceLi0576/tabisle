@@ -10,3 +10,5 @@ body.backup-page{max-width:1160px;margin:auto;padding:42px 32px 28px}.page-head{
 @media(max-width:760px){.connection-guide{padding:16px}.guide-table{min-width:490px}.sync-walkthrough,.operation-guide{grid-template-columns:1fr}}
 
 .credential-state{padding:12px 14px;margin:0 0 18px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:13px}#password-state{color:var(--accent)}#reconnect-page{margin-bottom:20px}
+
+.verification-card{margin-top:18px;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}.verification-card h3{margin:0 0 8px}#sync-receipt,#sync-status,.proof{white-space:pre-line;overflow-wrap:anywhere}.proof{font-family:monospace;font-size:12px}.verification-card .muted{font-size:12px}

@@ -73,7 +73,7 @@ test('partial restore leaves recovery marker and safety backup',async()=>{
  await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_RESTORE',token:p.token}),/恢复未完成/);assert(w.local.data.restoreInProgress);assert.equal(w.local.data.backups[0].children[0].title,'Changed');
 });
 test('WebDAV uses distinct filenames, no-overwrite header, and only configured HTTPS directory',async()=>{
- const w=await worker();await w.api.seed([link('x','X','https://x.test')]);await w.call('backupAction',{type:'BACKUP_DAV_SAVE',config:{url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass',enabled:false}});
+ const w=await worker(),server=davServer();w.context.fetch=async(url,options)=>{w.requests.push({url,options});return server.fetch(url,options);};await w.api.seed([link('x','X','https://x.test')]);await w.call('backupAction',{type:'BACKUP_DAV_SAVE',config:{url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass',enabled:false}});
  await w.call('backupAction',{type:'BACKUP_CREATE'});let id=w.local.data.backups[0].id;await w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id});
  await w.call('backupAction',{type:'BACKUP_CREATE'});id=w.local.data.backups[0].id;await w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id});
  const puts=w.requests.filter(r=>r.options.method==='PUT');assert.equal(puts.length,2);assert.notEqual(puts[0].url,puts[1].url);assert.equal(puts[0].options.headers['If-None-Match'],'*');assert.equal(puts[0].options.redirect,'error');assert(!puts[0].options.body.includes('pass'));
@@ -292,4 +292,35 @@ test('renaming a connected device keeps sync identity and automation and causes 
  const body=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body;
  p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.first,false);assert.equal(p.localChanges.length,0);assert.equal(p.cloudChanges.length,0);await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
  assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,body);
+});
+
+
+test('hourly backups wait until due, accept three hours, and retain legacy daily settings',async()=>{
+ const w=await worker();await w.api.seed([link('x','X','https://x.test')]);
+ assert.equal((await w.call('backupAction',{type:'BACKUP_STATUS'})).backupIntervalHours,1);
+ w.local.data.backupIntervalDays=7;assert.equal((await w.call('backupAction',{type:'BACKUP_STATUS'})).backupIntervalHours,168);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',intervalHours:1,auto:true});
+ w.local.data.lastBackupAt=new Date(Date.now()-59*60000).toISOString();await w.call('maybeBackup');assert(!w.local.data.backups);
+ w.local.data.lastBackupAt=new Date(Date.now()-61*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,1);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',intervalHours:3,auto:true});
+ w.local.data.lastBackupAt=new Date(Date.now()-121*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,1);
+ w.local.data.lastBackupAt=new Date(Date.now()-181*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,2);
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',intervalHours:0,auto:true}));
+});
+test('backup receipts require full readback; HTTP success with corrupted content stays pending',async()=>{
+ const server=davServer(),w=await syncedWorker(server);await w.api.seed([link('x','X','https://x.test')]);
+ await w.call('backupAction',{type:'BACKUP_CREATE'});const status=await w.call('backupAction',{type:'BACKUP_STATUS'});
+ assert.equal(status.backupReceipt.count,1);assert.equal(status.backupReceipt.httpStatus,200);assert.match(status.backupReceipt.sha256,/^[a-f0-9]{64}$/);assert(!('account'in status.backupReceipt));
+ const old=w.local.data.lastCloudBackupAt;w.context.fetch=async(url,o)=>{const r=await server.fetch(url,o);if(o.method==='GET'&&r.ok&&url.includes('/bookmarks-'))return {...r,text:async()=>JSON.stringify(snapshot([]))};return r;};
+ const result=await w.call('backupAction',{type:'BACKUP_CREATE'});assert.match(result.warning,/校验失败/);assert(w.local.data.pendingCloudBackup);assert.equal(w.local.data.lastCloudBackupAt,old);
+ w.local.data.webdav.url='https://dav.jianguoyun.com/dav/other/';assert.equal((await w.call('backupAction',{type:'BACKUP_STATUS'})).backupReceipt,null);
+});
+test('sync receipt proves matching remote and local content; corrupted accepted upload never reports success',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);const [x]=await a.api.seed([link('x','X','https://x.test')]);
+ const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});return w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
+ await sync(a);await sync(b);let ra=(await a.call('syncAction',{type:'SYNC_STATUS'})).receipt,rb=(await b.call('syncAction',{type:'SYNC_STATUS'})).receipt;
+ assert.equal(ra.sha256,rb.sha256);assert.equal(ra.revision,rb.revision);assert(ra.uploaded);assert(!rb.uploaded);assert(rb.localApplied);assert(!('endpoint'in ra));
+ await a.api.update(x.id,{title:'Changed'});const p=await a.call('syncAction',{type:'SYNC_PREVIEW'});const old=a.local.data.lastSyncAt;
+ a.context.fetch=async(url,o)=>{const r=await server.fetch(url,o);if(o.method==='PUT'&&url.endsWith('/sync/state.json')){const f=server.files.get(url),doc=JSON.parse(f.body);doc.snapshot.children[0].title='Corrupted';f.body=JSON.stringify(doc);}return r;};
+ await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/读回校验/);assert.equal(a.local.data.lastSyncAt,old);assert.equal(a.local.data.syncAuto,false);assert(a.local.data.syncInProgress);
 });

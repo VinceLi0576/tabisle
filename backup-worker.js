@@ -2,7 +2,8 @@ const BK=BookmarkCore;
 const PREF_KEYS=['view','recentCollapsed','filterMode'];
 const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
 const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
-const intervalOf=data=>[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays:1;
+const intervalOf=data=>[1,3,24,168,720].includes(data.backupIntervalHours)?data.backupIntervalHours:[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays*24:1;
+async function contentHash(text){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 function randomDeviceName() {
   const words=[
     '晴空 晨光 月色 星河 微风 初雪 春雨 秋阳 山岚 云影 朝露 晚霞 清风 远山 暖阳 流光 薄雾 新月 碧空 晓风 星光 雨后 长夏 初晴 落日 清晨 仲夏 银霜 春晓 夜雨 冬阳 海风',
@@ -67,10 +68,10 @@ async function ensureBackupAlarm() {
   if((await chrome.alarms.get('daily-bookmark-backup'))?.periodInMinutes!==5)await chrome.alarms.create('daily-bookmark-backup',{periodInMinutes:5});
 }
 async function maybeBackup() {
-  const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','webdav','pendingCloudBackup','backups']);
+  const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','backupIntervalHours','webdav','pendingCloudBackup','backups']);
   if(data.restoreInProgress||data.syncInProgress||modeOf(data)==='local')return;
   try {
-    const due=data.backupAuto!==false&&!(Date.now()-Date.parse(data.lastBackupAt||0)<intervalOf(data)*24*3600e3);
+    const due=data.backupAuto!==false&&!(Date.now()-Date.parse(data.lastBackupAt||0)<intervalOf(data)*3600e3);
     // Keep creating local protection even when the cloud remains unavailable.
     const snapshot=due?await makeSnapshot('定时自动备份'):null;
     if(modeOf(data)==='webdav'&&data.webdav?.enabled){
@@ -129,7 +130,10 @@ async function uploadSnapshot(snapshot) {
       const response=await davRequest(config,'PUT',name,body,{'Content-Type':'application/json','If-None-Match':'*'});
       if(response.status===412&&!await equalCopy(await davRequest(config,'GET',name)))throw Error('云端存在同名但内容不同的版本，未覆盖，请保留本机副本');
     }
-    await chrome.storage.local.set({lastCloudBackupAt:new Date().toISOString(),lastBackupError:''});
+    const readback=await davRequest(config,'GET',name);
+    if(!await equalCopy(readback))throw Error('云端备份读回校验失败，本机副本已保留，将重试');
+    const verifiedAt=new Date().toISOString();
+    await chrome.storage.local.set({lastCloudBackupAt:verifiedAt,lastBackupError:'',lastBackupReceipt:{verifiedAt,file:name,httpStatus:readback.status,sha256:await contentHash(BK.stableStringify(portable(snapshot))),count:BK.flatten(snapshot.children).filter(n=>n.url).length,endpoint:config.url,account:config.username}});
     await chrome.storage.local.remove('pendingCloudBackup');return name;
   }catch(error){await chrome.storage.local.set({lastBackupError:error.message});throw error;}
 }
@@ -138,15 +142,19 @@ async function backupAction(message) {
   switch(message.type) {
     case 'BACKUP_STATUS': {
       await ensureBackupDevice();
-      const data=await chrome.storage.local.get(['backups','backupAuto','backupMode','backupIntervalDays','backupDevice','lastBackupError','lastBackupAt','lastCloudBackupAt','webdav','restoreInProgress','pendingCloudBackup']);
+      const data=await chrome.storage.local.get(['backups','backupAuto','backupMode','backupIntervalDays','backupIntervalHours','backupDevice','lastBackupError','lastBackupAt','lastCloudBackupAt','webdav','restoreInProgress','pendingCloudBackup','lastBackupReceipt']);
       const cfg=data.webdav||DAV_DEFAULT;delete data.webdav;
-      return {...data,backupMode:modeOf(data),backupIntervalDays:intervalOf(data),backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
+      const receipt=data.lastBackupReceipt;delete data.lastBackupReceipt;
+      const {endpoint,account,...safeReceipt}=receipt||{};
+      const backupReceipt=endpoint===cfg.url&&account===cfg.username?safeReceipt:null;
+      return {...data,backupReceipt,backupMode:modeOf(data),backupIntervalHours:intervalOf(data),backupIntervalDays:intervalOf(data)/24,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
     }
     case 'BACKUP_POLICY_SAVE': {
-      if(!['webdav','browser','local'].includes(message.mode)||![1,7,30].includes(message.intervalDays))throw Error('备份方案或频率不正确');
+      const hours=message.intervalHours??(message.intervalDays*24);
+      if(!['webdav','browser','local'].includes(message.mode)||![1,3,24,168,720].includes(hours))throw Error('备份方案或频率不正确');
       const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
       const identity=await ensureBackupDevice();
-      await chrome.storage.local.set({backupMode:message.mode,...(message.mode!=='webdav'?{syncAuto:false}:{}),backupAuto:message.mode!=='local'&&!!message.auto,backupIntervalDays:message.intervalDays,backupDevice:String(message.device||'').trim().slice(0,60)||identity.device,webdav:{...webdav,enabled:message.mode==='webdav'&&webdav.enabled}});
+      await chrome.storage.local.set({backupMode:message.mode,...(message.mode!=='webdav'?{syncAuto:false}:{}),backupAuto:message.mode!=='local'&&!!message.auto,backupIntervalHours:hours,backupIntervalDays:hours/24,backupDevice:String(message.device||'').trim().slice(0,60)||identity.device,webdav:{...webdav,enabled:message.mode==='webdav'&&webdav.enabled}});
       return true;
     }
     case 'BACKUP_EXPORT_CURRENT':return portable(await captureSnapshot('手动导出'));

@@ -125,6 +125,8 @@ async function applySync(token,auto=false){
       if(response.status===412){await chrome.storage.local.remove('syncInProgress');throw Error('另一台设备刚刚更新了云端，本次未覆盖，请重新预览');}
       if(!response.ok)throw Error('云端写入失败，保留未完成标记，请重新预览');
     }
+    const verified=await readSync(c);
+    if(verified.revision!==(changed?operation:latest.revision)||syncContent(verified.snapshot)!==syncContent(p.candidate))throw Error('云端读回校验不一致，自动同步已暂停，请重新预览');
     if(await fingerprint(await captureSnapshot())!==p.fingerprint)throw Error('云端保存期间本机有新变化；已暂停同步，请重新预览合并');
     syncGuard={dirty:false,expected:[]};const identity={},originalIds=new Set(BK.flatten(current.children).map(n=>n.id));
     const savedIdentity=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
@@ -146,7 +148,11 @@ async function applySync(token,auto=false){
     const aligned=SC.align(current,p.candidate);for(const [uid,v]of Object.entries(aligned.folderState||{})){const n=live.get(uid);if(n)folderCollapsed[`${n.id}:${n.dateAdded||0}`]=v;}
     await chrome.storage.local.set({meta:p.candidate.meta,bookmarkIdentity:identity,folderCollapsed});
     const applied=await captureSnapshot();check();if(syncContent(applied)!==syncContent(p.candidate))throw Error('书签在应用过程中变化，请重新预览合并');
-    await chrome.storage.local.set({syncState:{endpoint:p.endpoint,base:portable(applied)},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
+    const finalRemote=await readSync(c);check();
+    if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
+    if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
+    const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
+    await chrome.storage.local.set({lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied)},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
     await chrome.storage.local.remove('syncInProgress');await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});throw error;}finally{syncGuard=null;}
 }
@@ -157,7 +163,7 @@ async function maybeSync(){
 }
 async function syncAction(message){
   switch(message.type){
-    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified']);const {endpoint,...check}=d.syncCheck||{};return {check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
+    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);
     case 'SYNC_AUTO':{
