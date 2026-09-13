@@ -91,6 +91,7 @@
   $('forget').onclick=()=>run(async()=>{if(!confirm('移除本机保存的坚果云账号和应用密码，并关闭上传？云端文件不会删除。'))return;await ask('BACKUP_DAV_FORGET');$('dav-pass').value='';cloudLoaded=false;await refresh({forms:true});$('status').textContent='已移除本机连接信息。';});
   $('create').onclick=()=>run(async()=>{const r=await ask('BACKUP_CREATE');await refresh();$('status').textContent=current.webdav.enabled&&!r.warning?'本机和坚果云都已保存这个版本。':'本机版本已保存。';if(r.warning)$('error').textContent=r.warning;});
   $('export').onclick=()=>run(async()=>{download(await ask('BACKUP_EXPORT_CURRENT'));$('status').textContent='完整备份已生成并交给浏览器下载，请确认下载完成；未新增本机历史或上传。';});
+  $('import-open').onclick=()=>$('import').click();
   $('import').onchange=()=>{const file=$('import').files[0];$('import').value='';if(file)run(async()=>{if(file.size>12e6)throw Error('文件超过 12 MB');let snapshot;try{snapshot=JSON.parse(await file.text());}catch{throw Error('请导入签屿完整备份 JSON；floccus 的 XBEL / HTML 文件请用 floccus 恢复。');}await preview(snapshot);});};
   $('clear-local').onclick=()=>run(async()=>{if(!confirm('清空本机所有备份历史？正常书签、备注和云端文件都会保留。建议先下载一份完整备份。'))return;await ask('BACKUP_CLEAR_LOCAL');await refresh();$('status').textContent='本机备份历史已清空。自动备份开启时，下次检查会生成新版本。';});
   $('local-tab').onclick=()=>setTab(false);$('cloud-tab').onclick=()=>setTab(true);
