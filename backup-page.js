@@ -47,7 +47,7 @@
     const progress=!cloud?'none':!sync.initialized?'connected':'synced';
     const defaults=progress==='none'?['backup-mode',...(webdav?['webdav-guide']:[])]:progress==='connected'?['backup-live','continuous-sync']:['backup-live'];
     const state={
-      'backup-mode':['neutral',({webdav:'坚果云',browser:'浏览器账号',local:'纯本地'}[data.backupMode]||'未配置')+' · '+(data.backupAuto&&data.backupMode!=='local'?'每 '+data.backupIntervalHours+' 小时备份':'自动备份关闭')],
+      'backup-mode':['neutral',({webdav:'坚果云',browser:'浏览器账号',local:'纯本地'}[data.backupMode]||'未配置')+' · '+(data.backupAuto!==false&&data.backupMode!=='local'?'每 '+data.backupIntervalHours+' 小时备份':'自动备份关闭')],
       'webdav-guide':[cloud?'ok':'neutral',cloud?'已连接 · 云备份已启用':data.webdav.hasPassword?'账号已保存 · 上传关闭':'待连接'],
       'backup-live':[recovery||data.lastBackupError?'error':data.pendingCloudBackup?'warn':data.backupReceipt?'ok':'neutral',recovery?'自动备份已暂停':data.lastBackupError?'备份异常 · 本机副本请见详情':data.pendingCloudBackup?'云备份等待重试':data.backupReceipt?shortDate(data.backupReceipt.verifiedAt)+' · '+data.backupReceipt.count+' 条已核验':data.lastBackupAt?'本机已备份 · '+shortDate(data.lastBackupAt):'尚无备份记录'],
       'backup-history':['neutral','本机 '+data.backups.length+' 个版本 · 云端按需读取'],
