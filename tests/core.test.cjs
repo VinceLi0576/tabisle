@@ -23,7 +23,7 @@ class Bookmarks {
 function storage(initial={}){const data=structuredClone(initial);return {data,async get(keys){if(keys==null)return structuredClone(data);if(typeof keys==='string')return {[keys]:structuredClone(data[keys])};if(Array.isArray(keys))return Object.fromEntries(keys.map(k=>[k,structuredClone(data[k])]));return {...structuredClone(keys),...Object.fromEntries(Object.keys(keys).filter(k=>k in data).map(k=>[k,structuredClone(data[k])]))};},async set(obj){Object.assign(data,structuredClone(obj));},async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])delete data[k];}};}
 async function worker(){const api=new Bookmarks(),local=storage({meta:{items:{},groups:{},tags:[]}}),session=storage(),requests=[];
  const chrome={bookmarks:{getTree:()=>api.getTree(),get:async id=>[await api.get(id)],getChildren:id=>api.children(id),create:p=>api.create(p),update:(id,p)=>api.update(id,p),move:(id,p)=>api.move(id,p),remove:id=>api.remove(id),removeTree:id=>api.removeTree(id)},storage:{local,session},permissions:{contains:async()=>true},alarms:{get:async()=>({}),create:async()=>{}}};
- const context=vm.createContext({chrome,crypto:webcrypto,TextEncoder,URL,AbortSignal,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),fetch:async(url,options)=>{requests.push({url,options});return {ok:true,status:201,text:async()=>'<d:multistatus xmlns:d="DAV:"/>',json:async()=>({})};}});
+ const context=vm.createContext({chrome,crypto:webcrypto,TextEncoder,URL,AbortSignal,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),fetch:async(url,options)=>{requests.push({url,options});return {ok:options.method!=='GET',status:options.method==='GET'?404:201,text:async()=>'<d:multistatus xmlns:d="DAV:"/>',json:async()=>({})};}});
  for(const f of ['bookmark-core.js','backup-worker.js','sync-core.js','sync-worker.js','editor-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
  const call=(name,m)=>{context.message=m;return vm.runInContext(name+'(message)',context);};return {api,local,session,requests,call,context};
 }
@@ -103,7 +103,7 @@ test('failed WebDAV verification preserves previous credentials and policy; succ
 test('cloud retry is idempotent after a lost response, and cloud failures never stop scheduled local versions',async()=>{
  const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
  const remote=new Map();let fail=true;
- w.context.fetch=async(url,options)=>{w.requests.push({url,options});if(options.method==='PUT'){if(remote.has(url))return {ok:false,status:412};remote.set(url,options.body);if(fail)throw Error('lost response');}return {ok:true,status:201,text:async()=>remote.get(url)||''};};
+ w.context.fetch=async(url,options)=>{w.requests.push({url,options});if(options.method==='PUT'){if(remote.has(url))return {ok:false,status:412};remote.set(url,options.body);if(fail)throw Error('lost response');}return {ok:options.method!=='GET'||remote.has(url),status:options.method==='GET'&&!remote.has(url)?404:201,text:async()=>remote.get(url)||''};};
  const first=await w.call('backupAction',{type:'BACKUP_CREATE'});assert(first.warning);assert(w.local.data.pendingCloudBackup);
  fail=false;await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,1);assert.equal(remote.size,1);assert(!w.local.data.pendingCloudBackup);assert(w.requests.some(r=>r.options.method==='GET'));
  w.local.data.lastBackupAt='2020-01-01';w.context.fetch=async()=>{throw Error('offline')};await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,2);
@@ -153,15 +153,16 @@ test('sync propagates evidenced deletions, merges metadata fields and detects in
  const folders=snapshot([folder('a','A'),folder('b','B')]);assert.throws(()=>Sync.merge(folders,snapshot([folder('b','B',[folder('a','A')])]),snapshot([folder('a','A',[folder('b','B')])])),/循环/);
 });
 function davServer(){
- const files=new Map(),requests=[];let revision=0,ignoreConditions=false,loseStateResponse=false;
- async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?file?.etag:null},text:async()=>file?.body||''});
+ const files=new Map(),requests=[];let revision=0,ignoreConditions=false,loseStateResponse=false,rawTags=false;
+ async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?(rawTags?file?.etag.replaceAll('"',''):file?.etag):null},text:async()=>file?.body||''});
   if(o.method==='MKCOL')return response(201);
-  if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==old?.etag))return response(412);
+  if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==(rawTags?old?.etag.replaceAll('"',''):old?.etag)))return response(412);
   if(o.method==='GET')return response(old?200:404);
+  if(o.method==='MOVE'){if(!old)return response(404);if(o.headers.Overwrite==='F'&&files.has(o.headers.Destination))return response(409);files.set(o.headers.Destination,old);files.delete(url);return response(201,old);}
   if(o.method==='PUT'){files.set(url,{body:o.body,etag:'"'+(++revision)+'"'});if(loseStateResponse&&url.endsWith('/sync/state.json')){loseStateResponse=false;throw Error('lost sync response');}return response(201,files.get(url));}
   if(o.method==='DELETE'){files.delete(url);return response(204);}throw Error(o.method);
  }
- return {files,requests,fetch,set ignoreConditions(v){ignoreConditions=v;},set loseStateResponse(v){loseStateResponse=v;}};
+ return {files,requests,fetch,set rawTags(v){rawTags=v;},set ignoreConditions(v){ignoreConditions=v;},set loseStateResponse(v){loseStateResponse=v;}};
 }
 async function syncedWorker(server){const w=await worker();w.context.fetch=server.fetch;w.local.data.backupMode='webdav';w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};return w;}
 test('direct WebDAV sync verifies conditional writes, merges two browsers, syncs notes, and converges without echo writes',async()=>{
@@ -210,4 +211,32 @@ test('changing DAV account starts a fresh merge; forgetting the connection remov
  const server=davServer(),w=await syncedWorker(server);await w.api.seed([link('x','X','https://x.test')]);let p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
  w.local.data.webdav.username='another-account';w.local.data.syncVerified=null;p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.first);
  await w.call('backupAction',{type:'BACKUP_DAV_FORGET'});assert(!w.local.data.syncState);assert(!w.local.data.syncVerified);assert(!w.session.data.syncPreview);assert.equal(w.local.data.webdav.username,'');assert.equal((await w.api.children('1')).length,1);
+});
+test('backup retries compare semantic JSON and never overwrite a differing existing copy on servers ignoring create-only headers',async()=>{
+ const server=davServer(),w=await syncedWorker(server);server.ignoreConditions=true;await w.api.seed([link('x','X','https://x.test')]);await w.call('backupAction',{type:'BACKUP_CREATE'});
+ const b=w.local.data.backups[0],entry=[...server.files.entries()].find(([url])=>url.includes('/bookmarks-'));assert(entry);
+ const [url,file]=entry;file.body=Core.stableStringify(JSON.parse(file.body));const puts=()=>server.requests.filter(r=>r.method==='PUT'&&r.url===url).length;
+ const before=puts();await w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id:b.id});assert.equal(puts(),before);
+ const changed=JSON.parse(file.body);changed.children[0].title='Different cloud data';file.body=JSON.stringify(changed);
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id:b.id}),/未覆盖/);assert.equal(puts(),before);assert.equal(JSON.parse(file.body).children[0].title,'Different cloud data');
+});
+test('nonstandard DAV conditional writes report transfer success separately from unsupported sync and clean their probes',async()=>{
+ const server=davServer(),w=await syncedWorker(server);const standard=server.fetch;
+ w.context.fetch=async(url,o)=>{
+  if(o.headers?.['If-Match'])return {ok:false,status:412,headers:{get:()=>null},text:async()=>''};
+  const opts={...o,headers:{...o.headers}};delete opts.headers['If-None-Match'];const r=await standard(url,opts);const get=r.headers.get;r.headers.get=k=>k==='etag'?get(k)?.replaceAll('"',''):get(k);return r;
+ };
+ await assert.rejects(()=>w.call('syncAction',{type:'SYNC_PREVIEW'}),/防覆盖验证/);
+ const check=w.local.data.syncCheck;assert.equal(check.upload,true);assert.equal(check.download,true);assert.equal(check.conditionalCreate,true);assert.equal(check.conditionalUpdate,false);assert.equal(check.compatible,false);assert.equal(check.cleaned,true);assert(![...server.files.keys()].some(k=>k.includes('probe-')));assert.equal(w.local.data.syncAuto,false);
+ const status=await w.call('syncAction',{type:'SYNC_STATUS'});assert.equal(status.verified,false);assert(!('endpoint' in status.check));
+});
+test('Jianguoyun bare version tokens support verified updates and initial MOVE refuses a racing writer',async()=>{
+ const server=davServer();server.rawTags=true;const w=await syncedWorker(server);await w.api.seed([link('x','X','https://x.test')]);const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(w.local.data.syncCheck.compatible,true);
+ let competing;
+ w.context.fetch=async(url,o)=>{if(o.method==='MOVE'&&o.headers.Destination.endsWith('/sync/state.json')){competing=JSON.stringify({format:'tabisle-sync',version:1,revision:'other',snapshot:snapshot([link('other','Other','https://other.test')])});server.files.set(o.headers.Destination,{body:competing,etag:'"racer"'});}return server.fetch(url,o);};
+ await assert.rejects(()=>w.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/本次未覆盖/);assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,competing);assert(![...server.files.keys()].some(k=>k.includes('/stage-')));
+});
+test('JSON object field order does not produce false restore or metadata conflicts, while array order still matters',()=>{
+ const a=snapshot([]),b=structuredClone(a);a.meta.items['https://x.test']={name:'X',desc:'Note'};b.meta.items['https://x.test']={desc:'Note',name:'X'};a.prefs={view:'card',filterMode:'and'};b.prefs={filterMode:'and',view:'card'};
+ const plan=Core.plan(a,b);assert.equal(plan.metaChanged,false);assert.equal(plan.prefsChanged,false);assert.equal(Sync.equal(a.meta,b.meta),true);assert.equal(Sync.equal(['a','b'],['b','a']),false);
 });

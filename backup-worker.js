@@ -73,11 +73,11 @@ async function davConfig() {
   if(!await chrome.permissions.contains({origins:['https://dav.jianguoyun.com/*']}))throw Error('尚未授权访问坚果云，请在设置中保存并授权');
   return {...webdav,url:davURL(webdav.url).href};
 }
-async function davRequest(config,method,name='',body,headers={}) {
+async function davRequest(config,method,name='',body,headers={},allowedStatuses=[]) {
   if(name&&!/^(?:\d{4}-(?:0[1-9]|1[0-2])\/)?bookmarks-[a-zA-Z0-9-]+\.json$/.test(name)&&!/^\d{4}-(?:0[1-9]|1[0-2])\/$/.test(name))throw Error('备份文件名不正确');
   const bytes=new TextEncoder().encode(config.username+':'+config.password);let auth='';for(const b of bytes)auth+=String.fromCharCode(b);
-  const r=await fetch(config.url+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,redirect:'error',credentials:'omit',signal:AbortSignal.timeout(20000)});
-  if(!r.ok && !(method==='MKCOL'&&r.status===405)&&!(method==='PUT'&&r.status===412)){
+  const r=await fetch(config.url+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,cache:'no-store',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(20000)});
+  if(!r.ok && !allowedStatuses.includes(r.status) && !(method==='MKCOL'&&r.status===405)&&!(method==='PUT'&&r.status===412)){
     const help={401:'账号或应用密码不正确，请使用第三方应用密码',403:'没有目录访问权限，请检查应用授权',404:'目录或版本不存在',409:'上级目录不存在，请重新连接并创建目录',429:'请求过于频繁，请稍后重试',507:'坚果云容量或额度不足，请检查账户权益'};
     throw Error(`坚果云 ${method} 失败（${r.status}）：${help[r.status]||'请检查网络或稍后重试'}`);
   }
@@ -99,10 +99,17 @@ async function uploadSnapshot(snapshot) {
   await chrome.storage.local.set({pendingCloudBackup:snapshot.id});
   try{
     await ensureDavDirectory(config);await davRequest(config,'MKCOL',period+'/');
-    const response=await davRequest(config,'PUT',name,body,{'Content-Type':'application/json','If-None-Match':'*'});
-    if(response.status===412){
-      const existing=await davRequest(config,'GET',name);
-      if(await existing.text()!==body)throw Error('云端存在同名但内容不同的版本，未覆盖，请保留本机副本');
+    const equalCopy=async response=>{
+      try{return BK.stableStringify(BK.validate(JSON.parse(await response.text())))===BK.stableStringify(portable(snapshot));}catch{return false;}
+    };
+    // Jianguoyun may ignore If-None-Match. UUID filenames isolate independent snapshots;
+    // check an existing copy before retrying and compare data rather than JSON key order.
+    const existing=await davRequest(config,'GET',name,undefined,{},[404]);
+    if(existing.status!==404){
+      if(!await equalCopy(existing))throw Error('云端存在同名但内容不同的版本，未覆盖，请保留本机副本');
+    }else{
+      const response=await davRequest(config,'PUT',name,body,{'Content-Type':'application/json','If-None-Match':'*'});
+      if(response.status===412&&!await equalCopy(await davRequest(config,'GET',name)))throw Error('云端存在同名但内容不同的版本，未覆盖，请保留本机副本');
     }
     await chrome.storage.local.set({lastCloudBackupAt:new Date().toISOString(),lastBackupError:''});
     await chrome.storage.local.remove('pendingCloudBackup');return name;
@@ -138,7 +145,7 @@ async function backupAction(message) {
     case 'BACKUP_PREVIEW': {
       const desired=BK.validate(message.snapshot), current=await captureSnapshot();const p=BK.plan(current,desired);
       const token=crypto.randomUUID();await chrome.storage.session.set({restorePreview:{token,fingerprint:await fingerprint(current),snapshot:desired}});
-      return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged,folderStateChanged:desired.folderState!=null&&JSON.stringify(current.folderState)!==JSON.stringify(desired.folderState)};
+      return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged,folderStateChanged:desired.folderState!=null&&BK.stableStringify(current.folderState)!==BK.stableStringify(desired.folderState)};
     }
     case 'BACKUP_RESTORE': {
       const {restorePreview:p}=await chrome.storage.session.get('restorePreview');if(!p||p.token!==message.token)throw Error('请重新预览要恢复的备份');
@@ -172,7 +179,7 @@ async function backupAction(message) {
       await davRequest(config,'PROPFIND','','',{'Depth':'0'});
       await chrome.storage.local.set({webdav:config,backupMode:'webdav',lastBackupError:'',syncAuto:false,syncVerified:null});return true;
     }
-    case 'BACKUP_DAV_FORGET':await chrome.storage.local.set({webdav:{...DAV_DEFAULT},syncAuto:false});await chrome.storage.local.remove(['pendingCloudBackup','syncState','syncVerified','syncInProgress','syncTombstones','lastSyncAt','syncError']);await chrome.storage.session.remove('syncPreview');return true;
+    case 'BACKUP_DAV_FORGET':await chrome.storage.local.set({webdav:{...DAV_DEFAULT},syncAuto:false});await chrome.storage.local.remove(['pendingCloudBackup','syncState','syncVerified','syncInProgress','syncTombstones','lastSyncAt','syncError','syncCheck']);await chrome.storage.session.remove('syncPreview');return true;
     case 'BACKUP_DAV_SAVE': {
       const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
       const config={enabled:!!message.config.enabled,url:davURL(message.config.url).href,username:String(message.config.username||'').trim(),password:message.config.password||webdav.password};

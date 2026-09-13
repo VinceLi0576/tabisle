@@ -8,32 +8,69 @@ function observeNative(type,id,info={}){
   if(at>=0)syncGuard.expected.splice(at,1);else syncGuard.dirty=true;
 }
 for(const [event,type]of [['onCreated','create'],['onChanged','update'],['onMoved','move'],['onRemoved','remove'],['onChildrenReordered','reorder']])chrome.bookmarks[event]?.addListener((id,info)=>observeNative(type,id,info));
+const syncVerification=c=>syncEndpoint(c)+'|move-v1';
 function syncEndpoint(c){return c.url+'sync/state.json#account='+encodeURIComponent(c.username||'');}
 async function syncRequest(c,method,name,body,headers={}){
-  if(!/^(?:state|probe-[a-zA-Z0-9-]+)\.json$/.test(name))throw Error('同步文件路径不正确');
+  if(!/^(?:state|(?:probe|stage)-[a-zA-Z0-9-]+)\.json$/.test(name))throw Error('同步文件路径不正确');
   let auth='';for(const b of new TextEncoder().encode(c.username+':'+c.password))auth+=String.fromCharCode(b);
-  const r=await fetch(davURL(c.url).href+'sync/'+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});
-  if(!r.ok&&![404,412].includes(r.status))throw Error('坚果云同步请求失败（'+r.status+'）');return r;
+  const r=await fetch(davURL(c.url).href+'sync/'+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});
+  if(!r.ok&&![404,412].includes(r.status)&&!(method==='MOVE'&&r.status===409))throw Error('坚果云同步请求失败（'+r.status+'）');return r;
 }
-const strongTag=r=>{const t=r.headers?.get('etag');if(!t||!/^"[^\r\n]*"$/.test(t))throw Error('服务器没有返回可用于防覆盖的强 ETag，暂不启用双向同步；云端备份仍可使用');return t;};
+// Jianguoyun returns bare opaque tags. Use the server's exact token, after a
+// real valid/stale conditional-write test; do not add quotes or accept weak tags.
+const syncTag=r=>{const t=r.headers?.get('etag');if(!t||!(/^[A-Za-z0-9_-]{1,256}$/.test(t)||/^"[^\r\n]*"$/.test(t)))throw Error('服务器没有返回可用的版本标识，双向同步未开启');return t;};
 async function verifySync(c){
   await ensureDavDirectory({...c,url:c.url+'sync/'});
-  const name='probe-'+crypto.randomUUID()+'.json',body='{"tabisle":"conditional-write-check"}';let created=false;
+  const source='probe-'+crypto.randomUUID()+'.json',dest='probe-'+crypto.randomUUID()+'.json';
+  const body=stage=>JSON.stringify({tabisle:'conditional-write-check',stage});
+  const check={endpoint:syncEndpoint(c),protocol:'move-v1',checkedAt:new Date().toISOString(),upload:false,download:false,conditionalCreate:false,conditionalUpdate:false,compatible:false,cleaned:false};
+  const owned=new Set([source,dest]);
   try{
-    const first=await syncRequest(c,'PUT',name,body,{'If-None-Match':'*','Content-Type':'application/json'});if(!first.ok)throw Error('无法创建同步验证文件');created=true;
-    const read=await syncRequest(c,'GET',name);if(!read.ok)throw Error('无法读取同步验证文件');const etag=strongTag(read);
-    const wrong=await syncRequest(c,'PUT',name,body,{'If-Match':'"tabisle-intentionally-wrong-'+crypto.randomUUID()+'"'});
-    const duplicate=await syncRequest(c,'PUT',name,body,{'If-None-Match':'*'});
-    if(wrong.status!==412||duplicate.status!==412)throw Error('坚果云当前连接未通过防覆盖验证，双向同步未开启；仍可使用独立备份');
-    const correct=await syncRequest(c,'PUT',name,body,{'If-Match':etag});if(!correct.ok)throw Error('服务器拒绝有效条件写入，双向同步未开启');
-    await chrome.storage.local.set({syncVerified:syncEndpoint(c)});
+    const first=await syncRequest(c,'PUT',source,body('initial'),{'Content-Type':'application/json'});if(!first.ok)throw Error('无法创建连接测试文件');owned.add(source);check.upload=true;
+    let r=await syncRequest(c,'MOVE',source,undefined,{Destination:c.url+'sync/'+dest,Overwrite:'F'});if(!r.ok)throw Error('云端不支持创建同步文件');owned.add(dest);
+    r=await syncRequest(c,'GET',dest);if(!r.ok||await r.text()!==body('initial'))throw Error('测试文件读回校验失败');check.download=true;
+    await syncRequest(c,'PUT',source,body('duplicate'));owned.add(source);
+    const duplicate=await syncRequest(c,'MOVE',source,undefined,{Destination:c.url+'sync/'+dest,Overwrite:'F'});
+    r=await syncRequest(c,'GET',dest);let tag=syncTag(r);
+    check.conditionalCreate=[409,412].includes(duplicate.status)&&await r.text()===body('initial');
+    const wrong=await syncRequest(c,'PUT',dest,body('wrong'),{'If-Match':'"wrong-'+crypto.randomUUID()+'"'});
+    const correct=await syncRequest(c,'PUT',dest,body('updated'),{'If-Match':tag});
+    r=await syncRequest(c,'GET',dest);const updated=r.ok&&await r.text()===body('updated');
+    const stale=await syncRequest(c,'PUT',dest,body('stale'),{'If-Match':tag});
+    r=await syncRequest(c,'GET',dest);check.conditionalUpdate=wrong.status===412&&correct.ok&&updated&&stale.status===412&&await r.text()===body('updated');
+    if(!check.conditionalCreate||!check.conditionalUpdate)throw Error('上传和读取已验证；当前连接未通过双向同步防覆盖验证，同步保持关闭。');
+    check.compatible=true;await chrome.storage.local.set({syncVerified:syncVerification(c),syncError:''});
+  }catch(error){check.error=error.message;await chrome.storage.local.set({syncVerified:null,syncAuto:false,syncError:error.message});throw error;}
+  finally{
+    let clean=true;
+    for(const name of owned){try{
+      const r=await syncRequest(c,'GET',name);if(r.status===404)continue;
+      const content=JSON.parse(await r.text());
+      if(!r.ok||content.tabisle!=='conditional-write-check'){clean=false;continue;}
+      const d=await syncRequest(c,'DELETE',name);if(!d.ok&&d.status!==404)clean=false;
+    }catch{clean=false;}}
+    check.cleaned=clean;await chrome.storage.local.set({syncCheck:check});
+  }
+}
+async function createSyncFile(c,body,operation){
+  const stage='stage-'+operation+'.json';
+  try{
+    const saved=await syncRequest(c,'PUT',stage,body,{'Content-Type':'application/json'});if(!saved.ok)throw Error('无法上传待同步版本');
+    const r=await syncRequest(c,'MOVE',stage,undefined,{Destination:c.url+'sync/state.json',Overwrite:'F'});
+    if([409,412].includes(r.status)){
+      const existing=await syncRequest(c,'GET','state.json');
+      if(existing.ok)return {ok:false,status:412};
+      throw Error('云端同步目录发生变化，请重新预览');
+    }
+    return r;
   }finally{
-    if(created){try{const r=await syncRequest(c,'GET',name);if(r.ok)await syncRequest(c,'DELETE',name,undefined,{'If-Match':strongTag(r)});}catch{/* Own empty probe may remain; never delete a shared sync document. */}}
+    // Some DAV implementations keep the source after MOVE. It belongs to this operation.
+    try{await syncRequest(c,'DELETE',stage);}catch{/* A uniquely named staging file is never read as shared state. */}
   }
 }
 async function readSync(c){
   const r=await syncRequest(c,'GET','state.json');if(r.status===404)return {snapshot:null,etag:null,revision:null};
-  if(!r.ok)throw Error('无法读取云端同步文件');const etag=strongTag(r),text=await r.text();if(text.length>12e6)throw Error('云端同步文件超过 12 MB');
+  if(!r.ok)throw Error('无法读取云端同步文件');const etag=syncTag(r),text=await r.text();if(text.length>12e6)throw Error('云端同步文件超过 12 MB');
   const doc=JSON.parse(text);if(doc.format!=='tabisle-sync'||doc.version!==1||typeof doc.revision!=='string')throw Error('云端同步文件格式不正确，未覆盖');
   return {snapshot:BK.validate(doc.snapshot),etag,revision:doc.revision};
 }
@@ -51,7 +88,7 @@ async function syncConfiguration(){
 }
 async function prepareSync(choices={},verify=false){
   const {data,c}=await syncConfiguration();
-  if(data.syncVerified!==syncEndpoint(c)){if(!verify)throw Error('请先在备份页验证并预览首次同步');await verifySync(c);}
+  if(data.syncVerified!==syncVerification(c)){if(!verify)throw Error('请先在备份页验证并预览首次同步');await verifySync(c);}
   const remote=await readSync(c),revision=nativeRevision,current=await captureSnapshot('同步预览');
   if(revision!==nativeRevision)throw Error('浏览器正在更新书签，请稍后重新预览');
   const base=!data.syncInProgress&&data.syncState?.endpoint===syncEndpoint(c)?data.syncState.base:null;
@@ -84,7 +121,7 @@ async function applySync(token,auto=false){
   try{
     if(changed){
       const payload={format:'tabisle-sync',version:1,revision:operation,snapshot:{...p.candidate,id:operation,createdAt:new Date().toISOString(),reason:'同步版本',prefs:{},folderState:{}}};
-      const response=await syncRequest(c,'PUT','state.json',JSON.stringify(payload),{'Content-Type':'application/json',...(latest.etag?{'If-Match':latest.etag}:{'If-None-Match':'*'})});
+      const response=latest.etag?await syncRequest(c,'PUT','state.json',JSON.stringify(payload),{'Content-Type':'application/json','If-Match':latest.etag}):await createSyncFile(c,JSON.stringify(payload),operation);
       if(response.status===412){await chrome.storage.local.remove('syncInProgress');throw Error('另一台设备刚刚更新了云端，本次未覆盖，请重新预览');}
       if(!response.ok)throw Error('云端写入失败，保留未完成标记，请重新预览');
     }
@@ -120,11 +157,11 @@ async function maybeSync(){
 }
 async function syncAction(message){
   switch(message.type){
-    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav']);return {auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
+    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified']);const {endpoint,...check}=d.syncCheck||{};return {check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);
     case 'SYNC_AUTO':{
-      if(message.enabled){const {data,c}=await syncConfiguration();if(data.syncInProgress||data.syncState?.endpoint!==syncEndpoint(c)||data.syncVerified!==syncEndpoint(c))throw Error('请先完成一次同步');}
+      if(message.enabled){const {data,c}=await syncConfiguration();if(data.syncInProgress||data.syncState?.endpoint!==syncEndpoint(c)||data.syncVerified!==syncVerification(c))throw Error('请先完成一次同步');}
       await chrome.storage.local.set({syncAuto:!!message.enabled,syncError:''});return true;
     }
     default:throw Error('未知同步操作');

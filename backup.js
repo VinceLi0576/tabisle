@@ -22,11 +22,11 @@
   function setTab(cloud){$('local-tab').setAttribute('aria-selected',String(!cloud));$('cloud-tab').setAttribute('aria-selected',String(cloud));$('local-tab').tabIndex=cloud?-1:0;$('cloud-tab').tabIndex=cloud?0:-1;$('local-panel').hidden=cloud;$('cloud-panel').hidden=!cloud;}
   async function refresh({forms=false}={}){
     current=await ask('BACKUP_STATUS');const data=current;
-    const sync=await ask('SYNC_STATUS');syncReady=sync.initialized&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
-    $('sync-status').textContent=(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后先预览，两端内容会合并。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；请重新预览合并。':'')+(sync.error?'\n'+sync.error:'');
-    $('mode-status').textContent={webdav:data.webdav.enabled?'坚果云 · 已启用':'坚果云 · 待连接',browser:'浏览器账号 · 本机备份',local:'纯本地 · 自动备份关闭'}[data.backupMode];
-    $('local-status').textContent=data.lastBackupAt?date(data.lastBackupAt):'尚无本机版本';$('remote-status').textContent=data.lastCloudBackupAt?date(data.lastCloudBackupAt):'尚未上传';
-    $('connection-state').textContent=data.webdav.enabled?'已验证 · 上传已启用':data.webdav.hasPassword?'连接已保存 · 上传关闭':'待连接';
+    const sync=await ask('SYNC_STATUS');syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
+    $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后先预览，两端内容会合并。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；请重新预览合并。':'')+(sync.error?'\n'+sync.error:'');
+    $('mode-status').textContent={webdav:data.webdav.enabled?'坚果云 · 云备份已启用':'坚果云 · 待连接',browser:'浏览器账号 · 本机备份',local:'纯本地 · 自动备份关闭'}[data.backupMode];
+    $('local-status').textContent=data.lastBackupAt?date(data.lastBackupAt):'尚无本机版本';$('remote-status').textContent=data.lastCloudBackupAt?date(data.lastCloudBackupAt):'尚无完整备份上传记录';
+    $('connection-state').textContent=data.webdav.enabled?'账号与目录已验证':data.webdav.hasPassword?'连接已保存 · 上传关闭':'待连接';
     if(data.restoreInProgress)$('error').textContent='上次恢复未完成，请先检查本机历史中的「恢复前自动保护」版本。';
     else if(data.lastBackupError)$('error').textContent=data.lastBackupError+(data.pendingCloudBackup?'；本机副本已保留，云备份启用时会重试。':'');
     if(forms){document.querySelector(`[name=mode][value=${data.backupMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalDays);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=false;}
@@ -46,7 +46,7 @@
   function parseDirectory({xml,base}){
     const doc=new DOMParser().parseFromString(xml,'application/xml');if(doc.querySelector('parsererror'))throw Error('云端目录返回格式不正确');
     const responses=[...doc.getElementsByTagNameNS('*','response')],b=new URL(base),entries=[];
-    for(const r of responses){try{const u=new URL(r.getElementsByTagNameNS('*','href')[0]?.textContent||'',base);if(u.origin!==b.origin||!u.pathname.startsWith(b.pathname))continue;const name=decodeURIComponent(u.pathname.slice(b.pathname.length));const isDir=r.getElementsByTagNameNS('*','collection').length>0;
+    for(const r of responses){try{const u=new URL(r.getElementsByTagNameNS('*','href')[0]?.textContent||'',base);if(u.origin!==b.origin||!u.pathname.startsWith(b.pathname))continue;let name=decodeURIComponent(u.pathname.slice(b.pathname.length));const isDir=r.getElementsByTagNameNS('*','collection').length>0;if(isDir&&!name.endsWith('/'))name+='/';
       if((isDir&&/^\d{4}-(?:0[1-9]|1[0-2])\/$/.test(name))||(!isDir&&/^bookmarks-[a-zA-Z0-9-]+\.json$/.test(name)))entries.push({name,isDir,date:r.getElementsByTagNameNS('*','getlastmodified')[0]?.textContent||'',bytes:Number(r.getElementsByTagNameNS('*','getcontentlength')[0]?.textContent)||0});
     }catch{ /* Ignore unrelated or malformed hrefs. */ }}
     return {entries:entries.sort((a,b)=>b.name.localeCompare(a.name)),limited:responses.length>=750};
@@ -80,7 +80,7 @@
   $('cancel-preview').onclick=()=>{$('preview').hidden=true;token=null;availability();};$('sync-paused').onchange=availability;
   $('restore').onclick=()=>run(async()=>{if(!token||!$('sync-paused').checked)throw Error('请先预览并确认同步状态');if(!confirm('按预览恢复书签栏及附属数据？恢复前会保存当前状态作为保护副本。'))return;await ask('BACKUP_RESTORE',{token});token=null;$('preview').hidden=true;await refresh();$('status').textContent='恢复完成，签屿自动同步已暂停。请检查书签与备注，再预览同步到坚果云。';});
   async function showSync(){
-    const p=await ask('SYNC_PREVIEW',{choices:syncChoices});syncToken=p.token;syncUnresolved=p.unresolved;
+    let p;try{p=await ask('SYNC_PREVIEW',{choices:syncChoices});}catch(e){await refresh();throw e;}syncToken=p.token;syncUnresolved=p.unresolved;
     $('sync-review').hidden=false;$('sync-summary').textContent=(p.first?'首次合并：保留双方已有内容。':'按上次共同版本合并两端变化。')+' 备注、说明、标签与分组颜色一并同步。';
     $('sync-review-note').textContent=(p.recovery?'上次同步中断，本次按首次合并重新检查，避免把中间状态当作删除。 ':'')+(p.largeDeletion?'本次删除比例超过 20%，请仔细检查下面的清单。 ':'')+(p.metaChanged?'附属数据将更新。':'附属数据无变化。')+' 显示布局和折叠偏好仍由每台设备自己保存。';
     $('sync-conflicts').replaceChildren(...p.conflicts.map(c=>{const box=document.createElement('div');box.className='sync-conflict';const title=document.createElement('strong');title.textContent=c.path+' · '+c.field;const info=document.createElement('p');const show=v=>v===undefined?'已删除':typeof v==='string'?v:JSON.stringify(v);info.textContent='本机：'+(c.localLabel??show(c.local))+'\n云端：'+(c.remoteLabel??show(c.remote));const label=document.createElement('label');label.textContent='处理方式';const select=document.createElement('select');select.append(new Option('请选择…',''),new Option('采用本机这一项','local'),new Option('采用云端这一项','remote'));select.value=c.choice||'';select.onchange=()=>{syncChoices[c.id]=select.value;syncToken=null;availability();};label.append(select);box.append(title,info,label);return box;}));

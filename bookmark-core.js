@@ -76,7 +76,7 @@
       }
     }
     for (const b of before) if (!used.has(b.uid)) add('删除',b);
-    return { before, after, match, used, changes, metaChanged: JSON.stringify(current.meta)!==JSON.stringify(desired.meta), prefsChanged: JSON.stringify(current.prefs)!==JSON.stringify(desired.prefs) };
+    return { before, after, match, used, changes, metaChanged: stableStringify(current.meta)!==stableStringify(desired.meta), prefsChanged: stableStringify(current.prefs)!==stableStringify(desired.prefs) };
   }
   async function restore(api, barId, current, desired, onPlaced) {
     const p = plan(current,desired), live = new Map(), desiredLive = new Set();
@@ -117,6 +117,10 @@
     await order(desired.children,barId);
     return live;
   }
-  root.BookmarkCore = { key, validUrl, flatten, validate, plan, restore };
+  function stableStringify(value){
+    const sort=v=>Array.isArray(v)?v.map(sort):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])])):v;
+    return JSON.stringify(sort(value));
+  }
+  root.BookmarkCore = { key, validUrl, flatten, validate, plan, restore, stableStringify };
   if (typeof module !== 'undefined') module.exports = root.BookmarkCore;
 })(globalThis);

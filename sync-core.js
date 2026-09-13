@@ -1,7 +1,7 @@
 // Original TabIsle three-way merge. No floccus source is incorporated.
 (function(root){
   const BK=root.BookmarkCore||(typeof require==='function'?require('./bookmark-core.js'):null);
-  const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const equal=(a,b)=>BK.stableStringify(a)===BK.stableStringify(b);
   const clone=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
   const flat=s=>BK.flatten(s?.children||[]);
   const content=n=>n?{title:n.title,url:n.url,parent:n.parent}:undefined;
