@@ -82,6 +82,9 @@ async function readSyncHead(c){
   if(r.status===404)return {etag:null};
   if(r.status===405)return {etag:null,unsupported:true};
   if(!r.ok)throw Error('无法检查云端最新版本');
+  // Jianguoyun may omit ETag on HEAD even though GET returns a usable tag.
+  // Treat that response like unsupported HEAD so the caller performs a GET.
+  if(!r.headers?.get('etag'))return {etag:null,unsupported:true};
   return {etag:syncTag(r)};
 }
 function syncContent(s){
