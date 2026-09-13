@@ -132,6 +132,27 @@ chrome:// ⚙️`;
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const tagList = () => meta.tags;
   const tagDef = (id) => meta.tags.find((t) => t.id === id);
+  const deprecatedTags = () => meta.tags.filter((t) => t.name?.trim() === '废弃');
+  function effectiveTags(n) {
+    const ids = new Set(n.url ? itemMeta(n.url).tags || [] : []);
+    for (let node = n.url ? findNode(n.parentId) : n; node; node = node.parentId ? findNode(node.parentId) : null) {
+      for (const id of meta.groups[node.title]?.tags || []) ids.add(id);
+    }
+    return [...ids];
+  }
+  function isDeprecated(n, includeParents = false) {
+    const ids = new Set(deprecatedTags().map((t) => t.id));
+    for (let node = n; node; node = includeParents && node.parentId ? findNode(node.parentId) : null) {
+      const tags = (node.url ? itemMeta(node.url) : meta.groups[node.title])?.tags || [];
+      if (tags.some((id) => ids.has(id))) return true;
+    }
+    return false;
+  }
+  function deprecatedLast(nodes, includeParents = false) {
+    const current = [], deprecated = [];
+    for (const node of nodes) (isDeprecated(node, includeParents) ? deprecated : current).push(node);
+    return [...current, ...deprecated]; // 仅稳定分区展示，不改变浏览器书签树。
+  }
   const tagBtn = (t, cls = '') => `<button type="button" class="tag ${cls}" data-tag="${t.id}" style="--tc:${t.color}" title="${esc(t.name)}${t.desc ? '：' + esc(t.desc) : ''}"><b>${esc(t.glyph)}</b>`;
   let lastMetaJson = '';
   const saveMeta = () => { lastMetaJson = JSON.stringify(meta); return store.meta.set(meta); };
@@ -169,7 +190,7 @@ chrome:// ⚙️`;
   const countUrls = (n) => (n.children || []).reduce((s, c) => s + (c.url ? 1 : countUrls(c)), 0);
   const tagCounts = (n) => {
     const c = {}; tagList().forEach((t) => { c[t.id] = 0; });
-    const walk = (x) => { for (const k of x.children || []) { if (k.url) (itemMeta(k.url).tags || []).forEach((t) => { if (t in c) c[t]++; }); else walk(k); } };
+    const walk = (x) => { for (const k of x.children || []) { if (k.url) effectiveTags(k).forEach((t) => { if (t in c) c[t]++; }); else walk(k); } };
     walk(n); return c;
   };
   function buildFlat() {
@@ -383,7 +404,7 @@ chrome:// ⚙️`;
   function bodyEl(f, onlyUrls = false, level = 1) {
     const body = document.createElement('div');
     body.className = 'body'; body.dataset.folder = f.id;
-    for (const c of f.children || []) {
+    for (const c of deprecatedLast(f.children || [])) {
       if (c.url) body.appendChild(tileEl(c));
       else if (!onlyUrls) body.appendChild(subEl(c, level + 1));
     }
@@ -403,7 +424,8 @@ chrome:// ⚙️`;
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLockedByTitle(f.title) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
-      (opts.tags ? `<span class="hd-subs">${(f.children || []).filter((c) => !c.url).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
+      (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
+      (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
       `<span class="n">${countUrls(f)}</span>` +
@@ -444,6 +466,7 @@ chrome:// ⚙️`;
     markLevel(c, lv);
     const col = groupColor(f.title); if (col) c.style.setProperty('--gc', col);
     c.innerHTML = levelMark(lv) + `<i class="swatch"></i><b class="title">${esc(f.title || '（未命名）')}</b>${folderLockedByTitle(f.title) ? '<em class="lk">🔒</em>' : ''}<u>${countUrls(f)}</u><span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
+    if (isDeprecated(f)) c.querySelector('.title').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
     c.title = '拖动改顺序 · 点一下跳到那一组 · 右键改名/换色';
     return c;
   }
@@ -451,7 +474,7 @@ chrome:// ⚙️`;
     const box = $('#organize');
     const expanded = new Set($$('.forg-deeper[open]', box).map((el) => el.dataset.id));
     box.innerHTML = '';
-    const folders = (bar.children || []).filter((f) => !f.url);
+    const folders = deprecatedLast((bar.children || []).filter((f) => !f.url));
     const tip = document.createElement('p'); tip.className = 'forg-tip';
     tip.textContent = '拖到文件夹左右两侧改顺序；拖到 ↳ 放进该文件夹；拖回一级分组那排可提升为一级。保留所有层级，改动直接写回书签栏。';
     box.appendChild(tip);
@@ -468,7 +491,7 @@ chrome:// ⚙️`;
       const lab = document.createElement('span'); lab.className = 'fgrp-lab';
       lab.textContent = path; lab.title = path;
       const row = document.createElement('div'); row.className = 'frow lv2'; row.dataset.parent = f.id;
-      (f.children || []).filter((c) => !c.url).forEach((sf) => row.appendChild(fchipEl(sf, f.id, level)));
+      deprecatedLast((f.children || []).filter((c) => !c.url)).forEach((sf) => row.appendChild(fchipEl(sf, f.id, level)));
       wrap.append(lab, row); container.appendChild(wrap);
     };
     const hasSubs = folders.filter((f) => (f.children || []).some((c) => !c.url));
@@ -484,7 +507,7 @@ chrome:// ⚙️`;
         summary.textContent = `${f.title || '（未命名）'} · 第3级及以下`;
         deeper.appendChild(summary);
         const walk = (parent, level, path) => {
-          for (const child of parent.children || []) {
+          for (const child of deprecatedLast(parent.children || [])) {
             if (child.url || !(child.children || []).some((c) => !c.url)) continue;
             const nextPath = `${path} / ${child.title || '（未命名）'}`;
             appendRow(deeper, child, level + 1, nextPath);
@@ -555,10 +578,11 @@ chrome:// ⚙️`;
   function render() {
     const groups = $('#groups');
     groups.innerHTML = '';
-    const kids = bar.children || [];
+    const kids = deprecatedLast(bar.children || []);
     const loose = kids.filter((k) => k.url), folders = kids.filter((k) => !k.url);
-    folders.forEach((f) => groups.appendChild(cardEl(f)));
+    folders.filter(f => !isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
     if (loose.length) groups.appendChild(cardEl({ id: bar.id, title: '未分组', children: loose }, { fixed: true }));
+    folders.filter(f => isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
     domHl = '';
@@ -566,6 +590,8 @@ chrome:// ⚙️`;
     renderTagDefs();
     applyFilters();
     renderSide(folders, loose.length ? bar.id : null);
+    if (search.value.trim()) renderSearch();
+    renderRecent();
   }
 
   // ── 侧边栏：只列前两级；更深层滚动时高亮所属的二级 ──
@@ -580,12 +606,14 @@ chrome:// ⚙️`;
       const color = groupColor(f.title); if (color) d.style.setProperty('--gc', color);
       d.classList.toggle('inbox-folder', isInbox(f));
       d.innerHTML = levelMark(depth + 1) + `<span class="nm">${esc(f.title || '（未命名）')}${folderLockedByTitle(f.title) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
+      if (isDeprecated(f)) d.querySelector('.nm').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
       d.title = f.title; d.dataset.name = (f.title || '').toLowerCase();
       list.appendChild(d);
-      if (depth < 1) for (const c of f.children || []) if (!c.url) add(c, depth + 1, f.id);
+      if (depth < 1) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
     };
-    for (const f of folders) add(f, 0, bar.id);
+    for (const f of folders.filter(f => !isDeprecated(f))) add(f, 0, bar.id);
     if (looseId) add({ id: bar.id, title: '未分组', children: [] }, 0, bar.id);
+    for (const f of folders.filter(f => isDeprecated(f))) add(f, 0, bar.id);
     if (sideObserver) sideObserver.disconnect();
     const visible = new Set();
     sideObserver = new IntersectionObserver((entries) => {
@@ -647,6 +675,7 @@ chrome:// ⚙️`;
       if (!confirm(`删除标签「${cur.glyph} ${cur.name}」？已打了这个标签的书签会去掉它，书签本身不动。`)) return;
       meta.tags = meta.tags.filter((t) => t.id !== id);
       for (const [k, v] of Object.entries(meta.items)) { if (v.tags?.includes(id)) { v.tags = v.tags.filter((x) => x !== id); if (!v.tags.length && !v.desc && !v.icon && !v.name) delete meta.items[k]; } }
+      for (const g of Object.values(meta.groups)) if (g.tags?.includes(id)) { g.tags = g.tags.filter((x) => x !== id); if (!g.tags.length) delete g.tags; }
       globalFilter.delete(id); groupFilter.forEach((s) => s.delete(id));
     } else if (id) {
       Object.assign(cur, r);
@@ -689,7 +718,7 @@ chrome:// ⚙️`;
       let visible = 0;
       for (const t of $$('.tile:not(.add)', card)) {
         const n = flat.find((b) => b.id === t.dataset.id);
-        const tags = n ? (itemMeta(n.url).tags || []) : [];
+        const tags = n ? effectiveTags(n) : [];
         const ok = !active.size || (prefs.filterMode === 'or' ? [...active].some((x) => tags.includes(x)) : [...active].every((x) => tags.includes(x)));
         t.classList.toggle('filtered', !ok);
         if (ok) visible++;
@@ -711,10 +740,13 @@ chrome:// ⚙️`;
   $$('#filter-mode button').forEach((x) => x.classList.toggle('on', x.dataset.val === prefs.filterMode));
 
   // ── 最近访问 ──
+  let recentRender = 0;
   async function renderRecent() {
+    const request = ++recentRender;
+    const items = deprecatedLast(await store.recent(16));
+    if (request !== recentRender) return;
     const box = $('#recent-body'); box.innerHTML = '';
-    const items = await store.recent(16);
-    $('#recent').hidden = !items.length;
+    $('#recent').hidden = !!search.value.trim() || !items.length;
     for (const it of items) {
       const a = document.createElement('a'); a.className = 'pill'; a.href = it.url; a.target = '_blank'; a.title = `${it.title}\n${it.url}`;
       a.appendChild(copyLogo(it));
@@ -735,11 +767,11 @@ chrome:// ⚙️`;
     $('#groups').hidden = showing; $('#recent').hidden = showing || !$('#recent-body').children.length; results.hidden = !showing;
     if (!showing) { results.innerHTML = ''; return; }
     const terms = q.split(/\s+/);
-    const hits = flat.filter((b) => {
+    const hits = deprecatedLast(flat.filter((b) => {
       const m = itemMeta(b.url);
-      const hay = `${m.name || ''} ${b.title} ${b.url} ${b.path} ${m.desc || ''} ${(m.tags || []).map((t) => (tagDef(t) || {}).name || '').join(' ')}`.toLowerCase();
+      const hay = `${m.name || ''} ${b.title} ${b.url} ${b.path} ${m.desc || ''} ${effectiveTags(b).map((t) => (tagDef(t) || {}).name || '').join(' ')}`.toLowerCase();
       return terms.every((t) => hay.includes(t));
-    }).slice(0, 200);
+    }), true).slice(0, 200);
     results.innerHTML = '';
     if (!hits.length) { results.innerHTML = '<div class="none">没有匹配的书签</div>'; return; }
     hits.forEach((b, i) => {
@@ -751,6 +783,7 @@ chrome:// ⚙️`;
       const txt = document.createElement('span'); txt.className = 'txt';
       const l1 = document.createElement('span'); l1.className = 'line1';
       l1.innerHTML = `<span class="name">${esc(label(b))}</span>`; l1.appendChild(tagChips(itemMeta(b.url).tags)); txt.appendChild(l1);
+      if (!isDeprecated(b) && isDeprecated(b, true)) l1.insertAdjacentHTML('beforeend', '<span class="deprecated-badge" title="所属文件夹已标记废弃">废弃</span>');
       txt.innerHTML += `<span class="desc">${esc(b.path || '未分组')} · ${esc(host(b.url))}</span>`;
       a.appendChild(txt);
       a.appendChild(detailArrow(b.id));
@@ -892,7 +925,12 @@ chrome:// ⚙️`;
   function colorMenu(box) {
     const f = findNode(box.dataset.id); if (!f || box.dataset.kind === 'bar') return [];
     const title = f.title;
-    const pick = (c) => { if (c) meta.groups[title] = { ...(meta.groups[title] || {}), color: c }; else delete meta.groups[title]; saveMeta(); render(); };
+    const pick = (c) => {
+      const group = { ...(meta.groups[title] || {}) };
+      if (c) group.color = c; else delete group.color;
+      if (Object.keys(group).length) meta.groups[title] = group; else delete meta.groups[title];
+      saveMeta(); render();
+    };
     return [{ palette: [...PALETTE, ''], f: pick }];
   }
   function folderMenu(box, bodyOnly = false) {
@@ -907,6 +945,16 @@ chrome:// ⚙️`;
     ];
     if (!isBar && !bodyOnly) {
       items.push(null,
+        { t: isDeprecated(f) ? '取消废弃标记' : '标记为废弃（排到底部）', f: async () => {
+          const definitions = deprecatedTags();
+          if (!definitions.length) { toast('请先添加一个名称为「废弃」的标签'); return; }
+          const group = { ...(meta.groups[f.title] || {}) };
+          const tags = group.tags || [];
+          group.tags = isDeprecated(f) ? tags.filter(id => !definitions.some(t => t.id === id)) : [...tags, definitions[0].id];
+          if (!group.tags.length) delete group.tags;
+          if (Object.keys(group).length) meta.groups[f.title] = group; else delete meta.groups[f.title];
+          await saveMeta(); render();
+        } },
         { t: '改名', f: () => inlineRename(box.querySelector('.title')) },
         { t: '颜色…', f: () => { const r = box.querySelector('.swatch').getBoundingClientRect(); openMenu(colorMenu(box), r.left, r.bottom + 4); } },
         { t: folderLockedByTitle(f.title) ? '🔓 解除锁定' : '🔒 锁定（AI 只看不动）', f: () => { const g = meta.groups[f.title] || {}; if (g.locked) delete g.locked; else g.locked = true; if (Object.keys(g).length) meta.groups[f.title] = g; else delete meta.groups[f.title]; saveMeta(); render(); } },
@@ -1241,7 +1289,6 @@ chrome:// ⚙️`;
   let refreshTimer = null;
   store.onChange(() => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 120); });
   await refresh();
-  renderRecent();
   // 给 ai.js 的接口（同页其它脚本用）
   window.BM = {
     store, key, host, label, rawLabel, domainParts, countUrls, esc,

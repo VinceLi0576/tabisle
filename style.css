@@ -223,6 +223,7 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .inbox-folder > .head, .inbox-folder > .sub-head { background: color-mix(in srgb, var(--accent) 10%, var(--card)); border-radius: 6px; }
 .side-item.inbox-folder { background: var(--accent-bg); }
 .inbox-badge { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--accent-bg); color: var(--accent); font-size: 11px; }
+.deprecated-badge { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--well); color: var(--muted); font-size: 11px; font-weight: 500; }
 
 /* ── 卡片：高 64 锁死，左 36 井，右两行 ── */
 .tile { position: relative; display: flex; align-items: center; gap: 10px; height: 64px; padding: 10px 12px; border-radius: var(--radius); cursor: pointer; border: 1px solid var(--border); background: var(--card); min-width: 0; overflow: hidden; box-shadow: var(--shadow); transition: transform .12s, box-shadow .12s, border-color .12s; }
