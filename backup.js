@@ -58,7 +58,7 @@
     card.dataset.state=state;$('latest-state').textContent=labels[state]||'正在检查最新版';
     if(latest?.error){$('latest-detail').textContent=latest.error;return;}
     const remote=latest?.remote,source=remote?.updatedBy?.name?' · 来源：'+remote.updatedBy.name:'',time=remote?.updatedAt?' · '+date(remote.updatedAt):'',revision=remote?.revision?' · 版本 '+remote.revision.slice(0,8):'';
-    const help={latest:'本机与坚果云内容一致。', 'cloud-new':'可以立即同步，或等待后台自动拉取。','local-new':'后台会先确认云端版本，再合并上传。',diverged:'后台会尝试三方合并；同一字段冲突时暂停确认。',attention:sync.error||'上次同步未完成，请重新预览。',off:'先完成一次“验证并预览同步”，建立共同版本。'}[state]||'';
+    const help={latest:'本机与坚果云内容一致。', 'cloud-new':'可以立即同步，或等待后台自动拉取。','local-new':'后台会先确认云端版本，再合并上传。',diverged:'后台会合并修改；同一字段冲突时保留云端版本。',attention:sync.error||'上次同步未完成，点击立即同步以云端版本恢复。',off:'点击“立即同步”，建立共同版本并开启持续同步。'}[state]||'';
     $('latest-detail').textContent=help+source+time+revision+(latest?.checkedAt?' · 检查于 '+date(latest.checkedAt):'');
   }
   async function refresh({forms=false,preferWebdav=false}={}){
@@ -73,7 +73,7 @@
     let latest=null;
     if(syncReady&&!sync.error){try{latest=await ask('SYNC_LATEST_STATUS');}catch(error){latest={state:'attention',error:error.message||String(error)};}}
     renderLatest(latest,sync);
-    $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后先预览，两端内容会合并。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；请重新预览合并。':'')+(sync.error?'\n'+sync.error:'');
+    $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后点击立即同步。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；点击立即同步以云端版本恢复。':'')+(sync.error?'\n'+sync.error:'');
     const receipt=sync.receipt;
     const counts=changes=>Object.entries(changes||{}).map(([op,n])=>op+' '+n+' 项').join('、')||'书签结构无变化';
     $('sync-receipt').textContent=receipt?date(receipt.verifiedAt)+' · '+receipt.count+' 条书签\n'+(receipt.uploaded?'云端已写入，并重新下载核对一致。':'已重新读取云端，内容一致，无需上传。')+'\n'+(receipt.localApplied?'本机已应用并核对一致。':'本机内容一致，无需修改。')+'\n本机：'+counts(receipt.localChanges)+'\n云端：'+counts(receipt.cloudChanges)+(sync.error?'\n注意：这是上次成功回执，当前同步有异常。':''):'尚无读回校验记录。旧版的成功时间不作为新版核验回执；完成下一次同步后显示。';
@@ -87,7 +87,7 @@
     $('recovery-notice').hidden=!recovery;
     $('recovery-note').textContent=data.restoreInProgress
       ? '上次恢复未完成，自动备份和持续同步已暂停，保护副本仍保留。请查看本机历史，预览「恢复前自动保护」或其他完整版本，再确认恢复。恢复成功后自动备份可继续；持续同步需重新预览。'
-      : '上次同步未完成，自动备份和持续同步已暂停。请先查看本机保护副本，再重新预览同步；确认合并成功后自动备份可继续，持续同步需重新开启。';
+      : '上次同步未完成，自动备份和持续同步已暂停。点击立即同步，以云端共同版本恢复；写入前自动保留本机保护副本，核验成功后恢复持续同步。';
     $('recovery-sync').hidden=!!data.restoreInProgress;
     if(data.lastBackupError)$('error').textContent=data.lastBackupError+(data.pendingCloudBackup?'；本机副本已保留，云备份启用时会重试。':'');
     if(forms){policyBaseline=data.policyState;const displayMode=preferWebdav?'webdav':data.backupMode;document.querySelector(`[name=mode][value=${displayMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalHours);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=displayMode!==data.backupMode;}
@@ -152,6 +152,7 @@
     for(const [id,changes]of [['sync-local-changes',p.localChanges],['sync-cloud-changes',p.cloudChanges]]){$(id).replaceChildren(...changes.map(c=>{const li=document.createElement('li');li.textContent=c.op+'：'+c.path+(c.oldValue!=null?' · '+c.oldValue+' → '+c.newValue:'')+(c.before&&c.before!==c.path?'（当前：'+c.before+'）':'');return li;}));if(!changes.length){const li=document.createElement('li');li.textContent='书签树无变化';$(id).append(li);}}
     $('sync-review').scrollIntoView({behavior:'smooth',block:'start'});
   }
+  $('sync-now').onclick=()=>run(async()=>{await ask('SYNC_NOW');syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='同步完成，已开启持续同步；冲突按云端版本处理。';});
   $('sync-preview').onclick=()=>run(async()=>{syncChoices={};await showSync();});
   $('latest-check').onclick=()=>run(async()=>{await refresh();$('status').textContent='最新版状态已重新检查。';});
   $('sync-update').onclick=()=>run(showSync);
@@ -161,7 +162,7 @@
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
   $('recovery-history').onclick=()=>{setTab(false);window.BackupPage?.reveal('backup-history',false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
-  $('recovery-sync').onclick=()=>$('sync-preview').click();
+  $('recovery-sync').onclick=()=>$('sync-now').click();
   $('refresh-receipts').onclick=()=>run(()=>refresh());
   setInterval(renderCountdowns,1000);
   setInterval(()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});},15000);

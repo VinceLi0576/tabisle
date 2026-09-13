@@ -1,6 +1,8 @@
 // Shared, browser-independent snapshot validation, matching and diff logic.
 (function (root) {
   const key = (url) => { try { const u = new URL(url); u.hash = ''; return u.href.replace(/\/$/, ''); } catch { return String(url || ''); } };
+  // Only these exact browser-owned routes are equivalent. Web URLs remain exact.
+  const browserUrlEqual=(a,b)=>a===b||(['chrome://bookmarks/','edge://favorites/'].includes(a)&&['chrome://bookmarks/','edge://favorites/'].includes(b));
   const validUrl = (value) => {
     let url = String(value || '').trim();
     if (!url) throw Error('地址不能为空');
@@ -121,6 +123,6 @@
     const sort=v=>Array.isArray(v)?v.map(sort):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])])):v;
     return JSON.stringify(sort(value));
   }
-  root.BookmarkCore = { key, validUrl, flatten, validate, plan, restore, stableStringify };
+  root.BookmarkCore = { key, browserUrlEqual, validUrl, flatten, validate, plan, restore, stableStringify };
   if (typeof module !== 'undefined') module.exports = root.BookmarkCore;
 })(globalThis);

@@ -37,10 +37,11 @@ async function captureSnapshot(reason='手动备份') {
   const convert=n=>{
     const record=identity[n.id];
     const uid=record && record.dateAdded===n.dateAdded ? record.uid : crypto.randomUUID();
-    next[n.id]={uid,dateAdded:n.dateAdded};
+    const syncUrl=record?.dateAdded===n.dateAdded&&record.syncUrl&&BK.browserUrlEqual(record.syncUrl,n.url)?record.syncUrl:null;
+    next[n.id]={uid,dateAdded:n.dateAdded,...(syncUrl?{syncUrl}:{})};
     const folded=data.folderCollapsed?.[`${n.id}:${n.dateAdded||0}`];
     if(!n.url&&typeof folded==='boolean')folderState[uid]=folded;
-    return {uid,id:n.id,title:n.title,dateAdded:n.dateAdded,...(n.url?{url:n.url}:{children:(n.children||[]).map(convert)})};
+    return {uid,id:n.id,title:n.title,dateAdded:n.dateAdded,...(n.url?{url:syncUrl||n.url}:{children:(n.children||[]).map(convert)})};
   };
   const children=bar.children.map(convert);
   if(BK.stableStringify(identity)!==BK.stableStringify(next))await chrome.storage.local.set({bookmarkIdentity:next});

@@ -12,7 +12,7 @@
 <div class="overview"><div><small>当前备份方案</small><strong id="mode-status">正在读取…</strong></div><div><small>最近本机版本</small><strong id="local-status">—</strong></div><div><small>最近云端上传</small><strong id="remote-status">—</strong></div><div><small>最近同步核验</small><strong id="overview-sync">正在读取…</strong></div></div>
 <div class="overview-action"><p id="overview-next" class="muted">正在读取配置与同步状态…</p><button id="overview-action" type="button">查看当前状态</button></div><div class="section-tools"><button id="expand-all" type="button">展开全部</button><button id="collapse-all" type="button">收起全部</button></div>
 <p id="status" class="status" role="status" aria-live="polite"></p><p id="error" class="error" role="alert"></p><button id="reconnect-page" type="button" hidden>重新加载此页面</button>
-<section id="recovery-notice" class="card" role="status" hidden><h2>自动任务已暂停，需要处理未完成操作</h2><p id="recovery-note"></p><div class="action-row"><button id="recovery-history" type="button">查看本机保护副本</button><button id="recovery-sync" type="button">重新预览同步</button></div></section>
+<section id="recovery-notice" class="card" role="status" hidden><h2>自动任务已暂停，需要处理未完成操作</h2><p id="recovery-note"></p><div class="action-row"><button id="recovery-history" type="button">查看本机保护副本</button><button id="recovery-sync" type="button">立即同步 · 以云端恢复</button></div></section>
 <details id="backup-mode" class="card section-card toc-section" open><summary><span class="step">1</span><h2>备份方案</h2><span class="section-status" data-summary="backup-mode">正在读取…</span></summary><div class="section-content">
 <form id="policy-form"><fieldset class="mode-grid"><legend class="sr-only">备份方案</legend>
 <label class="mode-card"><input type="radio" name="mode" value="webdav"><span class="mode-top">坚果云 WebDAV <em>推荐</em></span><span class="muted">直接同步多台浏览器的书签、备注和标签，同时保留独立历史版本。</span></label>
@@ -43,9 +43,9 @@
 <article><h3>预览恢复 / 确认恢复</h3><p>确认后按指定版本修改书签栏，包括新增、删除与移动。先自动保存保护副本；已开启的 Google 书签同步可能把恢复结果传播到其他设备。</p></article>
 </div><div class="history-toolbar"><div class="tabs" role="tablist" aria-label="版本来源"><button id="local-tab" role="tab" aria-selected="true" aria-controls="local-panel">本机历史</button><button id="cloud-tab" role="tab" aria-selected="false" aria-controls="cloud-panel" tabindex="-1">坚果云历史</button></div><button id="refresh">刷新</button></div><div id="local-panel" role="tabpanel" aria-labelledby="local-tab"><div id="history" class="history"></div><p class="muted footnote">本机副本随扩展存放，卸载扩展或删除浏览器资料可能丢失。手动备份和恢复前保护会保留副本，即使选择纯本地。</p><button id="clear-local" class="quiet danger">清空本机备份历史…</button></div><div id="cloud-panel" role="tabpanel" aria-labelledby="cloud-tab" hidden><div class="action-row"><label class="period-label">月份<select id="cloud-period"><option value="">根目录 · 兼容旧版本</option></select></label><button id="cloud-list">读取云端历史</button></div><p id="cloud-status" class="status" role="status"></p><div id="cloud-history" class="history"><p class="empty">连接后，点击「读取云端历史」。</p></div><p class="muted footnote">云端历史由独立快照组成，不依赖坚果云文件的历史版本。旧快照不会自动删除；本页不会删除云端文件。</p></div></div></details>
 <details id="continuous-sync" class="card section-card toc-section" open><summary><span class="step">5</span><h2>多设备同步</h2><span class="section-status" data-summary="continuous-sync">正在读取…</span></summary><div class="section-content"><p class="muted">同一个账号与完整目录，连接同一套书签；每台浏览器分别开启自动同步。</p><div id="latest-card" class="latest-card" data-state="off"><div><small>共享资料状态</small><strong id="latest-state">尚未检查最新版</strong><p id="latest-detail" class="muted">完成首次同步后，这里会显示本机与坚果云的版本关系。</p></div><button id="latest-check" type="button">检查最新版</button></div>
-<div class="action-row"><button id="sync-preview" class="primary">验证并预览同步</button><label class="check-row sync-auto"><input id="sync-auto" type="checkbox">每分钟自动跟随最新版</label></div>
+<div class="action-row"><button id="sync-now" type="button" class="primary">立即同步 · 冲突保留云端版本</button><p class="muted">正常新增和修改会上传；同一项两边发生冲突时保留云端内容。中断恢复以云端共同版本为准，写入前保留保护备份，成功后自动开启持续同步。</p><button id="sync-preview">高级：查看详细差异</button><label class="check-row sync-auto"><input id="sync-auto" type="checkbox">每分钟自动跟随最新版</label></div>
 <p id="sync-status" class="status" role="status"></p><section class="verification-card" aria-label="同步核验回执"><h3>最近一次同步核验</h3><p id="sync-receipt">尚无读回校验记录。</p><p class="muted">这里只确认当前浏览器与坚果云在该时刻一致，不代表其他设备已经收到。另一台浏览器显示相同的云端版本与内容指纹，才说明它也完成了这版同步。</p><details><summary>查看版本与内容指纹</summary><p id="sync-proof" class="proof"></p></details><button id="refresh-receipts" type="button">刷新核验状态</button></section>
-<p class="muted footnote">首次确认前不会同步书签。首次验证会创建并清理一个不含书签的测试文件，检查多设备同时写入时能否防止覆盖。自动同步需先完成一次手动同步。</p>
+<p class="muted footnote">首次点击「立即同步」前不会同步书签。首次验证会创建并清理一个不含书签的测试文件，检查多设备同时写入时能否防止覆盖。立即同步成功后自动开启持续同步。</p>
 </div></details><details id="help-section" class="card section-card toc-section" open><summary><span class="step">6</span><h2>使用说明</h2><span class="section-status" data-summary="help-section">正在读取…</span></summary><div class="section-content"><div class="notice"><h3>连接成功，不等于同步完成</h3>
 <p><strong>连接已验证：</strong>账号、目录可用，允许云备份；尚不代表书签已经合并。</p>
 <p><strong>云备份已核验：</strong>备份文件上传后已下载核对；不会因此把云端书签应用到另一台浏览器。</p>
@@ -80,26 +80,26 @@
 <ol>
 <li>设备名称已自动起好，可直接沿用；想换名字时修改后点击「保存方案」。</li>
 <li>填写坚果云账号、应用密码和专用目录，点击「验证连接并启用云备份」。这一步启用备份上传，还不会合并书签。</li>
-<li>在「多设备同步」中点击「验证并预览同步」。如果云端没有共享同步资料，会预览将本机资料作为起点上传。</li>
-<li>检查变化，有冲突先选择，再点击预览区的「确认同步」。之后可勾选「每分钟自动跟随最新版」。</li>
+<li>在「多设备同步」中点击「立即同步」。云端没有共享资料时，将本机资料作为起点上传。</li>
+<li>同步成功后自动开启「每分钟自动跟随最新版」，无需逐条确认。</li>
 </ol></article>
 <article><h4>第二台及后续电脑：连接同一套资料</h4>
 <ol>
 <li>安装书签首页并打开本页，会自动获得本机名称。可直接沿用，或改成自己容易辨认的名称后保存。</li>
 <li>填写第一台使用的同一账号、同一完整目录，以及有效应用密码，验证连接。</li>
-<li>点击「验证并预览同步」。本机为空时加入云端资料；本机已有书签时合并双方，相同条目会尝试匹配。</li>
-<li>确认名称、位置和其他字段的冲突选择，完成「确认同步」，再开启这台浏览器的自动同步。</li>
+<li>点击「立即同步」。本机为空时下载云端资料；已有书签会参与合并，同一项存在冲突时保留云端版本。</li>
+<li>等待读回核验成功，之后这台浏览器自动跟随共同版本。</li>
 </ol></article>
 </div>
-<div class="notice"><strong>已经上传过备份，为什么还要确认一次同步？</strong>
+<div class="notice"><strong>备份与共同版本有什么区别？</strong>
 <p>历史备份保存的是某一时刻的版本，共享同步资料保存的是各设备共同维护的内容。已有历史备份不会自动成为同步起点；请先在资料最完整的浏览器完成首次同步。</p>
-<p>如果只想在另一台电脑留备份，验证连接后点击「立即备份」即可，不必执行同步。只有你希望两台电脑的书签、备注和标签合并并持续保持一致时，才继续确认同步。</p></div>
+<p>如果只想在另一台电脑留备份，验证连接后点击「立即备份」即可，不必执行同步。只有你希望两台电脑的书签、备注和标签合并并持续保持一致时，才点击「立即同步」。</p></div>
 <details class="sync-help"><summary>以后新增、修改、删除，会发生什么？</summary>
-<p>完成首次同步后，书签首页按上次共同版本合并两端变化。新增与修改会传到其他已配置的浏览器，删除也会传播；同一字段有冲突或疑似旧内容回流时，自动同步会暂停，等待你处理。</p>
+<p>完成首次同步后，书签首页按上次共同版本合并两端变化。新增与修改会传到其他已配置的浏览器，删除也会传播；同一字段有冲突或旧内容回流时，以云端版本为准，不要求逐条选择。写入前自动保存保护副本；网络错误、并发变化或核验失败仍会停止本次操作并显示原因。</p>
 <p>Google 书签同步与坚果云同步是两条独立通道，都能修改浏览器书签。可以并存，但不能保证任何交错操作都没有冲突。Google 书签同步不传递书签首页的备注、标签和颜色，这些由书签首页同步。</p>
-<p>自动同步需要浏览器运行。每台浏览器分别完成首次同步、分别勾选自动同步；后台每分钟检查一次，设备之间随机错开 5 到 25 秒。显示偏好和文件夹折叠状态各自保留。</p>
+<p>自动同步需要浏览器运行。每台浏览器分别完成首次同步、首次同步成功后自动开启持续同步；后台每分钟检查一次，设备之间随机错开 5 到 25 秒。显示偏好和文件夹折叠状态各自保留。</p>
 </details>
-</div></details><section id="sync-review" class="card" hidden><div class="section-title"><span class="step">↔</span><h2>同步前看一眼</h2></div><p id="sync-summary"></p><p id="sync-review-note" class="muted"></p><div id="sync-bulk" class="notice" hidden><p>下面显示同一条收藏两边不一致的内容。可先统一选择，再检查清单；只有点击「确认同步」才写入。</p><div class="action-row"><button id="sync-use-remote" type="button">这些差异全部保留云端版本</button><button id="sync-use-local" type="button">这些差异全部保留这台浏览器的版本</button></div></div><div id="sync-conflicts"></div><div class="sync-diffs"><div><h3>应用到本机</h3><ul id="sync-local-changes" class="preview-list"></ul></div><div><h3>保存到坚果云</h3><ul id="sync-cloud-changes" class="preview-list"></ul></div></div><div class="action-row"><button id="sync-update">按选择更新预览</button><button id="sync-apply" class="primary" disabled>确认同步</button><button id="sync-cancel">取消</button></div><p class="muted footnote">写入前保留保护版本。预览后任意一端有变化，会要求重新预览；发生中断时自动同步暂停，下次以保留双方的方式重新合并。</p></section>
+</div></details><section id="sync-review" class="card" hidden><div class="section-title"><span class="step">↔</span><h2>高级：同步差异</h2></div><p id="sync-summary"></p><p id="sync-review-note" class="muted"></p><div id="sync-bulk" class="notice" hidden><p>下面显示同一条收藏两边不一致的内容。可先统一选择，再检查清单；只有点击「确认同步」才写入。</p><div class="action-row"><button id="sync-use-remote" type="button">这些差异全部保留云端版本</button><button id="sync-use-local" type="button">这些差异全部保留这台浏览器的版本</button></div></div><div id="sync-conflicts"></div><div class="sync-diffs"><div><h3>应用到本机</h3><ul id="sync-local-changes" class="preview-list"></ul></div><div><h3>保存到坚果云</h3><ul id="sync-cloud-changes" class="preview-list"></ul></div></div><div class="action-row"><button id="sync-update">按选择更新预览</button><button id="sync-apply" class="primary" disabled>确认同步</button><button id="sync-cancel">取消</button></div><p class="muted footnote">写入前保留保护版本。预览后任意一端有变化，会要求重新预览；发生中断时自动同步暂停，下次以保留双方的方式重新合并。</p></section>
 <section id="preview" class="card" hidden><div class="section-title"><span class="step">4</span><h2>确认要回到的版本</h2></div><p id="preview-title"></p><p id="preview-summary" class="preview-summary"></p><p class="muted">只恢复书签栏及书签首页附属数据，其他书签根目录不受影响。恢复前自动保存当前完整状态；这份保护副本也会在纯本地方案中保留。</p><ul id="changes" class="preview-list"></ul><label class="check-row"><input id="sync-paused" type="checkbox">我已检查变化，知道已开启的浏览器账号同步也会传播这次恢复</label><p class="muted footnote">恢复会暂停书签首页自动同步。恢复完成后先检查内容，再预览同步到坚果云；浏览器账号同步可自行决定是否暂停。</p><div class="action-row"><button id="restore" class="primary" disabled>确认恢复到这个版本</button><button id="cancel-preview">取消</button></div></section>
 <footer>备份包含个人书签，请妥善保管下载文件。浏览器账号同步状态以浏览器设置为准。</footer>
 </main>

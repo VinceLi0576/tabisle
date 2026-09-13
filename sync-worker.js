@@ -4,7 +4,7 @@ let nativeLastChange=0,nativeRevision=0,syncGuard=null;
 function observeNative(type,id,info={}){
   nativeLastChange=Date.now();nativeRevision++;
   if(!syncGuard)return;
-  const at=syncGuard.expected.findIndex(e=>e.type===type&&(!e.id||e.id===id)&&(!e.parentId||e.parentId===info.parentId)&&(!e.title||e.title===info.title)&&(!e.url||e.url===info.url));
+  const at=syncGuard.expected.findIndex(e=>e.type===type&&(!e.id||e.id===id)&&(!e.parentId||e.parentId===info.parentId)&&(!e.title||e.title===info.title)&&(!e.url||BK.browserUrlEqual(e.url,info.url)));
   if(at>=0)syncGuard.expected.splice(at,1);else {
     syncGuard.dirty=true;
     if(!syncGuard.diagnostic){
@@ -175,8 +175,9 @@ async function applySync(token,auto=false){
       syncGuard.expected.push({type:method==='removeTree'?'remove':method,id:method==='create'?null:args[0],...(method==='create'?{parentId:fields.parentId,title:fields.title,url:fields.url}:method==='move'?{parentId:fields.parentId}:{})});
       const result=await bookmarkAPI[method](...args);check();return result;
     };
+    const desiredByUid=new Map(BK.flatten(p.candidate.children).map(n=>[n.uid,n]));
     const live=await BK.restore(api,current.barId,current,p.candidate,async(uid,n)=>{
-      check();identity[n.id]={uid,dateAdded:n.dateAdded};
+      check();const wanted=desiredByUid.get(uid);identity[n.id]={uid,dateAdded:n.dateAdded,...(wanted?.url&&wanted.url!==n.url&&BK.browserUrlEqual(wanted.url,n.url)?{syncUrl:wanted.url}:{})};
       // Persist each placement so an interrupted create can be identified on the next merge.
       if(!originalIds.has(n.id)){savedIdentity[n.id]=identity[n.id];await chrome.storage.local.set({bookmarkIdentity:savedIdentity});}
     });
@@ -194,6 +195,23 @@ async function applySync(token,auto=false){
     await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;}
 }
+async function syncCloudFirst(){
+  const {data,c}=await syncConfiguration();
+  if(data.syncVerified!==syncVerification(c))await verifySync(c);
+  let p;
+  if(data.syncInProgress){
+    const remote=await readSync(c);if(!remote.snapshot)throw Error('云端没有可恢复的共同版本，已保留本机资料');
+    const current=await captureSnapshot('以云端恢复前');
+    const candidate=portable(remote.snapshot),plan=BK.plan(current,candidate);
+    p={token:crypto.randomUUID(),fingerprint:await fingerprint(current),endpoint:syncEndpoint(c),remote,candidate,conflicts:[],unresolved:0,tombstones:data.syncTombstones||[],first:false,recovery:true,localChanges:plan.changes,cloudChanges:[],metaChanged:plan.metaChanged,largeDeletion:false};
+    await chrome.storage.session.set({syncPreview:p});
+  }else{
+    p=await prepareSync({},true);
+    if(p.unresolved){const choices=Object.fromEntries(p.conflicts.map(c=>[c.id,'remote']));p=await prepareSync(choices,true);}
+  }
+  await applySync(p.token);
+  await chrome.storage.local.set({syncAuto:true});return true;
+}
 async function maybeSync(){
   const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
@@ -204,12 +222,13 @@ async function maybeSync(){
       await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:''});
       return;
     }
-    const p=await prepareSync();await applySync(p.token,true);
+    await syncCloudFirst();
   }catch(e){await chrome.storage.local.set({syncError:e.message,syncAuto:false});}
 }
 async function syncAction(message){
   switch(message.type){
     case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
+    case 'SYNC_NOW':return syncCloudFirst();
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);
     case 'SYNC_LATEST_STATUS':return latestSyncStatus();

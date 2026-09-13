@@ -193,7 +193,7 @@ test('account sync arrivals before WebDAV align new folders and links, preserve 
  assert.equal((await b.api.children(arrived.id))[0].id,arrived.children[0].id);
  assert.equal(b.local.data.meta.items['https://article.test'].name,'My note');assert.equal(writes(),before);
 });
-test('account sync reintroducing a deleted bookmark pauses automatic WebDAV sync for review',async()=>{
+test('account sync reintroducing a deleted bookmark follows cloud deletion without manual review',async()=>{
  const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
  const sync=async w=>{const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.unresolved,0);await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});};
  const [x]=await a.api.seed([link('x','Article','https://article.test')]);await sync(a);await sync(b);
@@ -201,10 +201,11 @@ test('account sync reintroducing a deleted bookmark pauses automatic WebDAV sync
  const before=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body;
  await b.api.create({parentId:'1',title:'Article',url:'https://article.test'});
  await b.call('syncAction',{type:'SYNC_AUTO',enabled:true});b.local.data.lastSyncAt='2020-01-01';await b.call('maybeSync',{});
- assert.equal(b.local.data.syncAuto,false);assert(b.local.data.syncError);
+ assert.equal(b.local.data.syncAuto,true);assert.equal(b.local.data.syncError,'');
  assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,before);
- assert.equal((await b.api.children('1')).length,1);
- const p=await b.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.conflicts.some(c=>c.field.includes('回流')));assert(p.unresolved>0);
+ assert.equal((await b.api.children('1')).length,0);
+ assert(b.local.data.lastSyncReceipt);
+ const p=await b.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.unresolved,0);
 });
 test('stale local or remote sync previews never apply; failed write response keeps recovery marker and stops automation',async()=>{
  const server=davServer(),a=await syncedWorker(server);const [n]=await a.api.seed([link('x','X','https://x.test')]);let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.api.update(n.id,{title:'Changed'});
@@ -216,12 +217,14 @@ test('stale local or remote sync previews never apply; failed write response kee
  await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/lost sync response/);assert(a.local.data.syncInProgress);assert.equal(a.local.data.syncAuto,false);
  p=await a.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.recovery);assert(p.first);assert.equal(p.unresolved,0);await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert(!a.local.data.syncInProgress);assert.equal((await a.api.children('1')).length,1);
 });
-test('automatic sync pauses on conflicting edits and keeps both original values for review',async()=>{
+test('automatic sync adopts cloud conflict value and keeps a recoverable local snapshot',async()=>{
  const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);const [n]=await a.api.seed([link('x','X','https://x.test')]);
  for(const w of [a,b]){const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});}
  await a.api.update(n.id,{title:'A'});const [bn]=await b.api.children('1');await b.api.update(bn.id,{title:'B'});
  let p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
- await a.call('syncAction',{type:'SYNC_AUTO',enabled:true});a.local.data.lastSyncAt='2020-01-01';await a.call('maybeSync',{});assert.equal(a.local.data.syncAuto,false);assert.match(a.local.data.syncError,/冲突|选择/);assert.equal((await a.api.get(n.id)).title,'A');
+ await a.call('syncAction',{type:'SYNC_AUTO',enabled:true});a.local.data.lastSyncAt='2020-01-01';await a.call('maybeSync',{});assert.equal(a.local.data.syncAuto,true);assert.equal(a.local.data.syncError,'');assert.equal((await a.api.get(n.id)).title,'B');
+ const backups=await a.call('backupAction',{type:'BACKUP_STATUS'});assert(backups.backups.length>0);
+ assert.equal(a.local.data.lastSyncReceipt.uploaded,false);
 });
 test('CAS race after preview cannot overwrite a newer cloud document',async()=>{
  const server=davServer(),w=await syncedWorker(server);const [n]=await w.api.seed([link('x','X','https://x.test')]);let p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
@@ -409,4 +412,31 @@ test('a failed automatic snapshot backs off instead of retrying at every status 
  const schedule=await w.call('automationStatus');assert.equal(schedule.backup.nextAt,clock.now+300000);
  await w.call('maybeBackup');await w.call('automationStatus');assert.equal(attempts,1);
  clock.now=schedule.backup.nextAt;await assert.rejects(()=>w.call('maybeBackup'),/temporarily unavailable/);assert.equal(attempts,2);
+});
+test('cloud-first interrupted recovery downloads shared version and preserves pre-recovery snapshot',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([folder('f','Cloud',[link('x','Kept','https://kept.test')])]);
+ await a.call('syncAction',{type:'SYNC_NOW'});
+ await b.api.seed([link('y','Interrupted local','https://local.test')]);
+ b.local.data.syncInProgress={operation:'interrupted'};
+ const before=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body;
+ await b.call('syncAction',{type:'SYNC_NOW'});
+ assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,before);
+ const roots=await b.api.children('1');assert.equal(roots.length,1);assert.equal(roots[0].title,'Cloud');
+ assert.equal(b.local.data.syncInProgress,null);assert.equal(b.local.data.syncAuto,true);
+ assert.equal(b.local.data.lastSyncReceipt.uploaded,false);assert.equal(b.local.data.lastSyncReceipt.count,1);
+ const status=await b.call('backupAction',{type:'BACKUP_STATUS'});
+ const saved=await Promise.all(status.backups.map(x=>b.call('backupAction',{type:'BACKUP_GET',id:x.id})));
+ assert(saved.some(s=>Core.flatten(s.children).some(n=>n.url==='https://local.test')));
+});
+test('Edge native alias round-trips the shared URL without echo uploads',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','Bookmarks','chrome://bookmarks/')]);await a.call('syncAction',{type:'SYNC_NOW'});
+ const create=b.api.create.bind(b.api);b.api.create=p=>create({...p,url:p.url==='chrome://bookmarks/'?'edge://favorites/':p.url});
+ await b.call('syncAction',{type:'SYNC_NOW'});
+ assert.equal((await b.api.children('1'))[0].url,'edge://favorites/');
+ assert.equal(b.local.data.lastSyncReceipt.sha256,a.local.data.lastSyncReceipt.sha256);
+ await b.call('syncAction',{type:'SYNC_NOW'});assert.equal(b.local.data.lastSyncReceipt.uploaded,false);
+ const [n]=await b.api.children('1');await b.api.update(n.id,{url:'https://changed.test'});
+ await b.call('syncAction',{type:'SYNC_NOW'});assert.equal(b.local.data.lastSyncReceipt.uploaded,true);
 });
