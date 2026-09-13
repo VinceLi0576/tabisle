@@ -12,7 +12,8 @@ window.addEventListener('bm-ready', () => {
   };
   const DEFAULT_AI = { key: '', provider: 'kimicode', base: PROVIDERS.kimicode.base, model: 'k3', temperature: 0.3 };
   let ai = { ...DEFAULT_AI };
-  let history = [];          // OpenAI 格式 messages（不含 system）
+  let history = [];
+  let lastBatch = null;      // 上一批 AI 改动的逆操作日志（只存内存，刷新即失）          // OpenAI 格式 messages（不含 system）
   let proposal = null;       // { summary, changes: [...] }
   let busy = false;
   let usage = { in: 0, out: 0 };
@@ -110,35 +111,103 @@ window.addEventListener('bm-ready', () => {
     $('#ai-apply').onclick = applyProposal;
     $('#ai-discard').onclick = () => { proposal = null; renderProposal(); addMsg('sys', '已放弃这批改动'); };
   }
+  // ── 批量撤销：倒着重放逆操作。只碰这批动过的节点，🚫 不整树恢复 ──
+  function renderUndo() {
+    const box = $('#ai-proposal');
+    const old = $('#ai-undo-bar'); if (old) old.remove();
+    if (!lastBatch) return;
+    showPanel(true);
+    const bar = document.createElement('div');
+    bar.className = 'ai-prop-actions'; bar.id = 'ai-undo-bar';
+    bar.innerHTML = `<span class="ai-undo-note">上一批改了 ${lastBatch.n} 项</span>` +
+      `<button type="button" class="btn" id="ai-undo">撤销这批</button>` +
+      `<button type="button" class="btn ghost" id="ai-undo-keep">保留</button>`;
+    box.parentElement.insertBefore(bar, box.nextSibling);
+    $('#ai-undo').onclick = undoBatch;
+    $('#ai-undo-keep').onclick = () => { lastBatch = null; renderUndo(); };
+  }
+  async function undoBatch() {
+    if (!lastBatch || busy) return;
+    busy = true; const btn = $('#ai-undo'); if (btn) btn.disabled = true;
+    const store = BM.store;
+    const api = {
+      find: (id) => BM.findNode(String(id)),
+      children: (id) => store.children(String(id)),
+      create: (props) => store.create(props),
+      update: (id, patch) => store.update(String(id), patch),
+      move: (id, dest) => store.move(String(id), dest),
+      remove: (id) => store.remove(String(id)),
+      // 🔴 重建出来的节点要先进内存树，后面的逆操作才找得到
+      removeTree: async (id) => { await store.removeTree(String(id)); await BM.refresh(); },
+      setMeta: (url, snap) => BM.setItemMeta(url, snap),
+      removeTag: (id) => { BM.meta.tags = BM.tagList().filter((t) => t.id !== id); BM.saveMeta(); },
+      setGroup: (title, val) => { if (val) BM.meta.groups[title] = val; else delete BM.meta.groups[title]; BM.saveMeta(); },
+    };
+    const wrapped = { ...api, create: async (props) => { const r = await store.create(props); await BM.refresh(); return r; } };
+    const { ok, skipped } = await AiCore.replayUndo(lastBatch.journal, wrapped);
+    lastBatch = null; busy = false;
+    await BM.refresh(); renderUndo();
+    addMsg('sys', `已撤销 ${ok} 项${skipped.length ? `，${skipped.length} 项没能撤销：` + skipped.slice(0, 3).join('；') : ''}`);
+    BM.toast(`已撤销 ${ok} 项${skipped.length ? `，${skipped.length} 项跳过` : ''}`);
+  }
+  // 🔴 批次内前面的改动还没回写内存树：标题和位置都必须从数据层实读。
+  //    用 BM.findNode 会拿到旧标题，重建出来的节点对不上，后面「改名」的逆操作会误判成「被用户改过」而跳过。
+  async function readSubtree(live) {
+    const node = { id: String(live.id), title: live.title || '', url: live.url || undefined, children: [] };
+    if (node.url) return node;
+    for (const k of await BM.store.children(node.id)) node.children.push(await readSubtree(k));
+    return node;
+  }
+
   async function applyProposal() {
     if (!proposal) return;
     const picked = $$('#ai-proposal input[type=checkbox]').filter((c) => c.checked).map((c) => proposal.changes[Number(c.dataset.i)]);
     if (!picked.length) return;
-    const refs = {}; let done = 0, fail = 0; const errs = [];
+    const refs = {}; let done = 0, fail = 0; const errs = []; const journal = [];
     const R = (v) => (typeof v === 'string' && v.startsWith('$')) ? (refs[v.slice(1)] || refs[v] || v) : v;
     const store = BM.store; const barId = BM.bar.id;
+    let marked = 0;
     for (const ch of picked) {
       try {
         if ((ch.id && isLocked(ch.id)) || (ch.parent_id && !String(ch.parent_id).startsWith('$') && isLocked(ch.parent_id))) throw new Error('目标在锁定的文件夹里');
         switch (ch.op) {
-          case 'move': { const kids = await store.children(R(ch.parent_id) || barId); await store.move(String(ch.id), { parentId: String(R(ch.parent_id) || barId), index: ch.index != null ? Number(ch.index) : kids.length }); break; }
-          case 'rename': await store.update(String(ch.id), { title: String(ch.title) }); break;
-          case 'set_url': { const n = BM.findNode(String(ch.id)); await store.update(String(ch.id), { url: String(ch.url) }); if (n) { const m = BM.itemMeta(n.url); if (Object.keys(m).length) BM.setItemMeta(ch.url, m); } break; }
-          case 'meta': { const n = BM.findNode(String(ch.id)); if (!n || !n.url) throw new Error('不是书签'); const patch = {}; if (ch.alias != null) patch.name = String(ch.alias); if (ch.desc != null) patch.desc = String(ch.desc); if (ch.emoji != null) patch.icon = String(ch.emoji); if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); BM.setItemMeta(n.url, patch); break; }
-          case 'create_folder': { const f = await store.create({ parentId: String(R(ch.parent_id) || barId), title: String(ch.title || '新文件夹'), ...(ch.index != null ? { index: Number(ch.index) } : {}) }); if (ch.ref) refs[ch.ref] = f.id; if (ch.color) { BM.meta.groups[f.title] = { color: ch.color }; BM.saveMeta(); } break; }
-          case 'create_bookmark': { let url = String(ch.url || ''); if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url; const b = await store.create({ parentId: String(R(ch.parent_id) || barId), title: String(ch.title || BM.host(url)), url }); if (ch.ref) refs[ch.ref] = b.id; const patch = {}; if (ch.alias) patch.name = ch.alias; if (ch.desc) patch.desc = ch.desc; if (ch.emoji) patch.icon = ch.emoji; if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); if (Object.keys(patch).length) BM.setItemMeta(url, patch); break; }
-          case 'delete': { const n = BM.findNode(String(ch.id)); if (!n) throw new Error('不存在'); if (n.url) await store.remove(n.id); else await store.removeTree(n.id); break; }
-          case 'sort_folder': { const id = String(ch.id); const kids = (await store.children(id)).filter((k) => k.url); const keyOf = (k) => { const d = BM.domainParts(k.url); const m = BM.itemMeta(k.url); return ch.by === 'title' ? k.title : ch.by === 'alias' ? (m.name || k.title) : [d.root, d.pre, BM.label(k)].join(' '); }; for (const k of [...kids].sort((x, y) => keyOf(x).localeCompare(keyOf(y), 'zh'))) await store.move(k.id, { parentId: id, index: (await store.children(id)).length }); break; }
-          case 'add_tag': { if (BM.tagList().length >= BM.MAX_TAGS) throw new Error('标签已满 9 个'); const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), glyph: String(ch.glyph || ch.name || '标').slice(0, 2), name: String(ch.name || ''), desc: String(ch.desc || ''), color: ch.color || BM.PALETTE[BM.tagList().length % BM.PALETTE.length] }; BM.meta.tags.push(t); BM.saveMeta(); if (ch.ref) refs[ch.ref] = t.id; break; }
-          case 'set_folder_color': { const n = BM.findNode(String(ch.id)); if (!n) throw new Error('不存在'); BM.meta.groups[n.title] = { ...(BM.meta.groups[n.title] || {}), color: ch.color }; BM.saveMeta(); break; }
+          case 'move': { const cur = BM.findNode(String(ch.id)); if (!cur) throw new Error('不存在');
+            const sibs = await store.children(cur.parentId); const oldIndex = sibs.findIndex((k) => String(k.id) === String(ch.id));
+            journal.push({ kind: 'move', id: String(ch.id), to: { parentId: String(cur.parentId), index: oldIndex < 0 ? sibs.length : oldIndex } });
+            const kids = await store.children(R(ch.parent_id) || barId); await store.move(String(ch.id), { parentId: String(R(ch.parent_id) || barId), index: ch.index != null ? Number(ch.index) : kids.length }); break; }
+          case 'rename': { const cur = BM.findNode(String(ch.id)); if (!cur) throw new Error('不存在');
+            journal.push({ kind: 'update', id: String(ch.id), to: { title: cur.title || '' }, after: { title: String(ch.title) } });
+            await store.update(String(ch.id), { title: String(ch.title) }); break; }
+          case 'set_url': { const n0 = BM.findNode(String(ch.id)); if (!n0) throw new Error('不存在');
+            journal.push({ kind: 'update', id: String(ch.id), to: { url: n0.url }, after: { url: String(ch.url) },
+              meta: [{ url: String(ch.url), snap: AiCore.metaSnapshot(BM.itemMeta(String(ch.url))) }] });
+            const n = BM.findNode(String(ch.id)); await store.update(String(ch.id), { url: String(ch.url) }); if (n) { const m = BM.itemMeta(n.url); if (Object.keys(m).length) BM.setItemMeta(ch.url, m); } break; }
+          case 'meta': { const n = BM.findNode(String(ch.id)); if (!n || !n.url) throw new Error('不是书签');
+            journal.push({ kind: 'meta', meta: [{ url: n.url, snap: AiCore.metaSnapshot(BM.itemMeta(n.url)) }] }); const patch = {}; if (ch.alias != null) patch.name = String(ch.alias); if (ch.desc != null) patch.desc = String(ch.desc); if (ch.emoji != null) patch.icon = String(ch.emoji); if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); BM.setItemMeta(n.url, patch); break; }
+          case 'create_folder': { journal.push({ kind: 'created' });
+            const f = await store.create({ parentId: String(R(ch.parent_id) || barId), title: String(ch.title || '新文件夹'), ...(ch.index != null ? { index: Number(ch.index) } : {}) }); journal[journal.length-1].id = f.id; if (ch.ref) refs[ch.ref] = f.id; if (ch.color) { BM.meta.groups[f.title] = { color: ch.color }; BM.saveMeta(); } break; }
+          case 'create_bookmark': { journal.push({ kind: 'created' });
+            let url = String(ch.url || ''); if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url; const b = await store.create({ parentId: String(R(ch.parent_id) || barId), title: String(ch.title || BM.host(url)), url }); journal[journal.length-1].id = b.id; journal[journal.length-1].meta = [{ url, snap: AiCore.metaSnapshot(BM.itemMeta(url)) }]; if (ch.ref) refs[ch.ref] = b.id; const patch = {}; if (ch.alias) patch.name = ch.alias; if (ch.desc) patch.desc = ch.desc; if (ch.emoji) patch.icon = ch.emoji; if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); if (Object.keys(patch).length) BM.setItemMeta(url, patch); break; }
+          case 'delete': { const n = BM.findNode(String(ch.id)); if (!n) throw new Error('不存在');
+            const sibs = await store.children(n.parentId); const at = sibs.findIndex((k) => String(k.id) === String(n.id));
+            journal.push({ kind: 'restore', parentId: String(n.parentId), index: at < 0 ? sibs.length : at, plan: AiCore.flattenForRebuild(await readSubtree(sibs[at] || { id: n.id, title: n.title, url: n.url })) }); if (n.url) await store.remove(n.id); else await store.removeTree(n.id); break; }
+          case 'sort_folder': { const sid = String(ch.id);
+            journal.push({ kind: 'order', id: sid, ids: (await store.children(sid)).map((k) => String(k.id)) });
+            const id = String(ch.id); const kids = (await store.children(id)).filter((k) => k.url); const keyOf = (k) => { const d = BM.domainParts(k.url); const m = BM.itemMeta(k.url); return ch.by === 'title' ? k.title : ch.by === 'alias' ? (m.name || k.title) : [d.root, d.pre, BM.label(k)].join(' '); }; for (const k of [...kids].sort((x, y) => keyOf(x).localeCompare(keyOf(y), 'zh'))) await store.move(k.id, { parentId: id, index: (await store.children(id)).length }); break; }
+          case 'add_tag': { if (BM.tagList().length >= BM.MAX_TAGS) throw new Error('标签已满 9 个');
+            journal.push({ kind: 'tagAdded' }); const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), glyph: String(ch.glyph || ch.name || '标').slice(0, 2), name: String(ch.name || ''), desc: String(ch.desc || ''), color: ch.color || BM.PALETTE[BM.tagList().length % BM.PALETTE.length] }; BM.meta.tags.push(t); BM.saveMeta(); journal[journal.length-1].id = t.id; if (ch.ref) refs[ch.ref] = t.id; break; }
+          case 'set_folder_color': { const n = BM.findNode(String(ch.id)); if (!n) throw new Error('不存在');
+            journal.push({ kind: 'group', title: n.title, to: BM.meta.groups[n.title] ? { ...BM.meta.groups[n.title] } : null }); BM.meta.groups[n.title] = { ...(BM.meta.groups[n.title] || {}), color: ch.color }; BM.saveMeta(); break; }
           default: throw new Error('不认识的操作 ' + ch.op);
         }
-        done++;
-      } catch (e) { fail++; errs.push(`${OPNAME[ch.op] || ch.op}：${e.message || e}`); }
+        done++; marked = journal.length;
+      } catch (e) { journal.length = marked; fail++; errs.push(`${OPNAME[ch.op] || ch.op}：${e.message || e}`); }
     }
     proposal = null; renderProposal();
     await BM.refresh();
-    addMsg('sys', `已执行 ${done} 项${fail ? '，失败 ' + fail + ' 项：' + errs.slice(0, 3).join('；') : ''}`);
+    lastBatch = journal.length ? { journal, at: Date.now(), n: done } : null;
+    renderUndo();
+    addMsg('sys', `已执行 ${done} 项${fail ? '，失败 ' + fail + ' 项：' + errs.slice(0, 3).join('；') : ''}${journal.length ? '（可撤销这批）' : ''}`);
     history.push({ role: 'user', content: `[系统] 用户执行了 ${done} 项改动${fail ? '，' + fail + ' 项失败' : ''}。` });
   }
 
@@ -271,6 +340,12 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     };
     dlg.showModal(); (ai.key ? $('#ai-model') : $('#ai-key')).focus();
   }
+  // 调试口：CDP 里直接灌一批改动走真实的预览/执行/撤销路径（同 app.js 的 window.__store）
+  window.__ai = {
+    propose(changes, summary) { proposal = { summary: summary || '调试注入', changes }; renderProposal(); },
+    get batch() { return lastBatch; },
+    undo: () => undoBatch(),
+  };
   $('#ai-settings').addEventListener('click', openSettings);
   $('#ai-toggle').addEventListener('click', () => showPanel($('#ai-panel').hidden));
   $('#ai-close').addEventListener('click', () => showPanel(false));
@@ -284,7 +359,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     if (urls) stashUrls(urls); else send(t);     // 粘网址＝直接入库；打整句话才走对话
   });
   $('#ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#ai-send').click(); } });
-  $('#ai-clear').addEventListener('click', () => { history = []; $('#ai-log').innerHTML = ''; proposal = null; renderProposal(); usage = { in: 0, out: 0 }; paintStatus(); });
+  $('#ai-clear').addEventListener('click', () => { history = []; lastBatch = null; renderUndo(); $('#ai-log').innerHTML = ''; proposal = null; renderProposal(); usage = { in: 0, out: 0 }; paintStatus(); });
   $$('#ai-quick button').forEach((b) => b.addEventListener('click', () => { $('#ai-input').value = b.dataset.q; $('#ai-send').click(); }));
   paintStatus();
 });

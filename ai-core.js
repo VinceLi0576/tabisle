@@ -44,6 +44,87 @@
     } catch { return href; }
   }
 
-  root.AiCore = { trimHistory, pairingOk, parseUrls, nameFromUrl };
+  // 附属数据是「整条替换」语义：要还原成旧样子，四个字段都得显式给值，
+  // 旧的没有的字段必须给空（setItemMeta 会把空值删掉），否则新写进去的会留下来。
+  const META_KEYS = ['name', 'desc', 'icon', 'tags'];
+  function metaSnapshot(m) {
+    const out = {};
+    for (const k of META_KEYS) out[k] = k === 'tags' ? [...((m && m.tags) || [])] : ((m && m[k]) || '');
+    return out;
+  }
+  // 把一棵子树拍平成「先父后子」的重建清单，父的下标在前，保证重建时父先存在
+  function flattenForRebuild(node) {
+    const out = [];
+    const walk = (n, parentKey) => {
+      const key = out.length;
+      out.push({ key, parentKey, id: n.id != null ? String(n.id) : undefined, title: n.title || '', url: n.url || undefined });
+      for (const c of n.children || []) walk(c, key);
+    };
+    walk(node, null);
+    return out;
+  }
+  // 撤销必须倒着放：正着放会让后面每一步依赖前一步改完的位置
+  const reverseOrder = (journal) => [...(journal || [])].reverse();
+
+  const UNDONAME = { update: '改名/改址', move: '移动', created: '新建', restore: '删除',
+                     order: '排序', tagAdded: '新增标签', group: '夹颜色', meta: '备注' };
+
+  // 倒着重放逆操作。api 由调用方注入，便于在浏览器外用假数据层测。
+  // 约定：每条逆操作之前先核对现状；对不上就跳过并记原因，🚫 不硬盖。
+  async function replayUndo(journal, api) {
+    const remap = new Map();
+    const R = (id) => String(remap.get(String(id)) || id);
+    let ok = 0; const skipped = [];
+    const why = (e, msg) => skipped.push(`撤销「${UNDONAME[e.kind] || e.kind}」：${msg}`);
+    for (const e of reverseOrder(journal)) {
+      try {
+        if (e.after) {
+          const cur = await api.find(R(e.id));
+          if (!cur) { why(e, '目标已不存在'); continue; }
+          const changed = Object.entries(e.after).some(([k, v]) => String(cur[k] ?? '') !== String(v ?? ''));
+          if (changed) { why(e, `「${cur.title || cur.url}」这期间被改过`); continue; }
+        }
+        switch (e.kind) {
+          case 'update': await api.update(R(e.id), e.to); break;
+          case 'move': {
+            if (!(await api.find(R(e.id)))) { why(e, '目标已不存在'); continue; }
+            await api.move(R(e.id), { ...e.to, parentId: R(e.to.parentId) });
+            break;
+          }
+          case 'created': {
+            const cur = await api.find(R(e.id));
+            if (!cur) { why(e, '新建的那条已不在'); continue; }
+            if (cur.url) await api.remove(R(e.id)); else await api.removeTree(R(e.id));
+            break;
+          }
+          case 'restore': {
+            const made = {};
+            for (const it of e.plan) {
+              const parentId = it.parentKey === null ? R(e.parentId) : made[it.parentKey];
+              if (!parentId) throw new Error('父夹已不在');
+              const props = { parentId: String(parentId), title: it.title };
+              if (it.url) props.url = it.url;
+              if (it.parentKey === null && e.index != null) props.index = e.index;
+              const born = await api.create(props);
+              made[it.key] = String(born.id);
+              if (it.id) remap.set(String(it.id), String(born.id));   // 重建后是新 id，后面的逆操作要跟着换
+            }
+            break;
+          }
+          case 'order':
+            for (const id of e.ids) { try { await api.move(R(id), { parentId: R(e.id), index: (await api.children(R(e.id))).length }); } catch {} }
+            break;
+          case 'tagAdded': await api.removeTag(e.id); break;
+          case 'group': await api.setGroup(e.title, e.to); break;
+          case 'meta': break;   // 统一在下面还原
+        }
+        for (const m of e.meta || []) await api.setMeta(m.url, m.snap);
+        ok++;
+      } catch (err) { why(e, String((err && err.message) || err)); }
+    }
+    return { ok, skipped };
+  }
+
+  root.AiCore = { trimHistory, pairingOk, parseUrls, nameFromUrl, metaSnapshot, flattenForRebuild, reverseOrder, replayUndo, META_KEYS, UNDONAME };
   if (typeof module !== 'undefined') module.exports = root.AiCore;
 })(globalThis);
