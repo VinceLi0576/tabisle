@@ -2,6 +2,14 @@ importScripts('bookmark-core.js', 'backup-worker.js', 'sync-core.js', 'sync-work
 
 let taskTail = Promise.resolve();
 function queueTask(fn) { const task = taskTail.then(fn); taskTail = task.catch(() => {}); return task; }
+// A failed archival upload must not prevent sync from checking its own safeguards.
+// Keep both operations serial: they share bookmark identity and recovery state.
+async function runScheduledTasks() {
+  let backupError;
+  try { await maybeBackup(); } catch (error) { backupError = error; }
+  await maybeSync();
+  if (backupError) throw backupError;
+}
 const internal = (sender) => sender.id === chrome.runtime.id && sender.url?.startsWith(chrome.runtime.getURL(''));
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!internal(sender) || !message?.type) return;
@@ -15,7 +23,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return message.tree ? chrome.bookmarks.removeTree(message.id) : chrome.bookmarks.remove(message.id);
     }
     if (message.type === 'ICON_FETCH') return remoteIcon(message.host);
-    if (message.type === 'APP_READY') { await ensureBackupAlarm(); await maybeBackup(); return maybeSync(); }
+    if (message.type === 'APP_READY') { await ensureBackupAlarm(); return runScheduledTasks(); }
     throw Error('未知操作');
   };
   const result = message.type === 'ICON_FETCH' ? fn() : queueTask(fn);
@@ -24,9 +32,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true}).catch(console.error);
-chrome.runtime.onInstalled.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); await maybeSync(); }).catch(console.error));
-chrome.runtime.onStartup.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); await maybeSync(); }).catch(console.error));
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'daily-bookmark-backup') queueTask(async()=>{await maybeBackup();await maybeSync();}).catch(console.error); });
+chrome.runtime.onInstalled.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await runScheduledTasks(); }).catch(console.error));
+chrome.runtime.onStartup.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await runScheduledTasks(); }).catch(console.error));
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'daily-bookmark-backup') queueTask(runScheduledTasks).catch(console.error); });
 chrome.sidePanel.onClosed?.addListener(({windowId}) => chrome.storage.session.set({['editorOpen:'+windowId]:false}));
 chrome.sidePanel.onOpened?.addListener(({windowId}) => chrome.storage.session.set({['editorOpen:'+windowId]:true}));
 
