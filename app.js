@@ -106,8 +106,9 @@ chrome:// ⚙️`;
   const PALETTE = ['#2f6fdb', '#1f9d55', '#d08700', '#d64545', '#8e44ad', '#0e9aa7', '#e07a2f', '#5c6b7a', '#c2185b', '#3d8b40'];
 
   // ── 本机偏好 ──
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and' };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {} };
   let prefs = await store.prefs.get(DEFAULTS);
+  if (!prefs.folderCollapsed || typeof prefs.folderCollapsed !== 'object' || Array.isArray(prefs.folderCollapsed)) prefs.folderCollapsed = {};
   if (prefs.view !== 'list') prefs.view = 'card';
   function applyPrefs() {
     const h = document.documentElement;
@@ -115,7 +116,7 @@ chrome:// ⚙️`;
     $$('.seg').forEach((seg) => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.val === String(prefs[seg.dataset.key]))));
     $('#recent').classList.toggle('collapsed', !!prefs.recentCollapsed);
   }
-  const savePrefs = () => store.prefs.set(prefs);
+  const savePrefs = () => { const { folderCollapsed, ...display } = prefs; return store.prefs.set(display); };
   applyPrefs();
 
   // ── 附属数据 ──
@@ -326,6 +327,55 @@ chrome:// ⚙️`;
   }
 
   const LEVEL_COLORS = ['#2f6fdb', '#1f9d55', '#e07a2f', '#8e44ad'];
+  const isInbox = (f) => f.title?.trim().toLowerCase() === 'inbox';
+  const foldKey = (f) => `${f.id}:${f.dateAdded || 0}`;
+  function defaultCollapsed(f) {
+    for (let n = f; n; n = n.parentId ? findNode(n.parentId) : null) if (isInbox(n)) return true;
+    return false;
+  }
+  function folderCollapsed(f) {
+    const saved = prefs.folderCollapsed[foldKey(f)];
+    return typeof saved === 'boolean' ? saved : defaultCollapsed(f);
+  }
+  function levelMark(level) {
+    return `<span class="level-mark" aria-hidden="true" style="--level-count:${level}">${'<i></i>'.repeat(level)}</span>`;
+  }
+  function paintFold(section, collapsed) {
+    section.classList.toggle('is-collapsed', collapsed);
+    const body = section.querySelector(':scope > .body');
+    if (body) body.hidden = collapsed;
+    const button = section.querySelector(':scope > .head > .folder-toggle, :scope > .sub-head > .folder-toggle');
+    if (button) {
+      button.setAttribute('aria-expanded', String(!collapsed));
+      const title = section.querySelector(':scope > .head .title, :scope > .sub-head .title')?.textContent || '文件夹';
+      button.title = `${collapsed ? '展开' : '收起'}「${title}」`;
+      button.setAttribute('aria-label', button.title);
+    }
+  }
+  function initFold(section, f) {
+    section.classList.toggle('inbox-folder', isInbox(f));
+    section.querySelector(':scope > .body').id = 'folder-body-' + f.id;
+    paintFold(section, folderCollapsed(f));
+  }
+  async function toggleFolder(section) {
+    const f = findNode(section.dataset.id); if (!f) return;
+    const key = foldKey(f), previous = prefs.folderCollapsed[key];
+    const collapsed = !section.classList.contains('is-collapsed');
+    prefs.folderCollapsed[key] = collapsed;
+    paintFold(section, collapsed);
+    try { await store.prefs.set({ folderCollapsed: prefs.folderCollapsed }); }
+    catch {
+      if (previous === undefined) delete prefs.folderCollapsed[key]; else prefs.folderCollapsed[key] = previous;
+      paintFold(section, !collapsed); toast('折叠状态保存失败，请重试');
+    }
+  }
+  function revealFolder(id) {
+    const section = document.getElementById('sec-' + id); if (!section) return;
+    // 定位仅临时展开，不覆盖用户保存的折叠偏好。
+    for (let el = section; el; el = el.parentElement?.closest('.card, .sub')) paintFold(el, false);
+    if (search.value) { search.value = ''; renderSearch(); }
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   function markLevel(el, level) {
     el.dataset.level = level;
     el.style.setProperty('--level-color', LEVEL_COLORS[(level - 1) % LEVEL_COLORS.length]);
@@ -348,9 +398,11 @@ chrome:// ⚙️`;
     const counts = tagCounts(f);
     const gf = groupFilter.get(f.id) || new Set();
     head.innerHTML =
+      (opts.fixed ? '' : levelMark(opts.level || 1) + `<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
       (opts.fixed ? '' : `<span class="grip" draggable="true" title="拖动排序">⋮⋮</span>`) +
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLockedByTitle(f.title) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
+      (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
       (opts.tags ? `<span class="hd-subs">${(f.children || []).filter((c) => !c.url).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
@@ -367,6 +419,7 @@ chrome:// ⚙️`;
     const color = groupColor(f.title); if (color) sub.style.setProperty('--gc', color);
     sub.appendChild(headEl(f, 'sub-head', { level }));
     sub.appendChild(bodyEl(f, false, level));
+    initFold(sub, f);
     return sub;
   }
 
@@ -378,6 +431,7 @@ chrome:// ⚙️`;
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
     card.appendChild(bodyEl(f, !!opts.fixed));
+    if (!opts.fixed) initFold(card, f);
     return card;
   }
 
@@ -389,7 +443,7 @@ chrome:// ⚙️`;
     c.dataset.id = f.id; c.dataset.parent = parentId; c.dataset.kind = 'folder'; c.dataset.lv = lv;
     markLevel(c, lv);
     const col = groupColor(f.title); if (col) c.style.setProperty('--gc', col);
-    c.innerHTML = `<i class="swatch"></i><b class="title">${esc(f.title || '（未命名）')}</b>${folderLockedByTitle(f.title) ? '<em class="lk">🔒</em>' : ''}<u>${countUrls(f)}</u><span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
+    c.innerHTML = levelMark(lv) + `<i class="swatch"></i><b class="title">${esc(f.title || '（未命名）')}</b>${folderLockedByTitle(f.title) ? '<em class="lk">🔒</em>' : ''}<u>${countUrls(f)}</u><span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
     c.title = '拖动改顺序 · 点一下跳到那一组 · 右键改名/换色';
     return c;
   }
@@ -469,8 +523,7 @@ chrome:// ⚙️`;
     e.stopPropagation();
     const c = e.target.closest('.fchip'); if (!c || dragJustHappened) return;
     toggleOrganize(false);
-    const sec = document.getElementById('sec-' + c.dataset.id);
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    revealFolder(c.dataset.id);
   });
   $('#organize').addEventListener('contextmenu', (e) => {
     const c = e.target.closest('.fchip');
@@ -525,7 +578,8 @@ chrome:// ⚙️`;
       d.draggable = f.id !== bar.id;
       markLevel(d, depth + 1);
       const color = groupColor(f.title); if (color) d.style.setProperty('--gc', color);
-      d.innerHTML = `<span class="dot"></span><span class="nm">${esc(f.title || '（未命名）')}${folderLockedByTitle(f.title) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
+      d.classList.toggle('inbox-folder', isInbox(f));
+      d.innerHTML = levelMark(depth + 1) + `<span class="nm">${esc(f.title || '（未命名）')}${folderLockedByTitle(f.title) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
       d.title = f.title; d.dataset.name = (f.title || '').toLowerCase();
       list.appendChild(d);
       if (depth < 1) for (const c of f.children || []) if (!c.url) add(c, depth + 1, f.id);
@@ -553,8 +607,7 @@ chrome:// ⚙️`;
   }
   $('#side-list').addEventListener('click', (e) => {
     const it = e.target.closest('.side-item'); if (!it) return;
-    const sec = document.getElementById('sec-' + it.dataset.id);
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    revealFolder(it.dataset.id);
   });
   $('#side-list').addEventListener('contextmenu', (e) => {
     const it = e.target.closest('.side-item'); if (!it) return;
@@ -646,6 +699,11 @@ chrome:// ⚙️`;
         sub.classList.toggle('filtered', active.size > 0 && !any);
       }
       card.classList.toggle('filtered', globalFilter.size > 0 && visible === 0);
+      for (const section of [card, ...$$('.sub', card)]) {
+        if (section.dataset.kind === 'bar') continue;
+        const f = findNode(section.dataset.id);
+        if (f) paintFold(section, active.size && !section.classList.contains('filtered') ? false : folderCollapsed(f));
+      }
     }
   }
   $('#filter-clear').addEventListener('click', () => { globalFilter.clear(); groupFilter.clear(); render(); });
@@ -709,6 +767,7 @@ chrome:// ⚙️`;
     }
   });
   document.addEventListener('keydown', (e) => {
+    if (e.target.closest?.('.folder-toggle') && (e.key === ' ' || e.key === 'Enter')) return;
     const inField = /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable || $('#dlg').open;
     if (inField) return;
     if (e.key === '/') { e.preventDefault(); search.focus(); search.select(); return; }
@@ -772,6 +831,7 @@ chrome:// ⚙️`;
   main.addEventListener('click', async (e) => {
     if (dragJustHappened) { dragJustHappened = false; return; }
     const box = e.target.closest('.card, .sub');
+    if (e.target.closest('.folder-toggle')) { e.preventDefault(); await toggleFolder(box); return; }
     if (e.target.closest('.hd-tags .tag')) {
       const t = e.target.closest('.tag').dataset.tag; const id = box.dataset.id;
       const s = groupFilter.get(id) || new Set(); if (s.has(t)) s.delete(t); else s.add(t);
@@ -779,7 +839,7 @@ chrome:// ⚙️`;
       $$('.hd-tags .tag', box).forEach((b) => b.classList.toggle('on', s.has(b.dataset.tag)));
       applyFilters(); return;
     }
-    if (e.target.closest('.subchip')) { const sec = document.getElementById('sec-' + e.target.closest('.subchip').dataset.goto); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (e.target.closest('.subchip')) { revealFolder(e.target.closest('.subchip').dataset.goto); return; }
     if (e.target.closest('.swatch')) { openMenu(colorMenu(box), e.clientX, e.clientY); return; }
     if (e.target.closest('.hd-name')) { if (box.dataset.kind !== 'bar') inlineRename(box.querySelector('.title')); return; }
     const more = e.target.closest('.more');
@@ -962,6 +1022,15 @@ chrome:// ⚙️`;
         }
       }
       if (area === 'local') {
+        if (changes.folderCollapsed) {
+          const previous = prefs.folderCollapsed;
+          const fresh = changes.folderCollapsed.newValue;
+          prefs.folderCollapsed = fresh && typeof fresh === 'object' && !Array.isArray(fresh) ? fresh : {};
+          for (const section of $$('#groups .card[data-kind="folder"], #groups .sub')) {
+            const f = findNode(section.dataset.id);
+            if (f && previous[foldKey(f)] !== prefs.folderCollapsed[foldKey(f)]) paintFold(section, folderCollapsed(f));
+          }
+        }
         let changed = false;
         for (const k of ['view', 'recentCollapsed', 'filterMode']) if (changes[k]) { prefs[k] = changes[k].newValue; changed = true; }
         if (changed) { applyPrefs(); render(); }
@@ -1084,7 +1153,17 @@ chrome:// ⚙️`;
       return { parentId: tile.parentElement.dataset.folder, refId: tile.dataset.id, pos, el: tile, cls: 'drop-' + pos };
     }
     const subHead = t.closest('.sub-head');
-    if (subHead) return { parentId: subHead.parentElement.dataset.id, refId: null, el: subHead.parentElement, cls: 'drop-into' };
+    if (subHead) {
+      const sub = subHead.parentElement;
+      if (drag.kind === 'folder') {
+        const r = subHead.getBoundingClientRect(), y = (e.clientY - r.top) / r.height;
+        if (y < .25 || y > .75) {
+          const pos = y < .25 ? 'before' : 'after';
+          return { parentId: findNode(sub.dataset.id).parentId, refId: sub.dataset.id, pos, el: sub, cls: 'drop-' + pos };
+        }
+      }
+      return { parentId: sub.dataset.id, refId: null, el: sub, cls: 'drop-into' };
+    }
     const head = t.closest('.head');
     if (head) {
       const card = head.parentElement;

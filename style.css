@@ -158,15 +158,15 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 /* ── 段 ── */
 .groups { display: flex; flex-direction: column; gap: 26px; }
 .card { width: 100%; scroll-margin-top: 112px; transition: box-shadow .15s; border-radius: 10px; }
-.card.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
-.card.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+.card.drop-before, .sub.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+.card.drop-after, .sub.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
 .card.drop-into > .head, .sub.drop-into > .sub-head, .body.drop-into { background: var(--accent-bg); border-radius: 8px; }
 .card.dragging, .tile.dragging, .sub.dragging { opacity: .35; }
 .tile.filtered, .sub.filtered, .card.filtered { display: none; }
 .sub { scroll-margin-top: 112px; }
 
 /* 段标题 40px：色条＋名字＋计数 ｜ 子夹快捷 ｜ 本段标签筛选 */
-.head, .sub-head { display: flex; align-items: center; gap: 10px; user-select: none; cursor: grab; }
+.head, .sub-head { position: relative; display: flex; align-items: center; gap: 10px; user-select: none; cursor: grab; }
 .head { height: 40px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
 .head:active, .sub-head:active { cursor: grabbing; }
 .hd-name { display: flex; align-items: center; gap: 10px; padding: 0 8px 0 0; height: 32px; border-radius: 6px; cursor: text; min-width: 60px; max-width: 34%; }
@@ -193,7 +193,7 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .sub { grid-column: 1 / -1; min-width: 0; margin: 12px 0 0 20px; border-radius: 8px; padding: 3px 0 10px;
   background: color-mix(in srgb, var(--gc, var(--muted-2)) 6%, var(--band));
   box-shadow: inset 1px 0 color-mix(in srgb, var(--level-color) 30%, var(--border)); }
-.sub-head { height: 36px; padding: 0 10px; border-left: 4px solid var(--level-color); border-radius: 3px; }
+.sub-head { height: 36px; padding: 0 10px; border-radius: 3px; }
 .sub-head .hd-name { height: 26px; padding: 0 8px 0 0; gap: 8px; max-width: 50%; }
 .sub-head .hd-name::before { content: ""; flex: none; width: 13px; height: 11px; margin-right: -2px; border-radius: 2px 3px 3px 3px;
   background: var(--gc, var(--muted-2)); opacity: .85;
@@ -206,9 +206,23 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .sub .sub { margin-top: 10px; }
 
 /* 一级分组的段标题也给一条浅底带，跟子夹同一套语言、只是更浅 */
-.head { margin: 0 0 10px; padding: 0 10px; border-radius: 3px 8px 0 0; border-left: 4px solid var(--level-color);
+.head { margin: 0 0 10px; padding: 0 10px; border-radius: 3px 8px 0 0;
   background: color-mix(in srgb, var(--gc, var(--muted-2)) 5%, transparent); }
 .level-label { flex: none; color: var(--level-color); font-size: 11px; font-weight: 600; }
+.level-mark { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 6px; height: 24px; display: grid; grid-template-rows: repeat(var(--level-count), minmax(0, 1fr)); gap: min(2px, calc(12px / var(--level-count))); pointer-events: none; }
+.level-mark > i { display: block; min-height: 0; border-radius: 1px; background: var(--level-color); }
+.side-item > .level-mark { position: static; transform: none; flex: none; width: 6px; height: 20px; }
+.folder-toggle { flex: none; display: grid; place-items: center; width: 24px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+.folder-toggle svg { width: 12px; height: 12px; transition: transform .15s; }
+.folder-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.folder-toggle:hover { background: var(--accent-bg); color: var(--accent); }
+.folder-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.is-collapsed > .head { margin-bottom: 0; }
+.is-collapsed > .head .hd-subs { display: none; }
+.sub.is-collapsed { padding-bottom: 3px; }
+.inbox-folder > .head, .inbox-folder > .sub-head { background: color-mix(in srgb, var(--accent) 10%, var(--card)); border-radius: 6px; }
+.side-item.inbox-folder { background: var(--accent-bg); }
+.inbox-badge { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--accent-bg); color: var(--accent); font-size: 11px; }
 
 /* ── 卡片：高 64 锁死，左 36 井，右两行 ── */
 .tile { position: relative; display: flex; align-items: center; gap: 10px; height: 64px; padding: 10px 12px; border-radius: var(--radius); cursor: pointer; border: 1px solid var(--border); background: var(--card); min-width: 0; overflow: hidden; box-shadow: var(--shadow); transition: transform .12s, box-shadow .12s, border-color .12s; }
@@ -381,7 +395,7 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .frow.mini { display: inline-flex; width: auto; min-height: 0; height: 32px; align-items: center; padding: 0 12px;
   color: var(--muted); font-size: 12px; border-left: 3px solid var(--gc, var(--border-2)); }
 .fchip { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px;
-  border-radius: 8px; border: 1px solid var(--border-2); border-left: 4px solid var(--level-color); background: var(--card); cursor: grab; user-select: none; font-size: 13px; max-width: 100%; min-width: 0; }
+  border-radius: 8px; border: 1px solid var(--border-2); background: var(--card); cursor: grab; user-select: none; font-size: 13px; max-width: 100%; min-width: 0; }
 .fchip.sm { height: 30px; font-size: 12px; }
 .fchip:active { cursor: grabbing; }
 .fchip:hover { border-color: var(--accent); }
