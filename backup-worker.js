@@ -72,15 +72,16 @@ async function maybeBackup() {
   const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','backupIntervalHours','webdav','pendingCloudBackup','backups']);
   if(data.restoreInProgress||data.syncInProgress||modeOf(data)==='local')return;
   try {
-    const due=data.backupAuto!==false&&!(Date.now()-Date.parse(data.lastBackupAt||0)<intervalOf(data)*3600e3);
+    const schedule=await automationStatus();
+    const due=schedule.backup.state==='waiting'&&Date.now()>=schedule.backup.nextAt;
     // Keep creating local protection even when the cloud remains unavailable.
     const snapshot=due?await makeSnapshot('定时自动备份'):null;
     if(modeOf(data)==='webdav'&&data.webdav?.enabled){
       const pending=snapshot||(data.backups||[]).find(b=>b.id===data.pendingCloudBackup);
-      if(pending)await uploadSnapshot(pending);
-      else if(data.pendingCloudBackup)await chrome.storage.local.remove('pendingCloudBackup');
+      if(pending&&(snapshot||(schedule.retry.state==='waiting'&&Date.now()>=schedule.retry.nextAt)))await uploadSnapshot(pending);
+      else if(!pending&&data.pendingCloudBackup)await chrome.storage.local.remove('pendingCloudBackup');
     }
-  } catch(error) { await chrome.storage.local.set({lastBackupError:error.message}); throw error; }
+  } catch(error) { await chrome.storage.local.set({lastBackupError:error.message}); await deferFailedAutomation(); throw error; }
 }
 function davURL(value) {
   const url=new URL(value);
@@ -116,7 +117,7 @@ async function uploadSnapshot(snapshot) {
   const period=new Date(snapshot.createdAt).toISOString().slice(0,7);
   const name=period+'/bookmarks-'+snapshot.createdAt.replace(/[^0-9TZ]/g,'')+'-'+snapshot.id+'.json';
   const body=JSON.stringify(portable(snapshot));
-  await chrome.storage.local.set({pendingCloudBackup:snapshot.id});
+  await chrome.storage.local.set({pendingCloudBackup:snapshot.id,lastCloudAttemptAt:new Date().toISOString()});
   try{
     await ensureDavDirectory(config);await davRequest(config,'MKCOL',period+'/');
     const equalCopy=async response=>{

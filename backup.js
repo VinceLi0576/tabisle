@@ -35,6 +35,23 @@
   function download(snapshot){const u=URL.createObjectURL(new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='TabIsle-'+snapshot.createdAt.replace(/[:.]/g,'-')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);}
   function syncMode(){const mode=selected();$('webdav-guide').hidden=mode!=='webdav';$('browser-guide').hidden=mode!=='browser';$('local-guide').hidden=mode!=='local';$('policy-note').textContent=dirty?'方案有未保存的修改。':mode==='webdav'&&!current?.webdav.enabled?'推荐方案尚未连接，当前不会上传。':'设置已保存。';availability();}
   function setTab(cloud){$('local-tab').setAttribute('aria-selected',String(!cloud));$('cloud-tab').setAttribute('aria-selected',String(cloud));$('local-tab').tabIndex=cloud?-1:0;$('cloud-tab').tabIndex=cloud?0:-1;$('local-panel').hidden=cloud;$('cloud-panel').hidden=!cloud;}
+  let automation=null,automationReading=false;
+  function renderCountdowns(){
+    const labels={backup:'下次自动备份',sync:'下次持续同步',retry:'云备份重试'};
+    for(const [kind,label] of Object.entries(labels)) {
+      const el=$(kind+'-countdown'),s=automation?.[kind];if(!el)continue;
+      el.hidden=kind==='retry'&&s?.state!=='waiting';
+      if(!s){el.textContent=label+'：正在读取…';continue;}
+      if(s.state!=='waiting'){el.textContent=label+'：'+(s.state==='paused'?'已暂停，请处理未完成操作':'未开启');continue;}
+      const seconds=Math.max(0,Math.ceil((s.nextAt-Date.now())/1000));
+      const duration=[Math.floor(seconds/3600),Math.floor(seconds%3600/60),seconds%60].map(n=>String(n).padStart(2,'0')).join(':');
+      el.textContent=label+'：'+(seconds?'还有 '+duration:'已到计划时间，等待后台执行')+' · '+date(s.nextAt);
+    }
+  }
+  async function readAutomation(){
+    if(automationReading)return;automationReading=true;
+    try{automation=await ask('AUTOMATION_STATUS');renderCountdowns();}finally{automationReading=false;}
+  }
   async function refresh({forms=false,preferWebdav=false}={}){
     current=await ask('BACKUP_STATUS');const data=current;
     $('credential-state').textContent=data.webdav.hasPassword
@@ -64,6 +81,7 @@
     if(forms){policyBaseline=data.policyState;const displayMode=preferWebdav?'webdav':data.backupMode;document.querySelector(`[name=mode][value=${displayMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalHours);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=displayMode!==data.backupMode;}
     $('dav-pass').placeholder=data.webdav.hasPassword?'已保存，留空保留；更换账号须重新填写':'不是坚果云登录密码';
     $('history').replaceChildren(...data.backups.map(b=>{const row=document.createElement('div');row.className='backup-item';const info=document.createElement('div'),p=document.createElement('p'),small=document.createElement('small');p.textContent=date(b.createdAt);small.textContent=[b.device,b.reason,b.count+' 条书签',size(b.bytes)].join(' · ');info.append(p,small);const actions=document.createElement('div');actions.className='action-row';actions.append(button('预览恢复',async()=>preview(await ask('BACKUP_GET',{id:b.id}),'本机历史')),button('下载',async()=>download(await ask('BACKUP_GET',{id:b.id}))));if(data.backupMode==='webdav'&&data.webdav.enabled)actions.append(button('上传',async()=>{await ask('BACKUP_DAV_UPLOAD',{id:b.id});await refresh();$('status').textContent='这个版本已上传到坚果云。';}));row.append(info,actions);return row;}));
+    await readAutomation();
     if(!data.backups.length){const p=document.createElement('p');p.className='empty';p.textContent='还没有本机版本。点击「立即备份」保存第一份。';$('history').append(p);}syncMode();
   }
   async function preview(snapshot,source='导入 JSON'){
@@ -89,7 +107,7 @@
     if(!listing)listing=parseDirectory(await ask('BACKUP_DAV_LIST',{period}));limited||=listing.limited;
     const entries=listing.entries.filter(e=>!e.isDir);$('cloud-history').replaceChildren(...entries.map(e=>{const name=(period?period+'/':'')+e.name,row=document.createElement('div'),info=document.createElement('div'),p=document.createElement('p'),small=document.createElement('small'),actions=document.createElement('div');row.className='backup-item';p.textContent=e.date?date(e.date):e.name;small.textContent=e.name+' · '+size(e.bytes);info.append(p,small);actions.className='action-row';actions.append(button('预览恢复',async()=>preview(await ask('BACKUP_DAV_GET',{name}),'坚果云历史')),button('下载',async()=>download(await ask('BACKUP_DAV_GET',{name}))));row.append(info,actions);return row;}));
     $('cloud-status').textContent='找到 '+entries.length+' 份版本。'+(limited?'目录条目较多，服务可能只返回前 750 项；请到坚果云网页核对完整目录。':'');
-    if(!entries.length){const p=document.createElement('p');p.className='empty';p.textContent='这个目录还没有签屿备份。';$('cloud-history').append(p);}
+    if(!entries.length){const p=document.createElement('p');p.className='empty';p.textContent='这个目录还没有书签首页备份。';$('cloud-history').append(p);}
   }
   $('policy-form').oninput=()=>{dirty=true;syncMode();};
   $('policy-form').onsubmit=e=>{e.preventDefault();run(async()=>{await ask('BACKUP_POLICY_SAVE',{mode:selected(),auto:$('auto').checked,intervalHours:Number($('interval').value),device:$('device').value,expectedPolicy:policyBaseline});await refresh({forms:true});$('status').textContent='方案已保存。浏览器账号同步可在浏览器设置中按需调整。';});};
@@ -103,14 +121,14 @@
   $('create').onclick=()=>run(async()=>{const r=await ask('BACKUP_CREATE');await refresh();$('status').textContent=current.webdav.enabled&&!r.warning?'本机和坚果云都已保存这个版本。':'本机版本已保存。';if(r.warning)$('error').textContent=r.warning;});
   $('export').onclick=()=>run(async()=>{download(await ask('BACKUP_EXPORT_CURRENT'));$('status').textContent='完整备份已生成并交给浏览器下载，请确认下载完成；未新增本机历史或上传。';});
   $('import-open').onclick=()=>$('import').click();
-  $('import').onchange=()=>{const file=$('import').files[0];$('import').value='';if(file)run(async()=>{if(file.size>12e6)throw Error('文件超过 12 MB');let snapshot;try{snapshot=JSON.parse(await file.text());}catch{throw Error('请导入签屿完整备份 JSON；floccus 的 XBEL / HTML 文件请用 floccus 恢复。');}await preview(snapshot);});};
+  $('import').onchange=()=>{const file=$('import').files[0];$('import').value='';if(file)run(async()=>{if(file.size>12e6)throw Error('文件超过 12 MB');let snapshot;try{snapshot=JSON.parse(await file.text());}catch{throw Error('请导入书签首页完整备份 JSON；floccus 的 XBEL / HTML 文件请用 floccus 恢复。');}await preview(snapshot);});};
   $('clear-local').onclick=()=>run(async()=>{if(!confirm('清空本机所有备份历史？正常书签、备注和云端文件都会保留。建议先下载一份完整备份。'))return;await ask('BACKUP_CLEAR_LOCAL');await refresh();$('status').textContent='本机备份历史已清空。自动备份开启时，下次检查会生成新版本。';});
   $('local-tab').onclick=()=>setTab(false);$('cloud-tab').onclick=()=>setTab(true);
   for(const id of ['local-tab','cloud-tab'])$(id).onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const cloud=e.key==='End'||(e.key!=='Home'&&id==='local-tab');setTab(cloud);$(cloud?'cloud-tab':'local-tab').focus();}};
   $('cloud-list').onclick=()=>run(()=>loadCloud(true));$('cloud-period').onchange=()=>run(()=>loadCloud());
   $('refresh').onclick=()=>run(async()=>{await refresh();if(!$('cloud-panel').hidden)await loadCloud(true);});
   $('cancel-preview').onclick=()=>{$('preview').hidden=true;token=null;availability();};$('sync-paused').onchange=availability;
-  $('restore').onclick=()=>run(async()=>{if(!token||!$('sync-paused').checked)throw Error('请先预览并确认同步状态');if(!confirm('按预览恢复书签栏及附属数据？恢复前会保存当前状态作为保护副本。'))return;await ask('BACKUP_RESTORE',{token});token=null;$('preview').hidden=true;await refresh();$('status').textContent='恢复完成，签屿自动同步已暂停。请检查书签与备注，再预览同步到坚果云。';});
+  $('restore').onclick=()=>run(async()=>{if(!token||!$('sync-paused').checked)throw Error('请先预览并确认同步状态');if(!confirm('按预览恢复书签栏及附属数据？恢复前会保存当前状态作为保护副本。'))return;await ask('BACKUP_RESTORE',{token});token=null;$('preview').hidden=true;await refresh();$('status').textContent='恢复完成，书签首页自动同步已暂停。请检查书签与备注，再预览同步到坚果云。';});
   async function showSync(){
     let p;try{p=await ask('SYNC_PREVIEW',{choices:syncChoices});}catch(e){await refresh();throw e;}syncToken=p.token;syncUnresolved=p.unresolved;
     $('sync-review').hidden=false;$('sync-summary').textContent=(p.first?'首次合并：保留双方已有内容。':'按上次共同版本合并两端变化。')+' 备注、说明、标签与分组颜色一并同步。';
@@ -129,5 +147,8 @@
   $('recovery-history').onclick=()=>{setTab(false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
   $('recovery-sync').onclick=()=>$('sync-preview').click();
   $('refresh-receipts').onclick=()=>run(()=>refresh());
+  setInterval(renderCountdowns,1000);
+  setInterval(()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});},15000);
+  document.addEventListener('visibilitychange',()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});});
   run(()=>refresh({forms:true,preferWebdav:true}));
 })();

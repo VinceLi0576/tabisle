@@ -158,7 +158,8 @@ async function applySync(token,auto=false){
 }
 async function maybeSync(){
   const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);
-  if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-Date.parse(d.lastSyncAt||0)<15*60e3||Date.now()-nativeLastChange<3000)return;
+  if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
+  const schedule=await automationStatus();if(schedule.sync.state!=='waiting'||Date.now()<schedule.sync.nextAt)return;
   try{const p=await prepareSync();await applySync(p.token,true);}catch(e){await chrome.storage.local.set({syncError:e.message,syncAuto:false});}
 }
 async function syncAction(message){
