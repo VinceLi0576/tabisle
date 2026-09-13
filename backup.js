@@ -1,7 +1,21 @@
 (()=>{
   const $=id=>document.getElementById(id);
   let token=null,busy=false,current=null,dirty=false,cloudLoaded=false,syncToken=null,syncUnresolved=0,syncReady=false,syncChoices={};
-  const ask=async(type,extra={})=>{const r=await chrome.runtime.sendMessage({type,...extra});if(!r?.ok)throw Error(r?.error||'后台没有响应');return r.data;};
+  const staleMessage='插件刚刚更新，当前页面与后台的连接已失效。请重新加载此页面，再读取已保存的账号配置；未保存的输入请先自行留存。';
+  const ask=async(type,extra={})=>{
+    try {
+      if(!globalThis.chrome?.runtime?.id)throw Error('Extension context invalidated');
+      const r=await chrome.runtime.sendMessage({type,...extra});
+      if(!r?.ok)throw Error(r?.error||'后台没有响应');return r.data;
+    }catch(error){
+      if(/context invalidated|receiving end does not exist|could not establish connection|message port closed|no sw/i.test(error.message||'')){
+        $('reconnect-page').hidden=false;
+        if(!current){$('credential-state').textContent='暂时无法读取连接信息，不代表账号或密码已删除。';$('password-state').textContent='重新加载页面后核对已保存状态。';}
+        throw Error(staleMessage);
+      }
+      throw error;
+    }
+  };
   const date=value=>{const d=new Date(value);return isNaN(d)?String(value):d.toLocaleString('zh-CN',{hour12:false});};
   const size=n=>n>=1e6?(n/1e6).toFixed(1)+' MB':Math.max(1,Math.round(n/1e3))+' KB';
   const selected=()=>document.querySelector('[name=mode]:checked')?.value||'webdav';
@@ -20,8 +34,14 @@
   function download(snapshot){const u=URL.createObjectURL(new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='TabIsle-'+snapshot.createdAt.replace(/[:.]/g,'-')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);}
   function syncMode(){const mode=selected();$('webdav-guide').hidden=mode!=='webdav';$('browser-guide').hidden=mode!=='browser';$('local-guide').hidden=mode!=='local';$('policy-note').textContent=dirty?'方案有未保存的修改。':mode==='webdav'&&!current?.webdav.enabled?'推荐方案尚未连接，当前不会上传。':'设置已保存。';availability();}
   function setTab(cloud){$('local-tab').setAttribute('aria-selected',String(!cloud));$('cloud-tab').setAttribute('aria-selected',String(cloud));$('local-tab').tabIndex=cloud?-1:0;$('cloud-tab').tabIndex=cloud?0:-1;$('local-panel').hidden=cloud;$('cloud-panel').hidden=!cloud;}
-  async function refresh({forms=false}={}){
+  async function refresh({forms=false,preferWebdav=false}={}){
     current=await ask('BACKUP_STATUS');const data=current;
+    $('credential-state').textContent=data.webdav.hasPassword
+      ? '坚果云账号与应用密码已保存在本机。'+(data.webdav.enabled?'云备份已启用。':'当前云备份上传关闭，保存的连接信息仍然保留。')
+      : '这台浏览器还没有保存完整的坚果云连接信息。其他浏览器的配置不会自动复制到这里。';
+    $('password-state').textContent=data.webdav.hasPassword
+      ? '应用密码已保存，无需重新填写。密码框留空是正常的，验证时会使用已保存的密码；只有更换账号或密码时才需要填写。'
+      : '填写坚果云的第三方应用密码，验证成功后保存在这台浏览器。';
     const sync=await ask('SYNC_STATUS');syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
     $('sync-status').textContent=(sync.check?.upload&&sync.check?.download?'文件上传、读取已实测通过。'+(sync.check.compatible?'同步能力验证通过。':'双向同步未通过验证，尚未启用。')+'\n':'')+(sync.lastSyncAt?'最近同步：'+date(sync.lastSyncAt):'尚未同步。连接后先预览，两端内容会合并。')+(sync.inProgress?'\n上次同步未完成，自动同步已暂停；请重新预览合并。':'')+(sync.error?'\n'+sync.error:'');
     $('mode-status').textContent={webdav:data.webdav.enabled?'坚果云 · 云备份已启用':'坚果云 · 待连接',browser:'浏览器账号 · 本机备份',local:'纯本地 · 自动备份关闭'}[data.backupMode];
@@ -29,7 +49,7 @@
     $('connection-state').textContent=data.webdav.enabled?'账号与目录已验证':data.webdav.hasPassword?'连接已保存 · 上传关闭':'待连接';
     if(data.restoreInProgress)$('error').textContent='上次恢复未完成，请先检查本机历史中的「恢复前自动保护」版本。';
     else if(data.lastBackupError)$('error').textContent=data.lastBackupError+(data.pendingCloudBackup?'；本机副本已保留，云备份启用时会重试。':'');
-    if(forms){document.querySelector(`[name=mode][value=${data.backupMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalDays);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=false;}
+    if(forms){const displayMode=preferWebdav?'webdav':data.backupMode;document.querySelector(`[name=mode][value=${displayMode}]`).checked=true;$('auto').checked=data.backupAuto!==false&&data.backupMode!=='local';$('interval').value=String(data.backupIntervalDays);$('device').value=data.backupDevice||'';$('dav-url').value=data.webdav.url;$('dav-user').value=data.webdav.username||'';dirty=displayMode!==data.backupMode;}
     $('dav-pass').placeholder=data.webdav.hasPassword?'已保存，留空保留；更换账号须重新填写':'不是坚果云登录密码';
     $('history').replaceChildren(...data.backups.map(b=>{const row=document.createElement('div');row.className='backup-item';const info=document.createElement('div'),p=document.createElement('p'),small=document.createElement('small');p.textContent=date(b.createdAt);small.textContent=[b.device,b.reason,b.count+' 条书签',size(b.bytes)].join(' · ');info.append(p,small);const actions=document.createElement('div');actions.className='action-row';actions.append(button('预览恢复',async()=>preview(await ask('BACKUP_GET',{id:b.id}),'本机历史')),button('下载',async()=>download(await ask('BACKUP_GET',{id:b.id}))));if(data.backupMode==='webdav'&&data.webdav.enabled)actions.append(button('上传',async()=>{await ask('BACKUP_DAV_UPLOAD',{id:b.id});await refresh();$('status').textContent='这个版本已上传到坚果云。';}));row.append(info,actions);return row;}));
     if(!data.backups.length){const p=document.createElement('p');p.className='empty';p.textContent='还没有本机版本。点击「立即备份」保存第一份。';$('history').append(p);}syncMode();
@@ -92,5 +112,6 @@
   $('sync-cancel').onclick=()=>{$('sync-review').hidden=true;syncToken=null;availability();};
   $('sync-apply').onclick=()=>run(async()=>{if(!syncToken)throw Error('请先更新预览');await ask('SYNC_APPLY',{token:syncToken});syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='两端已完成同步。可开启每 15 分钟自动同步；出现冲突时会暂停，等待你确认。';});
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
-  run(()=>refresh({forms:true}));
+  $('reconnect-page').onclick=()=>location.reload();
+  run(()=>refresh({forms:true,preferWebdav:true}));
 })();
