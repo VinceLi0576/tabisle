@@ -154,8 +154,8 @@ test('sync propagates evidenced deletions, merges metadata fields and detects in
  const folders=snapshot([folder('a','A'),folder('b','B')]);assert.throws(()=>Sync.merge(folders,snapshot([folder('b','B',[folder('a','A')])]),snapshot([folder('a','A',[folder('b','B')])])),/循环/);
 });
 function davServer(){
- const files=new Map(),requests=[];let revision=0,ignoreConditions=false,loseStateResponse=false,rawTags=false;
- async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?(rawTags?file?.etag.replaceAll('"',''):file?.etag):null},text:async()=>file?.body||''});
+ const files=new Map(),requests=[];let revision=0,ignoreConditions=false,loseStateResponse=false,rawTags=false,omitHeadTag=false;
+ async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'&&!(o.method==='HEAD'&&omitHeadTag)?(rawTags?file?.etag.replaceAll('"',''):file?.etag):null},text:async()=>file?.body||''});
   if(o.method==='MKCOL')return response(201);
   if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==(rawTags?old?.etag.replaceAll('"',''):old?.etag)))return response(412);
   if(['GET','HEAD'].includes(o.method))return response(old?200:404);
@@ -163,7 +163,7 @@ function davServer(){
   if(o.method==='PUT'){files.set(url,{body:o.body,etag:'"'+(++revision)+'"'});if(loseStateResponse&&url.endsWith('/sync/state.json')){loseStateResponse=false;throw Error('lost sync response');}return response(201,files.get(url));}
   if(o.method==='DELETE'){files.delete(url);return response(204);}throw Error(o.method);
  }
- return {files,requests,fetch,set rawTags(v){rawTags=v;},set ignoreConditions(v){ignoreConditions=v;},set loseStateResponse(v){loseStateResponse=v;}};
+ return {files,requests,fetch,set rawTags(v){rawTags=v;},set omitHeadTag(v){omitHeadTag=v;},set ignoreConditions(v){ignoreConditions=v;},set loseStateResponse(v){loseStateResponse=v;}};
 }
 async function syncedWorker(server){const w=await worker();w.context.fetch=server.fetch;w.local.data.backupMode='webdav';w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};return w;}
 test('direct WebDAV sync verifies conditional writes, merges two browsers, syncs notes, and converges without echo writes',async()=>{
@@ -394,6 +394,7 @@ test('latest status uses a lightweight HEAD check and minute sync merges pending
  assert.equal(shared.parentRevision,null);assert.match(shared.sha256,/^[a-f0-9]{64}$/);assert(shared.updatedAt);assert(shared.updatedBy.id);assert(shared.updatedBy.name);
  const gets=()=>server.requests.filter(r=>r.method==='GET'&&r.url.endsWith('/sync/state.json')).length;
  const before=gets(),current=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(current.state,'latest');assert.equal(gets(),before);assert.equal(server.requests.at(-1).method,'HEAD');
+ server.omitHeadTag=true;const beforeFallback=gets();assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'latest');assert.equal(gets(),beforeFallback+1);assert.equal(server.requests.at(-1).method,'GET');server.omitHeadTag=false;
  await sync(b);await b.api.seed([link('y','Y','https://y.test')]);await sync(b);
  const newer=await a.call('syncAction',{type:'SYNC_LATEST_STATUS'});assert.equal(newer.state,'cloud-new');assert.equal(newer.remote.updatedBy.id,b.local.data.backupDeviceId);
  await a.api.update(x.id,{title:'X local'});assert.equal((await a.call('syncAction',{type:'SYNC_LATEST_STATUS'})).state,'diverged');
