@@ -220,6 +220,10 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .well img { width: 20px; height: 20px; object-fit: contain; }
 .well.big img { width: 24px; height: 24px; }
 .well.custom img { width: 28px; height: 28px; border-radius: 5px; }
+.copy-url { position: relative; display: grid; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: copy; }
+.copy-url:hover, .copy-url:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.copy-url.copied::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: var(--accent); color: #fff; font-size: 16px; font-weight: 700; pointer-events: none; }
+html[data-view="list"] .body .copy-url, .recent .copy-url { border-radius: 5px; }
 .well.emoji { font-size: 20px; line-height: 1; color: inherit; }
 html[data-view="list"] .body .well.emoji, .recent .pill .well.emoji { font-size: 13px; }
 .txt { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }

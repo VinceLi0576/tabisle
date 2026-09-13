@@ -251,6 +251,45 @@ chrome:// ⚙️`;
     return box;
   }
 
+  async function copyUrl(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('网址已复制');
+      return true;
+    } catch {
+      toast('复制失败，请重试；也可在详情中手动复制网址');
+      return false;
+    }
+  }
+
+  function copyLogo(n) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'copy-url';
+    button.title = '点击复制网址';
+    button.setAttribute('aria-label', `复制网址：${label(n)}`);
+    button.appendChild(icoEl(n));
+    let feedbackTimer;
+    button.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (dragJustHappened) return;
+      clearTimeout(feedbackTimer);
+      button.classList.remove('copied'); button.title = '点击复制网址';
+      if (await copyUrl(n.url)) {
+        button.classList.add('copied'); button.title = '网址已复制';
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => {
+          button.classList.remove('copied'); button.title = '点击复制网址';
+        }, 1600);
+      }
+    });
+    // 空格由按钮原生激活，不能冒泡触发首页的键入搜索。
+    button.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') e.stopPropagation();
+    });
+    button.addEventListener('auxclick', (e) => e.preventDefault());
+    return button;
+  }
+
   function tileEl(n) {
     const m = itemMeta(n.url);
     const a = document.createElement('a');
@@ -260,7 +299,7 @@ chrome:// ⚙️`;
     a.dataset.id = n.id; a.dataset.kind = 'url';
     a.title = `${label(n)}${m.name ? '（书签名：' + rawLabel(n) + '）' : ''}\n${n.url}${m.desc ? '\n' + m.desc : ''}`;
     a.dataset.dom = domainParts(n.url).root;
-    a.appendChild(icoEl(n));
+    a.appendChild(copyLogo(n));
     const txt = document.createElement('span'); txt.className = 'txt';
     const line1 = document.createElement('span'); line1.className = 'line1';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = label(n); line1.appendChild(name);
@@ -620,7 +659,7 @@ chrome:// ⚙️`;
     $('#recent').hidden = !items.length;
     for (const it of items) {
       const a = document.createElement('a'); a.className = 'pill'; a.href = it.url; a.target = '_blank'; a.title = `${it.title}\n${it.url}`;
-      a.appendChild(icoEl(it));
+      a.appendChild(copyLogo(it));
       const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = it.title || host(it.url); a.appendChild(nm);
       box.appendChild(a);
     }
@@ -650,7 +689,7 @@ chrome:// ⚙️`;
       a.className = 'tile' + (i === 0 ? ' first' : '');
       a.href = b.url; a.target = '_blank'; a.dataset.id = b.id; a.dataset.kind = 'url';
       a.title = `${label(b)}\n${b.url}`;
-      a.appendChild(icoEl(b));
+      a.appendChild(copyLogo(b));
       const txt = document.createElement('span'); txt.className = 'txt';
       const l1 = document.createElement('span'); l1.className = 'line1';
       l1.innerHTML = `<span class="name">${esc(label(b))}</span>`; l1.appendChild(tagChips(itemMeta(b.url).tags)); txt.appendChild(l1);
@@ -781,7 +820,7 @@ chrome:// ⚙️`;
     return [
       { t: '打开', f: () => { location.href = n.url; } },
       { t: '新标签页打开', f: () => window.open(n.url, '_blank') },
-      { t: '复制地址', f: () => navigator.clipboard.writeText(n.url).then(() => toast('已复制')) },
+      { t: '复制地址', f: () => copyUrl(n.url) },
       null,
       ...tagList().map((t) => ({ t: `${tags.includes(t.id) ? '☑' : '☐'} 标记「${t.glyph}」${t.name}`, f: toggleTag(t.id) })),
       null,
