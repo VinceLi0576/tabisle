@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "书签首页",
+  "version": "0.9.2",
+  "description": "新标签页＝书签栏摊开来排版：侧栏文件夹树、分段卡片网格、自定义标签组、拖动排序、即时搜索。书签本身只读写浏览器自己的，不存第二份。",
+  "permissions": [
+    "bookmarks",
+    "storage",
+    "favicon",
+    "history",
+    "geolocation",
+    "sidePanel",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://api.open-meteo.com/*",
+    "https://api.bigdatacloud.net/*",
+    "https://ipwho.is/*",
+    "https://www.google.com/s2/favicons*",
+    "https://*.gstatic.com/*",
+    "https://api.moonshot.cn/*",
+    "https://api.moonshot.ai/*",
+    "https://api.kimi.com/*"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "action": {
+    "default_title": "书签首页"
+  },
+  "minimum_chrome_version": "141",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "optional_host_permissions": [
+    "https://dav.jianguoyun.com/*"
+  ]
+}

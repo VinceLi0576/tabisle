@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>书签详情</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body class="editor-page">
+  <header class="page-head">
+    <div class="heading-group"><span class="heading-mark" aria-hidden="true">▤</span><h1 id="heading">书签详情</h1></div>
+    <button id="close" class="icon-button" title="收起侧栏" aria-label="收起侧栏">×</button>
+  </header>
+  <p id="error" class="error" role="alert"></p>
+  <p id="empty" class="empty-note">点击书签卡片右侧的箭头，开始编辑。<br>再点同一个箭头，即可收起侧栏。</p>
+  <form id="editor" hidden>
+    <div class="editor-scroll">
+      <section class="edit-section bookmark-fields" aria-label="网址与书签名">
+        <div class="url-heading">
+          <div class="preview-icon"><img id="favicon" alt=""><span id="favicon-fallback" hidden>↗</span></div>
+          <label for="url">网址</label>
+          <span id="preview-domain"></span>
+          <a id="open-link" class="preview-open" target="_blank" rel="noopener" title="打开网页" aria-label="打开网页">↗</a>
+        </div>
+        <textarea id="url" rows="2" spellcheck="false" placeholder="https://"></textarea>
+        <label for="name">书签名</label>
+        <input id="name" autocomplete="off" placeholder="书签的完整名称" aria-describedby="name-help">
+        <p id="name-help" class="field-help">收藏网页时带入的标题，可修改。</p>
+      </section>
+      <section class="edit-section" aria-labelledby="display-heading">
+        <div class="section-heading"><h2 id="display-heading">显示与备注</h2><span class="auto-badge">自动保存</span></div>
+        <label for="alias">显示名 / 备注名</label>
+        <input id="alias" autocomplete="off" placeholder="起个好认的短名字，留空用书签名" aria-describedby="alias-help">
+        <p id="alias-help" class="field-help">只改变首页显示的名称，建议 4～6 个字。</p>
+        <div class="name-preview"><span>首页显示</span><strong id="preview-name"></strong></div>
+        <fieldset><legend>标签组</legend><div id="tags" class="tag-options"></div></fieldset>
+        <label for="desc">说明</label>
+        <textarea id="desc" rows="2" placeholder="记一下用途或需要留意的事"></textarea>
+      </section>
+      <section class="edit-section folder-fields" aria-label="所在文件夹">
+        <label for="parentId">所在文件夹 <span class="label-hint">修改后保存</span></label>
+        <select id="parentId"></select>
+        <p id="path" class="folder-path"></p>
+      </section>
+      <details class="editor-more">
+        <summary>图标与更多操作</summary>
+        <label for="icon">自定义图标</label>
+        <input id="icon" placeholder="🐙 或图片网址" spellcheck="false">
+        <p class="field-help">支持 emoji 或图片链接，留空使用网站图标。</p>
+        <div class="more-actions"><button type="button" id="promote">用备注名作为书签名</button><button type="button" id="delete" class="danger">删除书签</button></div>
+      </details>
+    </div>
+    <footer class="editor-actions">
+      <div class="save-status-row"><p id="save-state" role="status" aria-live="polite"></p><button type="button" id="discard">放弃草稿</button></div>
+      <div class="save-buttons"><button type="submit" id="save" class="primary">保存修改</button><button type="button" id="close-footer">收起</button></div>
+    </footer>
+  </form>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

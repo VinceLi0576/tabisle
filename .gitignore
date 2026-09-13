@@ -1,0 +1,27 @@
+# 本机资料与真实书签，不随源代码发布
+AGENTS.md
+dev/mock-data.js
+dev/ext.py
+dev/Monknow首页-书签.html
+dev/附属数据-初版.json
+private/
+backups/
+exports/
+bookmarks-*.json
+bookmarks-*.html
+
+# 本机凭据；示例配置可以提交，但只能使用占位符
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# 开发环境与临时产物
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+*.log

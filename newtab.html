@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>书签</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-left">
+    <span class="brand">书签</span>
+    <span class="count" id="total"></span>
+  </div>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="搜书签（/ 聚焦）" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="ai-bar">
+    <button class="chev ai-gear" id="ai-settings" type="button" title="Kimi 设置">⚙</button>
+    <input id="ai-input" type="text" placeholder="跟 Kimi 说怎么整理书签…" autocomplete="off">
+    <button type="button" class="btn" id="ai-send">发送</button>
+    <button type="button" class="chev" id="ai-toggle" title="展开 / 收起对话">▾</button>
+  </div>
+  <div class="ai-panel" id="ai-panel" hidden>
+    <div class="ai-panel-head"><span id="ai-status"></span><span style="flex:1"></span><button class="chev" id="ai-clear" type="button" title="清空对话">⌫</button><button class="chev" id="ai-close" type="button" title="收起">×</button></div>
+    <div class="ai-quick" id="ai-quick">
+      <button type="button" data-q="看一下我的书签整体情况，哪些文件夹太杂、哪些重复">体检</button>
+      <button type="button" data-q="给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览">补说明打标签</button>
+      <button type="button" data-q="把「未分组」里散着的书签归到合适的文件夹">归置未分组</button>
+    </div>
+    <div class="ai-log" id="ai-log"></div>
+    <div class="ai-proposal" id="ai-proposal" hidden></div>
+  </div>
+  <div class="topright">
+    <div class="weather" id="weather" title="点一下刷新天气"><span class="w-ico" id="w-ico"></span><div class="w-txt"><span class="w-temp" id="w-temp"></span><span class="w-city" id="w-city"></span></div></div>
+    <div class="clock" id="clock"><span class="time" id="clock-time"></span><div class="clock-sub"><span class="date" id="clock-date"></span><span class="week" id="clock-week"></span></div></div>
+  </div>
+</header>
+
+<div class="toolbar" id="toolbar">
+  <div class="seg" data-key="view" title="显示方式"><button data-val="card">卡片</button><button data-val="list">列表</button></div>
+  <button class="btn" id="new-group">＋ 新分组</button>
+  <button class="btn ghost" id="organize-btn" title="把所有文件夹摊开成一排，左右拖动改顺序">整理文件夹</button>
+  <button class="btn ghost" id="backup-btn">备份与恢复</button>
+  <button class="btn ghost" id="more-btn" title="更多">⋯</button>
+  <span class="tb-sep"></span>
+  <span class="tb-label">标签</span>
+  <div class="intro-tags tb-tags" id="intro-tags"></div>
+  <span class="seg mini-seg" id="filter-mode" title="选了多个标签时：都要有 / 有一个就行"><button data-val="and" class="on">且</button><button data-val="or">或</button></span>
+  <button class="legend-clear" id="filter-clear" hidden>清除筛选</button>
+</div>
+<div class="layout">
+<nav id="side" class="side"><div id="side-list"></div></nav>
+<main id="main">
+  <!-- 最近访问：可折叠 -->
+  <section class="recent" id="recent">
+    <div class="recent-head" id="recent-head">
+      <button class="chev" type="button">
+        <svg viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="title">最近访问</span>
+    </div>
+    <div class="recent-body" id="recent-body"></div>
+  </section>
+
+  <section class="organize" id="organize" hidden></section>
+  <section class="groups" id="groups"></section>
+  <section class="results" id="results" hidden></section>
+  <p class="empty" id="empty" hidden>书签栏是空的。点上方「＋ 新分组」开始。</p>
+</main>
+
+</div>
+
+<div class="menu" id="menu" hidden></div>
+
+<dialog id="dlg">
+  <form method="dialog" id="dlg-form">
+    <h3 id="dlg-title">编辑</h3>
+    <label id="dlg-alias-row">备注名（只在这页显示，书签栏不动）<input id="dlg-alias" autocomplete="off" placeholder="留空就显示书签名"></label>
+    <label id="dlg-name-row"><span id="dlg-name-lbl">名称</span><input id="dlg-name" autocomplete="off"></label>
+    <label id="dlg-url-row">地址<input id="dlg-url" autocomplete="off" spellcheck="false" placeholder="https://"></label>
+    <div id="dlg-meta">
+      <div class="dlg-tags"><span class="lbl">标签</span><span id="dlg-tag-list"></span></div>
+      <label>一句话说明<input id="dlg-desc" autocomplete="off" placeholder="这是什么、用来干嘛"></label>
+      <label>自定义图标：填一个 emoji，或一个图片地址（可空）<input id="dlg-icon" autocomplete="off" spellcheck="false" placeholder="🐙 或 https://…/logo.png"></label>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="dlg-cancel">取消</button>
+      <button type="submit" class="btn" id="dlg-ok">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-tag">
+  <form method="dialog" id="dlg-tag-form">
+    <h3 id="dlg-tag-title">标签</h3>
+    <div class="row2">
+      <label>一个字<input id="tag-glyph" maxlength="2" autocomplete="off" placeholder="官"></label>
+      <label>名称<input id="tag-name" autocomplete="off" placeholder="官网"></label>
+    </div>
+    <label>一句说明<input id="tag-desc" autocomplete="off" placeholder="产品或服务的官方入口"></label>
+    <div class="dlg-tags"><span class="lbl">颜色</span><span class="palette" id="tag-palette"></span></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost danger-text" id="tag-delete" hidden>删除这个标签</button>
+      <span style="flex:1"></span>
+      <button type="button" class="btn ghost" id="tag-cancel">取消</button>
+      <button type="submit" class="btn" id="tag-ok">保存</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-ai">
+  <form method="dialog" id="dlg-ai-form">
+    <h3>Kimi 设置</h3>
+    <p class="dlg-note">钥匙只存在这台浏览器的插件本机存储里，不进导出文件。到 platform.moonshot.cn 的「API Key 管理」生成一把贴进来。</p>
+    <label>接口<select id="ai-provider">
+      <option value="moonshot">Moonshot 开放平台（platform.moonshot.cn 的 Key，按量付费）</option>
+      <option value="kimicode">Kimi Code 会员（kimi.com/code 控制台的 Key，走会员额度）</option>
+    </select></label>
+    <label>API Key<input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label>
+    <div class="row2b">
+      <label>模型<select id="ai-model"></select></label>
+      <label>温度<input id="ai-temp" type="number" step="0.1" min="0" max="1"></label>
+    </div>
+    <input id="ai-base" type="hidden">
+    <p class="dlg-note" id="ai-model-note"></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="ai-test">测试连接</button><span class="dlg-note" id="ai-test-out" style="flex:1;margin:0 8px"></span>
+      <button type="button" class="btn ghost" id="ai-cancel">取消</button>
+      <button type="submit" class="btn">保存</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-emoji">
+  <form method="dialog" id="dlg-emoji-form">
+    <h3>emoji 兜底库</h3>
+    <p class="dlg-note">没有站点图标的网址，按下面的规则配一个 emoji：一行一条，「关键词 空格 emoji」，关键词匹配网址或名字（不分大小写），从上往下第一条命中的算。改完保存立即生效。</p>
+    <textarea id="emoji-rules" rows="14" spellcheck="false"></textarea>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="emoji-reset">恢复默认</button>
+      <span style="flex:1"></span>
+      <button type="button" class="btn ghost" id="emoji-cancel">取消</button>
+      <button type="submit" class="btn">保存</button>
+    </div>
+  </form>
+</dialog>
+<input type="file" id="import-file" accept="application/json" hidden>
+<div class="toast" id="toast" hidden></div>
+
+<script src="store.js"></script>
+<script src="app.js"></script>
+<script src="widgets.js"></script>
+<script src="ai.js"></script>
+</body>
+</html>
