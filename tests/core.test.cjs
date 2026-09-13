@@ -267,3 +267,29 @@ test('JSON object field order does not produce false restore or metadata conflic
  const a=snapshot([]),b=structuredClone(a);a.meta.items['https://x.test']={name:'X',desc:'Note'};b.meta.items['https://x.test']={desc:'Note',name:'X'};a.prefs={view:'card',filterMode:'and'};b.prefs={filterMode:'and',view:'card'};
  const plan=Core.plan(a,b);assert.equal(plan.metaChanged,false);assert.equal(plan.prefsChanged,false);assert.equal(Sync.equal(a.meta,b.meta),true);assert.equal(Sync.equal(['a','b'],['b','a']),false);
 });
+test('device names initialize once, preserve custom names, and renames leave old snapshots and device identity unchanged',async()=>{
+ const w=await worker();w.local.data.backupDevice='未命名设备';
+ let status=await w.call('backupAction',{type:'BACKUP_STATUS'});const name=status.backupDevice,id=w.local.data.backupDeviceId;
+ assert.match(name,/^[\p{Script=Han}]+·[\p{Script=Han}]+·[\p{Script=Han}]+$/u);assert(id);
+ assert.equal((await w.call('backupAction',{type:'BACKUP_STATUS'})).backupDevice,name);
+ const created=await w.call('backupAction',{type:'BACKUP_CREATE'});const old=await w.call('backupAction',{type:'BACKUP_GET',id:created.id});assert.equal(old.device,name);assert.equal(old.deviceId,id);
+ const saved=JSON.stringify(w.local.data.backups);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'local',intervalDays:1,device:'A1',auto:false});
+ const next=await w.call('backupAction',{type:'BACKUP_EXPORT_CURRENT'});assert.equal(next.device,'A1');assert.equal(next.deviceId,id);assert.equal(JSON.stringify(w.local.data.backups),saved);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'local',intervalDays:1,device:'  ',auto:false});
+ assert.equal((await w.call('backupAction',{type:'BACKUP_STATUS'})).backupDevice,'A1');
+ const preview=await w.call('backupAction',{type:'BACKUP_PREVIEW',snapshot:old});await w.call('backupAction',{type:'BACKUP_RESTORE',token:preview.token});
+ assert.equal(w.local.data.backupDevice,'A1');assert.equal(w.local.data.backupDeviceId,id);
+ const custom=await worker();custom.local.data.backupDevice='My Chrome';assert.equal((await custom.call('backupAction',{type:'BACKUP_STATUS'})).backupDevice,'My Chrome');
+ assert.notEqual(custom.local.data.backupDeviceId,id);
+});
+test('renaming a connected device keeps sync identity and automation and causes no shared-state upload',async()=>{
+ const server=davServer(),w=await syncedWorker(server);await w.api.seed([link('x','Article','https://article.test')]);
+ let p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});await w.call('syncAction',{type:'SYNC_AUTO',enabled:true});
+ const before=JSON.stringify(w.local.data.syncState),id=w.local.data.backupDeviceId,config=JSON.stringify(w.local.data.webdav),requestCount=server.requests.length;
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'webdav',intervalDays:1,device:'A1',auto:true});
+ assert.equal(w.local.data.syncAuto,true);assert.equal(JSON.stringify(w.local.data.syncState),before);assert.equal(w.local.data.backupDeviceId,id);assert.equal(JSON.stringify(w.local.data.webdav),config);assert.equal(server.requests.length,requestCount);
+ const body=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body;
+ p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert.equal(p.first,false);assert.equal(p.localChanges.length,0);assert.equal(p.cloudChanges.length,0);await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,body);
+});

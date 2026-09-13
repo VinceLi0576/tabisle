@@ -13,7 +13,7 @@
 <div class="notice"><strong>浏览器账号同步：在浏览器设置中管理</strong><p>签屿的备份方案不会替你开启或关闭 Google 书签同步。要单独关闭：进入「管理您的同步数据」→ 选择「自定义同步」→ 关闭「书签」。无需关闭密码、历史记录等其他项目。</p><button class="sync-settings" type="button">管理浏览器的书签同步 ↗</button><p class="muted footnote">当前开关以浏览器设置为准。Google 书签同步和坚果云同步可同时开启，但两者都会传播书签修改与删除；首次合并请检查预览。Google 书签同步不会传递签屿的备注和标签。</p></div>
 <div id="browser-guide" class="notice" hidden><strong>使用浏览器自己的账号</strong><p>在同步设置中开启「书签 / 收藏夹」。同步也会传播删除，因此建议继续保留下面的本机备份。</p></div>
 <div id="local-guide" class="notice" hidden><strong>关闭同步后，资料仍可正常使用</strong><p>请在浏览器设置中关闭书签同步，并暂停其他已安装的同步工具。选择此方案不会删除书签、备注或已有历史；清理本机历史另有按钮。</p><button class="sync-settings" type="button">打开浏览器同步设置 ↗</button></div>
-<div class="policy-options"><label>设备名称<input id="device" maxlength="60" placeholder="例如：家里的 Chrome"><small>只是备份的来源备注。建议每台浏览器分别命名；同名也能同步，不会因此共用或拆分资料。填写后点击「保存方案」。</small></label><label>自动备份频率<select id="interval"><option value="1">每天</option><option value="7">每 7 天</option><option value="30">每 30 天</option></select></label><label class="check-row"><input id="auto" type="checkbox">开启本机自动备份</label></div>
+<div class="policy-options"><label>设备名称<input id="device" maxlength="60" placeholder="自动生成，也可以自行改名"><small>首次自动随机起名，不带日期；重新打开沿用原名。可自行改名后点击「保存方案」，留空保存会保留当前名字。</small></label><label>自动备份频率<select id="interval"><option value="1">每天</option><option value="7">每 7 天</option><option value="30">每 30 天</option></select></label><label class="check-row"><input id="auto" type="checkbox">开启本机自动备份</label></div>
 <div class="action-row"><button type="submit" class="primary">保存方案</button><span id="policy-note" class="muted"></span></div>
 <p class="muted footnote">本机最多保留 20 份，按容量优先清理旧版。浏览器关闭时无法备份，启动或打开首页后会检查补做。选择坚果云后，验证连接成功才会启用上传。</p></form></section>
 <section id="webdav-guide" class="card"><div class="section-title"><span class="step">2</span><div><h2>连接你的坚果云</h2><p class="muted">每台浏览器各配置一次，填写同一个账号和同一个完整目录。备份版本独立保存。</p></div><span id="connection-state" class="badge">待连接</span></div>
@@ -27,11 +27,16 @@
 <tr><th scope="row">坚果云账号</th><td>与第一台相同</td><td>访问你自己的同一套云端资料。</td></tr>
 <tr><th scope="row">同步与备份目录</th><td>完整地址与第一台相同</td><td>包括地址最后的文件夹路径。不要为了区分设备另建目录，否则会变成两套独立资料。</td></tr>
 <tr><th scope="row">第三方应用密码</th><td>填写该账号的有效应用密码</td><td>可以沿用同一应用密码；也可以使用该账号另建的有效应用密码。密码负责验证身份，不负责区分同步资料。</td></tr>
-<tr><th scope="row">设备名称</th><td>建议不同，同名也可以</td><td>例如「笔记本 Chrome」「台式机 Chrome」「测试 Chrome」。只帮助辨认历史版本来自哪里，不是同步账号，也不是文件夹名。</td></tr>
+<tr><th scope="row">设备名称</th><td>自动随机生成，可自行改名</td><td>例如「晨光·松林·白鹭」。首次生成后保存，不会每次打开都换名。名称仅标注来源，不会改变同步账号或目录。</td></tr>
 <tr><th scope="row">自动备份 / 自动同步</th><td>每台浏览器分别设置</td><td>连接成功后选择备份频率；每台都完成一次手动同步，才能分别开启自动同步。</td></tr>
 </tbody></table></div>
 <p class="muted footnote">同一台电脑的普通 Chrome 与测试 Chrome，也各自保存连接设置。扩展代码可以共用，账号、密码、设备名称和自动开关不会因为共用代码而自动复制。</p>
 </div>
+<details class="sync-help"><summary>设备改名后，旧备份也会一起改名吗？</summary>
+<p>例如把 A 改成 A1：保存后，本机设置与以后新建的备份使用 A1；以前保存的备份仍显示当时的 A，其他浏览器的名字保持不变。上传以前的旧备份，也保留它原来的名字。</p>
+<p>改名不会新建同步目录，不会重新导入或复制书签，也不会中断已经配置的同步。历史备份保留原样，恢复旧备份也不会把本机设备名改回去。</p>
+<p>自动名称采用随机词语组合，不带日期或数字尾巴。随机名字可能偶然相同，但不会因此合并设备；每个安装还保存独立标识，改名时保持不变。名称仅用于让你认出备份来源。</p>
+</details>
 <div class="setup-grid"><div class="setup-steps"><article><span>01</span><div><h3>注册或登录坚果云</h3><p>使用自己的账号，文件由你管理。</p><a href="https://www.jianguoyun.com/" target="_blank" rel="noreferrer">打开坚果云官网 ↗</a></div></article><article><span>02</span><div><h3>创建第三方应用密码</h3><p>应用密码的获取和管理方式，请到坚果云官网查看。</p><a href="https://www.jianguoyun.com/" target="_blank" rel="noreferrer">前往坚果云官网 ↗</a></div></article><article><span>03</span><div><h3>填写连接信息并验证</h3><p>使用账号邮箱和应用密码。验证会创建备份目录；之后可点击「立即备份」保存第一份云端版本。</p></div></article></div>
 <form id="dav-form"><label>坚果云账号邮箱<input id="dav-user" type="email" autocomplete="username" required placeholder="你的坚果云账号"></label><label>第三方应用密码<input id="dav-pass" type="password" autocomplete="new-password" placeholder="不是坚果云登录密码"></label><label>同步与备份目录<input id="dav-url" type="url" required aria-describedby="dav-url-help"><small id="dav-url-help">所有需要互相同步的浏览器，复制填写同一个完整地址，包含最后的文件夹路径。设备名称不同也不要改这里。</small></label><button type="submit" class="primary">验证连接并启用云备份</button><button id="forget" type="button" class="quiet">移除本机连接信息</button><p class="muted footnote">应用密码保存在本机扩展存储中，不进入备份或 Git；该存储不是加密密码保险箱。</p></form></div>
 <p class="quota">免费版每月上传 <strong>1 GB</strong>、下载 <strong>3 GB</strong>；不是每月 5 GB。快照越大、设备越多，消耗越多。<a href="https://www.jianguoyun.com/s/pricing" target="_blank" rel="noreferrer">查看当前权益 ↗</a></p>
@@ -41,14 +46,14 @@
 <div class="sync-walkthrough">
 <article><h4>第一台：选择资料最完整的浏览器</h4>
 <ol>
-<li>在上方填写设备名称，点击「保存方案」。</li>
+<li>设备名称已自动起好，可直接沿用；想换名字时修改后点击「保存方案」。</li>
 <li>填写坚果云账号、应用密码和专用目录，点击「验证连接并启用云备份」。这一步启用备份上传，还不会合并书签。</li>
 <li>点击下方「验证并预览同步」。如果云端没有共享同步资料，会预览将本机资料作为起点上传。</li>
 <li>检查变化，有冲突先选择，再点击预览区的「确认同步」。之后可勾选「每 15 分钟自动同步」。</li>
 </ol></article>
 <article><h4>第二台及后续电脑：连接同一套资料</h4>
 <ol>
-<li>安装签屿并打开本页。填写便于辨认的设备名称，点击「保存方案」。</li>
+<li>安装签屿并打开本页，会自动获得本机名称。可直接沿用，或改成自己容易辨认的名称后保存。</li>
 <li>填写第一台使用的同一账号、同一完整目录，以及有效应用密码，验证连接。</li>
 <li>点击「验证并预览同步」。本机为空时加入云端资料；本机已有书签时合并双方，相同条目会尝试匹配。</li>
 <li>确认名称、位置和其他字段的冲突选择，完成「确认同步」，再开启这台浏览器的自动同步。</li>
