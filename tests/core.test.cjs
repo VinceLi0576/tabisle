@@ -24,7 +24,7 @@ function storage(initial={}){const data=structuredClone(initial);return {data,as
 async function worker(){const api=new Bookmarks(),local=storage({meta:{items:{},groups:{},tags:[]}}),session=storage(),requests=[];
  const chrome={bookmarks:{getTree:()=>api.getTree(),get:async id=>[await api.get(id)],getChildren:id=>api.children(id),create:p=>api.create(p),update:(id,p)=>api.update(id,p),move:(id,p)=>api.move(id,p),remove:id=>api.remove(id),removeTree:id=>api.removeTree(id)},storage:{local,session},permissions:{contains:async()=>true},alarms:{get:async()=>({}),create:async()=>{}}};
  const context=vm.createContext({chrome,crypto:webcrypto,TextEncoder,URL,AbortSignal,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),fetch:async(url,options)=>{requests.push({url,options});return {ok:true,status:201,text:async()=>'<d:multistatus xmlns:d="DAV:"/>',json:async()=>({})};}});
- for(const f of ['bookmark-core.js','backup-worker.js','editor-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
+ for(const f of ['bookmark-core.js','backup-worker.js','sync-core.js','sync-worker.js','editor-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
  const call=(name,m)=>{context.message=m;return vm.runInContext(name+'(message)',context);};return {api,local,session,requests,call,context};
 }
 test('diff distinguishes rename, URL, move, delete; adding a sibling does not mark others reordered',()=>{
@@ -78,4 +78,136 @@ test('WebDAV uses distinct filenames, no-overwrite header, and only configured H
  await w.call('backupAction',{type:'BACKUP_CREATE'});id=w.local.data.backups[0].id;await w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id});
  const puts=w.requests.filter(r=>r.options.method==='PUT');assert.equal(puts.length,2);assert.notEqual(puts[0].url,puts[1].url);assert.equal(puts[0].options.headers['If-None-Match'],'*');assert.equal(puts[0].options.redirect,'error');assert(!puts[0].options.body.includes('pass'));
  await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_SAVE',config:{url:'https://evil.test/',enabled:false}}));
+});
+test('backup modes stop automatic local and cloud work without deleting bookmarks or old versions',async()=>{
+ const w=await worker();await w.api.seed([link('x','X','https://x.test')]);
+ const initial=await w.call('backupAction',{type:'BACKUP_STATUS'});assert.equal(initial.backupMode,'webdav');assert.equal(initial.webdav.enabled,false);
+ await w.call('backupAction',{type:'BACKUP_CREATE'});w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'local',auto:true,intervalDays:1,device:'Test'});w.local.data.lastBackupAt='2020-01-01';
+ await w.call('maybeBackup',{});assert.equal(w.requests.length,0);assert.equal(w.local.data.backups.length,1);assert.equal((await w.api.children('1')).length,1);assert.equal(w.local.data.webdav.enabled,false);
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_AUTO',enabled:true}),/纯本地/);
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id:w.local.data.backups[0].id}),/关闭云端/);
+ const exported=await w.call('backupAction',{type:'BACKUP_EXPORT_CURRENT'});assert.equal(exported.device,'Test');assert.equal(w.local.data.backups.length,1);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalDays:7,device:'Test'});await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,2);assert.equal(w.requests.length,0);
+ await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,2);
+});
+test('failed WebDAV verification preserves previous credentials and policy; successful connection creates nested directories',async()=>{
+ const w=await worker();const old={enabled:false,url:'https://dav.jianguoyun.com/dav/old/',username:'old',password:'oldpass'};w.local.data.webdav=old;w.local.data.backupMode='local';
+ const config={url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'new',password:'newpass'};
+ const fetch=w.context.fetch;w.context.fetch=async()=>({ok:false,status:401});
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_CONNECT',config}),/401/);assert.deepEqual(w.local.data.webdav,old);assert.equal(w.local.data.backupMode,'local');
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_CONNECT',config:{...config,password:''}}),/更换账号/);
+ w.context.fetch=fetch;await w.call('backupAction',{type:'BACKUP_DAV_CONNECT',config});assert.equal(w.local.data.webdav.enabled,true);assert.equal(w.local.data.backupMode,'webdav');
+ assert.deepEqual(w.requests.map(r=>[r.options.method,r.url]),[['MKCOL','https://dav.jianguoyun.com/dav/TabIsle/'],['MKCOL',config.url],['PROPFIND',config.url]]);
+});
+test('cloud retry is idempotent after a lost response, and cloud failures never stop scheduled local versions',async()=>{
+ const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
+ const remote=new Map();let fail=true;
+ w.context.fetch=async(url,options)=>{w.requests.push({url,options});if(options.method==='PUT'){if(remote.has(url))return {ok:false,status:412};remote.set(url,options.body);if(fail)throw Error('lost response');}return {ok:true,status:201,text:async()=>remote.get(url)||''};};
+ const first=await w.call('backupAction',{type:'BACKUP_CREATE'});assert(first.warning);assert(w.local.data.pendingCloudBackup);
+ fail=false;await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,1);assert.equal(remote.size,1);assert(!w.local.data.pendingCloudBackup);assert(w.requests.some(r=>r.options.method==='GET'));
+ w.local.data.lastBackupAt='2020-01-01';w.context.fetch=async()=>{throw Error('offline')};await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,2);
+ w.local.data.lastBackupAt='2020-01-01';await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,3);assert.equal(w.local.data.pendingCloudBackup,w.local.data.backups[0].id);
+});
+test('monthly cloud listing is read-only and rejects path traversal; conflicting existing files are never overwritten',async()=>{
+ const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
+ await w.call('backupAction',{type:'BACKUP_DAV_LIST',period:'2026-09'});assert.equal(w.requests[0].options.method,'PROPFIND');assert(w.requests[0].url.endsWith('/2026-09/'));
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_LIST',period:'../other'}));await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_GET',name:'../bookmarks-test.json'}));assert.equal(w.requests.length,1);
+ w.context.fetch=async(url,options)=>({ok:options.method!=='PUT',status:options.method==='PUT'?412:200,text:async()=>'different'});
+ const r=await w.call('backupAction',{type:'BACKUP_CREATE'});assert.match(r.warning,/未覆盖/);assert(w.local.data.pendingCloudBackup);
+});
+test('folder folding migrates across browser IDs and clearing history protects an incomplete restore',async()=>{
+ const w=await worker();const [f]=await w.api.seed([folder('f','Folder',[link('x','X','https://x.test')])]);w.local.data.folderCollapsed={[`${f.id}:${f.dateAdded}`]:true};
+ const saved=await w.call('backupAction',{type:'BACKUP_EXPORT_CURRENT'});assert.equal(saved.folderState[saved.children[0].uid],true);
+ const other=await worker();await other.api.seed([link('z','Z','https://z.test')]);const p=await other.call('backupAction',{type:'BACKUP_PREVIEW',snapshot:saved});assert.equal(p.folderStateChanged,true);
+ await other.call('backupAction',{type:'BACKUP_RESTORE',token:p.token});const [restored]=await other.api.children('1');assert.equal(other.local.data.folderCollapsed[`${restored.id}:${restored.dateAdded}`],true);assert.notEqual(restored.id,f.id);
+ other.local.data.restoreInProgress={backupId:'protection'};await assert.rejects(()=>other.call('backupAction',{type:'BACKUP_CLEAR_LOCAL'}),/保护副本/);assert(other.local.data.backups.length);
+ delete other.local.data.restoreInProgress;await other.call('backupAction',{type:'BACKUP_CLEAR_LOCAL'});assert(!other.local.data.backups);assert.equal((await other.api.children('1')).length,1);assert(other.local.data.meta);
+ assert.throws(()=>Core.validate({...saved,folderState:{f:'yes'}}));
+});
+const Sync=require('../sync-core.js');
+test('three-way sync merges separate fields and preserves first-connection additions and duplicate URLs',()=>{
+ const b=snapshot([folder('f','Folder',[link('x','X','https://x.test')])]);const l=structuredClone(b),r=structuredClone(b);l.children[0].children[0].title='Local';r.children[0].children[0].url='https://remote.test';
+ let m=Sync.merge(b,l,r);assert.equal(m.unresolved,0);assert.equal(m.snapshot.children[0].children[0].title,'Local');assert.equal(m.snapshot.children[0].children[0].url,'https://remote.test');
+ m=Sync.merge(null,snapshot([link('l','X','https://x.test'),link('d','X','https://x.test'),link('only','Local','https://local.test')]),snapshot([link('r','X','https://x.test'),link('other','Remote','https://remote.test')]));
+ assert.equal(Core.flatten(m.snapshot.children).length,4);assert.equal(Core.flatten(m.snapshot.children).filter(n=>n.url==='https://x.test').length,2);
+});
+test('sync stops same-field and delete-vs-subtree-change conflicts until explicitly resolved',()=>{
+ const b=snapshot([folder('f','Folder',[link('x','X','https://x.test')])]);let l=structuredClone(b),r=structuredClone(b);l.children[0].title='L';r.children[0].title='R';
+ let m=Sync.merge(b,l,r);assert.equal(m.unresolved,1);m=Sync.merge(b,l,r,{'f:title':'remote'});assert.equal(m.unresolved,0);assert.equal(m.snapshot.children[0].title,'R');
+ l=snapshot([]);r=structuredClone(b);r.children[0].children.push(link('new','New','https://new.test'));
+ m=Sync.merge(b,l,r);assert(m.conflicts.some(c=>c.id==='f:presence'));
+ m=Sync.merge(b,l,r,{'f:presence':'remote'});assert.equal(m.snapshot.children[0].children.some(n=>n.uid==='new'),true);assert.equal(m.snapshot.children[0].children.some(n=>n.uid==='x'),true);
+ m=Sync.merge(b,l,r,{'f:presence':'local'});assert.equal(m.snapshot.children.length,0);
+});
+test('browser ID recreation aligns nodes and suspect deleted-item return requires review',()=>{
+ const b=snapshot([link('old','X','https://x.test')]);const l=snapshot([link('new-browser-id','X','https://x.test')]);
+ let m=Sync.merge(b,l,b);assert.equal(m.snapshot.children.length,1);assert.equal(m.snapshot.children[0].uid,'old');assert.equal(m.unresolved,0);
+ m=Sync.merge(snapshot([]),l,snapshot([]),{},[{uid:'old',path:'X',url:'https://x.test'}]);assert.equal(m.unresolved,1);
+ m=Sync.merge(snapshot([]),l,snapshot([]),{'new-browser-id:return':'remote'},[{uid:'old',path:'X',url:'https://x.test'}]);assert.equal(m.snapshot.children.length,0);
+});
+test('sync propagates evidenced deletions, merges metadata fields and detects incompatible parent cycles',()=>{
+ const b=snapshot([link('x','X','https://x.test')]);let m=Sync.merge(b,snapshot([]),b);assert.equal(m.snapshot.children.length,0);assert.equal(m.unresolved,0);assert.equal(m.tombstones.length,1);
+ b.meta.items['https://x.test']={name:'Old',desc:'Old',tags:['a']};const l=structuredClone(b),r=structuredClone(b);l.meta.items['https://x.test'].name='Local';r.meta.items['https://x.test'].desc='Remote';r.meta.items['https://x.test'].tags.push('b');
+ m=Sync.merge(b,l,r);assert.deepEqual(m.snapshot.meta.items['https://x.test'],{name:'Local',desc:'Remote',tags:['a','b']});assert.equal(m.unresolved,0);
+ const folders=snapshot([folder('a','A'),folder('b','B')]);assert.throws(()=>Sync.merge(folders,snapshot([folder('b','B',[folder('a','A')])]),snapshot([folder('a','A',[folder('b','B')])])),/循环/);
+});
+function davServer(){
+ const files=new Map(),requests=[];let revision=0,ignoreConditions=false,loseStateResponse=false;
+ async function fetch(url,o){requests.push({url,...o});const old=files.get(url),h=o.headers||{};const response=(status,file=old)=>({ok:status>=200&&status<300,status,headers:{get:k=>k.toLowerCase()==='etag'?file?.etag:null},text:async()=>file?.body||''});
+  if(o.method==='MKCOL')return response(201);
+  if(!ignoreConditions&&(h['If-None-Match']==='*'&&old||h['If-Match']&&h['If-Match']!==old?.etag))return response(412);
+  if(o.method==='GET')return response(old?200:404);
+  if(o.method==='PUT'){files.set(url,{body:o.body,etag:'"'+(++revision)+'"'});if(loseStateResponse&&url.endsWith('/sync/state.json')){loseStateResponse=false;throw Error('lost sync response');}return response(201,files.get(url));}
+  if(o.method==='DELETE'){files.delete(url);return response(204);}throw Error(o.method);
+ }
+ return {files,requests,fetch,set ignoreConditions(v){ignoreConditions=v;},set loseStateResponse(v){loseStateResponse=v;}};
+}
+async function syncedWorker(server){const w=await worker();w.context.fetch=server.fetch;w.local.data.backupMode='webdav';w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};return w;}
+test('direct WebDAV sync verifies conditional writes, merges two browsers, syncs notes, and converges without echo writes',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);await a.api.seed([link('x','X','https://x.test')]);await b.api.seed([link('y','Y','https://y.test')]);
+ a.local.data.meta.items['https://x.test']={name:'Remark'};
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.first);assert.equal(p.unresolved,0);await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.first);await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert.equal((await b.api.children('1')).length,2);assert.equal(b.local.data.meta.items['https://x.test'].name,'Remark');
+ p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert.equal((await a.api.children('1')).length,2);
+ const count=()=>server.requests.filter(r=>r.method==='PUT'&&r.url.endsWith('/sync/state.json')).length;const n=count();p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert.equal(count(),n);
+ assert(![...server.files.keys()].some(k=>k.includes('probe-')));assert(server.requests.some(r=>r.headers?.['If-Match']));
+});
+test('servers ignoring conditions cannot enable sync or overwrite the shared file',async()=>{
+ const server=davServer();server.ignoreConditions=true;const w=await syncedWorker(server);
+ await assert.rejects(()=>w.call('syncAction',{type:'SYNC_PREVIEW'}),/防覆盖验证/);assert(!w.local.data.syncVerified);assert(![...server.files.keys()].some(k=>k.endsWith('state.json')));
+});
+test('stale local or remote sync previews never apply; failed write response keeps recovery marker and stops automation',async()=>{
+ const server=davServer(),a=await syncedWorker(server);const [n]=await a.api.seed([link('x','X','https://x.test')]);let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.api.update(n.id,{title:'Changed'});
+ await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/本机数据已变化/);
+ p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await a.call('syncAction',{type:'SYNC_PREVIEW'});const remote=server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json');remote.etag='"another-writer"';
+ await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/另一台设备/);
+ await a.api.update(n.id,{title:'Next'});p=await a.call('syncAction',{type:'SYNC_PREVIEW'});server.loseStateResponse=true;
+ await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/lost sync response/);assert(a.local.data.syncInProgress);assert.equal(a.local.data.syncAuto,false);
+ p=await a.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.recovery);assert(p.first);assert.equal(p.unresolved,0);await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert(!a.local.data.syncInProgress);assert.equal((await a.api.children('1')).length,1);
+});
+test('automatic sync pauses on conflicting edits and keeps both original values for review',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);const [n]=await a.api.seed([link('x','X','https://x.test')]);
+ for(const w of [a,b]){const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});}
+ await a.api.update(n.id,{title:'A'});const [bn]=await b.api.children('1');await b.api.update(bn.id,{title:'B'});
+ let p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ await a.call('syncAction',{type:'SYNC_AUTO',enabled:true});a.local.data.lastSyncAt='2020-01-01';await a.call('maybeSync',{});assert.equal(a.local.data.syncAuto,false);assert.match(a.local.data.syncError,/冲突|选择/);assert.equal((await a.api.get(n.id)).title,'A');
+});
+test('CAS race after preview cannot overwrite a newer cloud document',async()=>{
+ const server=davServer(),w=await syncedWorker(server);const [n]=await w.api.seed([link('x','X','https://x.test')]);let p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ await w.api.update(n.id,{title:'Local'});p=await w.call('syncAction',{type:'SYNC_PREVIEW'});
+ let externalBody;w.context.fetch=async(url,o)=>{if(o.method==='PUT'&&url.endsWith('/sync/state.json')){const file=server.files.get(url),doc=JSON.parse(file.body);doc.revision='external';doc.snapshot.children[0].title='External';file.body=JSON.stringify(doc);externalBody=file.body;file.etag='"external"';}return server.fetch(url,o);};
+ await assert.rejects(()=>w.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/本次未覆盖/);assert.equal(server.files.get('https://dav.jianguoyun.com/dav/test/sync/state.json').body,externalBody);assert.equal((await w.api.get(n.id)).title,'Local');assert(!w.local.data.syncInProgress);
+});
+test('interrupted local application preserves concurrent additions and resumes by merging instead of deleting them',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);await a.api.seed([link('x','X','https://x.test')]);let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});const create=b.api.create.bind(b.api);let injected=false;b.api.create=async args=>{const n=await create(args);if(!injected){injected=true;await create({parentId:'1',title:'Concurrent user bookmark',url:'https://concurrent.test'});}return n;};
+ await assert.rejects(()=>b.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/同时新增/);assert.equal((await b.api.children('1')).length,2);assert(b.local.data.syncInProgress);
+ b.api.create=create;p=await b.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.recovery);await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert.equal((await b.api.children('1')).length,2);assert(!b.local.data.syncInProgress);
+});
+test('changing DAV account starts a fresh merge; forgetting the connection removes its identity and sync state',async()=>{
+ const server=davServer(),w=await syncedWorker(server);await w.api.seed([link('x','X','https://x.test')]);let p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ w.local.data.webdav.username='another-account';w.local.data.syncVerified=null;p=await w.call('syncAction',{type:'SYNC_PREVIEW'});assert(p.first);
+ await w.call('backupAction',{type:'BACKUP_DAV_FORGET'});assert(!w.local.data.syncState);assert(!w.local.data.syncVerified);assert(!w.session.data.syncPreview);assert.equal(w.local.data.webdav.username,'');assert.equal((await w.api.children('1')).length,1);
 });

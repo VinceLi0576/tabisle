@@ -1,4 +1,4 @@
-importScripts('bookmark-core.js', 'backup-worker.js', 'editor-worker.js');
+importScripts('bookmark-core.js', 'backup-worker.js', 'sync-core.js', 'sync-worker.js', 'editor-worker.js');
 
 let taskTail = Promise.resolve();
 function queueTask(fn) { const task = taskTail.then(fn); taskTail = task.catch(() => {}); return task; }
@@ -7,13 +7,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!internal(sender) || !message?.type) return;
   const fn = async () => {
     if (message.type.startsWith('EDITOR_')) return editorAction(message);
+    if (message.type.startsWith('SYNC_')) return syncAction(message);
     if (message.type.startsWith('BACKUP_')) return backupAction(message);
     if (message.type === 'BOOKMARK_REMOVE') {
-      await makeSnapshot('删除前');
+      const policy=await chrome.storage.local.get('backupMode');
+      if(modeOf(policy)!=='local')await makeSnapshot('删除前');
       return message.tree ? chrome.bookmarks.removeTree(message.id) : chrome.bookmarks.remove(message.id);
     }
     if (message.type === 'ICON_FETCH') return remoteIcon(message.host);
-    if (message.type === 'APP_READY') { await ensureBackupAlarm(); return maybeBackup(); }
+    if (message.type === 'APP_READY') { await ensureBackupAlarm(); await maybeBackup(); return maybeSync(); }
     throw Error('未知操作');
   };
   const result = message.type === 'ICON_FETCH' ? fn() : queueTask(fn);
@@ -22,9 +24,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true}).catch(console.error);
-chrome.runtime.onInstalled.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); }).catch(console.error));
-chrome.runtime.onStartup.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); }).catch(console.error));
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'daily-bookmark-backup') queueTask(maybeBackup).catch(console.error); });
+chrome.runtime.onInstalled.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); await maybeSync(); }).catch(console.error));
+chrome.runtime.onStartup.addListener(() => queueTask(async()=>{ await ensureBackupAlarm(); await maybeBackup(); await maybeSync(); }).catch(console.error));
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'daily-bookmark-backup') queueTask(async()=>{await maybeBackup();await maybeSync();}).catch(console.error); });
 chrome.sidePanel.onClosed?.addListener(({windowId}) => chrome.storage.session.set({['editorOpen:'+windowId]:false}));
 chrome.sidePanel.onOpened?.addListener(({windowId}) => chrome.storage.session.set({['editorOpen:'+windowId]:true}));
 

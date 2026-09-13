@@ -1,6 +1,8 @@
 const BK=BookmarkCore;
 const PREF_KEYS=['view','recentCollapsed','filterMode'];
-const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/书签首页备份/',username:'',password:''};
+const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
+const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
+const intervalOf=data=>[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays:1;
 async function bookmarkBar() {
   const roots=(await chrome.bookmarks.getTree())[0].children;
   const bar=roots.find(n=>n.folderType==='bookmarks-bar')||roots.find(n=>n.id==='1');
@@ -9,18 +11,21 @@ async function bookmarkBar() {
 }
 async function captureSnapshot(reason='手动备份') {
   const bar=await bookmarkBar();
-  const data=await chrome.storage.local.get(['bookmarkIdentity','meta',...PREF_KEYS]);
+  const data=await chrome.storage.local.get(['bookmarkIdentity','meta','folderCollapsed','backupDevice',...PREF_KEYS]);
+  const folderState={};
   const identity=data.bookmarkIdentity||{}, next={};
   const convert=n=>{
     const record=identity[n.id];
     const uid=record && record.dateAdded===n.dateAdded ? record.uid : crypto.randomUUID();
     next[n.id]={uid,dateAdded:n.dateAdded};
+    const folded=data.folderCollapsed?.[`${n.id}:${n.dateAdded||0}`];
+    if(!n.url&&typeof folded==='boolean')folderState[uid]=folded;
     return {uid,id:n.id,title:n.title,dateAdded:n.dateAdded,...(n.url?{url:n.url}:{children:(n.children||[]).map(convert)})};
   };
   const children=bar.children.map(convert);
   await chrome.storage.local.set({bookmarkIdentity:next});
   return {format:'newtab-bookmarks',version:1,id:crypto.randomUUID(),createdAt:new Date().toISOString(),reason,children,
-    meta:data.meta||{items:{},groups:{},tags:[]},prefs:Object.fromEntries(PREF_KEYS.filter(k=>data[k]!==undefined).map(k=>[k,data[k]])),barId:bar.id};
+    meta:data.meta||{items:{},groups:{},tags:[]},prefs:Object.fromEntries(PREF_KEYS.filter(k=>data[k]!==undefined).map(k=>[k,data[k]])),folderState,device:String(data.backupDevice||'未命名设备'),barId:bar.id};
 }
 function portable(snapshot) {
   const clean=nodes=>nodes.map(({id,children,...node})=>({...node,...(children?{children:clean(children)}:{})}));
@@ -28,7 +33,7 @@ function portable(snapshot) {
 }
 async function fingerprint(snapshot) {
   const data=portable(snapshot);
-  const bytes=new TextEncoder().encode(JSON.stringify({children:data.children,meta:data.meta,prefs:data.prefs}));
+  const bytes=new TextEncoder().encode(JSON.stringify({children:data.children,meta:data.meta,prefs:data.prefs,folderState:data.folderState}));
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
 }
 async function storeSnapshot(snapshot) {
@@ -41,15 +46,20 @@ async function storeSnapshot(snapshot) {
 }
 async function makeSnapshot(reason='手动备份') { return storeSnapshot(await captureSnapshot(reason)); }
 async function ensureBackupAlarm() {
-  if(!await chrome.alarms.get('daily-bookmark-backup'))await chrome.alarms.create('daily-bookmark-backup',{periodInMinutes:60});
+  if((await chrome.alarms.get('daily-bookmark-backup'))?.periodInMinutes!==5)await chrome.alarms.create('daily-bookmark-backup',{periodInMinutes:5});
 }
 async function maybeBackup() {
-  const {lastBackupAt,restoreInProgress,backupAuto=true}=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','backupAuto']);
-  if(restoreInProgress||!backupAuto||Date.now()-Date.parse(lastBackupAt||0)<24*3600e3)return;
+  const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','webdav','pendingCloudBackup','backups']);
+  if(data.restoreInProgress||data.syncInProgress||modeOf(data)==='local')return;
   try {
-    const snapshot=await makeSnapshot('每日自动备份');
-    const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
-    if(webdav.enabled)await uploadSnapshot(snapshot);
+    const due=data.backupAuto!==false&&!(Date.now()-Date.parse(data.lastBackupAt||0)<intervalOf(data)*24*3600e3);
+    // Keep creating local protection even when the cloud remains unavailable.
+    const snapshot=due?await makeSnapshot('定时自动备份'):null;
+    if(modeOf(data)==='webdav'&&data.webdav?.enabled){
+      const pending=snapshot||(data.backups||[]).find(b=>b.id===data.pendingCloudBackup);
+      if(pending)await uploadSnapshot(pending);
+      else if(data.pendingCloudBackup)await chrome.storage.local.remove('pendingCloudBackup');
+    }
   } catch(error) { await chrome.storage.local.set({lastBackupError:error.message}); throw error; }
 }
 function davURL(value) {
@@ -64,61 +74,117 @@ async function davConfig() {
   return {...webdav,url:davURL(webdav.url).href};
 }
 async function davRequest(config,method,name='',body,headers={}) {
-  if(name&&!/^bookmarks-[a-zA-Z0-9-]+\.json$/.test(name))throw Error('备份文件名不正确');
+  if(name&&!/^(?:\d{4}-(?:0[1-9]|1[0-2])\/)?bookmarks-[a-zA-Z0-9-]+\.json$/.test(name)&&!/^\d{4}-(?:0[1-9]|1[0-2])\/$/.test(name))throw Error('备份文件名不正确');
   const bytes=new TextEncoder().encode(config.username+':'+config.password);let auth='';for(const b of bytes)auth+=String.fromCharCode(b);
   const r=await fetch(config.url+name,{method,headers:{Authorization:'Basic '+btoa(auth),...headers},body,redirect:'error',credentials:'omit',signal:AbortSignal.timeout(20000)});
-  if(!r.ok && !(method==='MKCOL'&&r.status===405))throw Error(`坚果云 ${method} 失败（${r.status}）${r.status===409?'，请先在坚果云创建上级目录':''}`);
+  if(!r.ok && !(method==='MKCOL'&&r.status===405)&&!(method==='PUT'&&r.status===412)){
+    const help={401:'账号或应用密码不正确，请使用第三方应用密码',403:'没有目录访问权限，请检查应用授权',404:'目录或版本不存在',409:'上级目录不存在，请重新连接并创建目录',429:'请求过于频繁，请稍后重试',507:'坚果云容量或额度不足，请检查账户权益'};
+    throw Error(`坚果云 ${method} 失败（${r.status}）：${help[r.status]||'请检查网络或稍后重试'}`);
+  }
   return r;
 }
+async function ensureDavDirectory(config){
+  const url=davURL(config.url),parts=url.pathname.slice('/dav/'.length).split('/').filter(Boolean);
+  let path='https://dav.jianguoyun.com/dav/';
+  if(parts.length>8)throw Error('备份目录最多支持 8 层');
+  for(const part of parts){path+=part+'/';await davRequest({...config,url:path},'MKCOL');}
+}
 async function uploadSnapshot(snapshot) {
-  const config=await davConfig();await davRequest(config,'MKCOL');
-  const name='bookmarks-'+snapshot.createdAt.replace(/[^0-9TZ]/g,'')+'-'+snapshot.id+'.json';
-  await davRequest(config,'PUT',name,JSON.stringify(portable(snapshot)),{'Content-Type':'application/json','If-None-Match':'*'});
-  await chrome.storage.local.set({lastCloudBackupAt:new Date().toISOString(),lastBackupError:''});return name;
+  const data=await chrome.storage.local.get('backupMode');
+  if(modeOf(data)!=='webdav')throw Error('当前方案已关闭云端上传；请先选择坚果云方案');
+  const config=await davConfig();
+  const period=new Date(snapshot.createdAt).toISOString().slice(0,7);
+  const name=period+'/bookmarks-'+snapshot.createdAt.replace(/[^0-9TZ]/g,'')+'-'+snapshot.id+'.json';
+  const body=JSON.stringify(portable(snapshot));
+  await chrome.storage.local.set({pendingCloudBackup:snapshot.id});
+  try{
+    await ensureDavDirectory(config);await davRequest(config,'MKCOL',period+'/');
+    const response=await davRequest(config,'PUT',name,body,{'Content-Type':'application/json','If-None-Match':'*'});
+    if(response.status===412){
+      const existing=await davRequest(config,'GET',name);
+      if(await existing.text()!==body)throw Error('云端存在同名但内容不同的版本，未覆盖，请保留本机副本');
+    }
+    await chrome.storage.local.set({lastCloudBackupAt:new Date().toISOString(),lastBackupError:''});
+    await chrome.storage.local.remove('pendingCloudBackup');return name;
+  }catch(error){await chrome.storage.local.set({lastBackupError:error.message});throw error;}
 }
 const bookmarkAPI={get:async id=>(await chrome.bookmarks.get(id))[0],children:id=>chrome.bookmarks.getChildren(id),move:(id,d)=>chrome.bookmarks.move(id,d),update:(id,d)=>chrome.bookmarks.update(id,d),create:d=>chrome.bookmarks.create(d),remove:id=>chrome.bookmarks.remove(id),removeTree:id=>chrome.bookmarks.removeTree(id)};
 async function backupAction(message) {
   switch(message.type) {
     case 'BACKUP_STATUS': {
-      const data=await chrome.storage.local.get(['backups','backupAuto','lastBackupError','lastBackupAt','lastCloudBackupAt','webdav','restoreInProgress']);
+      const data=await chrome.storage.local.get(['backups','backupAuto','backupMode','backupIntervalDays','backupDevice','lastBackupError','lastBackupAt','lastCloudBackupAt','webdav','restoreInProgress','pendingCloudBackup']);
       const cfg=data.webdav||DAV_DEFAULT;delete data.webdav;
-      return {...data,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled,url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
+      return {...data,backupMode:modeOf(data),backupIntervalDays:intervalOf(data),backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
+    }
+    case 'BACKUP_POLICY_SAVE': {
+      if(!['webdav','browser','local'].includes(message.mode)||![1,7,30].includes(message.intervalDays))throw Error('备份方案或频率不正确');
+      const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
+      await chrome.storage.local.set({backupMode:message.mode,...(message.mode!=='webdav'?{syncAuto:false}:{}),backupAuto:message.mode!=='local'&&!!message.auto,backupIntervalDays:message.intervalDays,backupDevice:String(message.device||'未命名设备').trim().slice(0,60),webdav:{...webdav,enabled:message.mode==='webdav'&&webdav.enabled}});
+      return true;
+    }
+    case 'BACKUP_EXPORT_CURRENT':return portable(await captureSnapshot('手动导出'));
+    case 'BACKUP_CLEAR_LOCAL': {
+      const {restoreInProgress,syncInProgress}=await chrome.storage.local.get(['restoreInProgress','syncInProgress']);
+      if(restoreInProgress||syncInProgress)throw Error('上次恢复未完成，请先保留并检查保护副本');
+      await chrome.storage.local.remove(['backups','lastBackupAt','pendingCloudBackup']);return true;
     }
     case 'BACKUP_CREATE': {
       const snapshot=await makeSnapshot('手动备份');
-      const {webdav}=await chrome.storage.local.get('webdav');
-      if(webdav?.enabled) { try {await uploadSnapshot(snapshot);}catch(e){await chrome.storage.local.set({lastBackupError:e.message});return {id:snapshot.id,warning:'本机备份已保存；'+e.message};} }
+      const data=await chrome.storage.local.get(['webdav','backupMode']);
+      if(modeOf(data)==='webdav'&&data.webdav?.enabled) { try {await uploadSnapshot(snapshot);}catch(e){await chrome.storage.local.set({lastBackupError:e.message});return {id:snapshot.id,warning:'本机备份已保存；'+e.message};} }
       return {id:snapshot.id};
     }
     case 'BACKUP_GET': { const {backups=[]}=await chrome.storage.local.get('backups');const b=backups.find(b=>b.id===message.id);if(!b)throw Error('该备份已不存在');return b; }
     case 'BACKUP_PREVIEW': {
       const desired=BK.validate(message.snapshot), current=await captureSnapshot();const p=BK.plan(current,desired);
       const token=crypto.randomUUID();await chrome.storage.session.set({restorePreview:{token,fingerprint:await fingerprint(current),snapshot:desired}});
-      return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged};
+      return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged,folderStateChanged:desired.folderState!=null&&JSON.stringify(current.folderState)!==JSON.stringify(desired.folderState)};
     }
     case 'BACKUP_RESTORE': {
       const {restorePreview:p}=await chrome.storage.session.get('restorePreview');if(!p||p.token!==message.token)throw Error('请重新预览要恢复的备份');
       const current=await captureSnapshot('恢复前自动保护');if(await fingerprint(current)!==p.fingerprint)throw Error('书签或附属数据已变化，请重新预览后恢复');
-      await storeSnapshot(current);await chrome.storage.local.set({restoreInProgress:{backupId:current.id,startedAt:new Date().toISOString()}});
+      await storeSnapshot(current);await chrome.storage.local.set({syncAuto:false,restoreInProgress:{backupId:current.id,startedAt:new Date().toISOString()}});
       try {
         const live=await BK.restore(bookmarkAPI,current.barId,current,p.snapshot);
         const identity={};for(const [uid,n]of live)identity[n.id]={uid,dateAdded:n.dateAdded};
+        const folderCollapsed={};
+        for(const [uid,folded]of Object.entries(p.snapshot.folderState||{})){const n=live.get(uid);if(n&&typeof folded==='boolean')folderCollapsed[`${n.id}:${n.dateAdded||0}`]=folded;}
         const prefs={view:'card',recentCollapsed:false,filterMode:'and',...Object.fromEntries(PREF_KEYS.filter(k=>p.snapshot.prefs[k]!==undefined).map(k=>[k,p.snapshot.prefs[k]]))};
-        await chrome.storage.local.set({meta:p.snapshot.meta,bookmarkIdentity:identity,...prefs});
+        await chrome.storage.local.set({meta:p.snapshot.meta,bookmarkIdentity:identity,...prefs,...(p.snapshot.folderState?{folderCollapsed}:{})});
         await chrome.storage.session.remove('restorePreview');
         // Drafts reference pre-restore IDs; clear them to avoid writing into restored records.
         const session=await chrome.storage.session.get(null);await chrome.storage.session.remove(Object.keys(session).filter(k=>k.startsWith('editorDraft:')||k.startsWith('editorSelection:')));
         await chrome.storage.local.remove('restoreInProgress');return {ok:true,safetyBackupId:current.id};
       }catch(e){throw Error('恢复未完成：'+e.message+'。恢复前的完整状态已保存在本机备份列表中，可预览后恢复。');}
     }
-    case 'BACKUP_AUTO':await chrome.storage.local.set({backupAuto:!!message.enabled});return true;
+    case 'BACKUP_AUTO': {
+      const data=await chrome.storage.local.get('backupMode');
+      if(modeOf(data)==='local'&&message.enabled)throw Error('纯本地方案已关闭自动备份');
+      await chrome.storage.local.set({backupAuto:!!message.enabled});return true;
+    }
+    case 'BACKUP_DAV_CONNECT': {
+      const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
+      const config={enabled:true,url:davURL(message.config.url).href,username:String(message.config.username||'').trim(),password:message.config.password||webdav.password};
+      if(!config.username||!config.password)throw Error('请填写账号和第三方应用密码');
+      if(config.username!==webdav.username&&!message.config.password)throw Error('更换账号时请重新填写应用密码');
+      if(!await chrome.permissions.contains({origins:['https://dav.jianguoyun.com/*']}))throw Error('请先授权访问坚果云');
+      await ensureDavDirectory(config);
+      await davRequest(config,'PROPFIND','','',{'Depth':'0'});
+      await chrome.storage.local.set({webdav:config,backupMode:'webdav',lastBackupError:'',syncAuto:false,syncVerified:null});return true;
+    }
+    case 'BACKUP_DAV_FORGET':await chrome.storage.local.set({webdav:{...DAV_DEFAULT},syncAuto:false});await chrome.storage.local.remove(['pendingCloudBackup','syncState','syncVerified','syncInProgress','syncTombstones','lastSyncAt','syncError']);await chrome.storage.session.remove('syncPreview');return true;
     case 'BACKUP_DAV_SAVE': {
       const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
       const config={enabled:!!message.config.enabled,url:davURL(message.config.url).href,username:String(message.config.username||'').trim(),password:message.config.password||webdav.password};
       if(config.enabled&&(!config.username||!config.password))throw Error('开启云备份需要账号和应用密码');
-      await chrome.storage.local.set({webdav:config});return true;
+      await chrome.storage.local.set({webdav:config,syncAuto:false,syncVerified:null});return true;
     }
-    case 'BACKUP_DAV_LIST': {const c=await davConfig();await davRequest(c,'MKCOL');const r=await davRequest(c,'PROPFIND','','<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/><d:getcontentlength/></d:prop></d:propfind>',{'Depth':'1','Content-Type':'application/xml'});return {xml:await r.text(),base:c.url};}
+    case 'BACKUP_DAV_LIST': {
+      const c=await davConfig(),period=message.period||'';
+      if(period&&!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(period))throw Error('月份格式不正确');
+      const config={...c,url:c.url+(period?period+'/':'')};
+      const r=await davRequest(config,'PROPFIND','','<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getlastmodified/><d:getcontentlength/></d:prop></d:propfind>',{'Depth':'1','Content-Type':'application/xml'});return {xml:await r.text(),base:config.url};
+    }
     case 'BACKUP_DAV_GET': {const r=await davRequest(await davConfig(),'GET',message.name);const txt=await r.text();if(txt.length>12e6)throw Error('备份文件过大');return BK.validate(JSON.parse(txt));}
     case 'BACKUP_DAV_UPLOAD': {const {backups=[]}=await chrome.storage.local.get('backups');const b=backups.find(b=>b.id===message.id);if(!b)throw Error('请先创建本机备份');return uploadSnapshot(b);}
     default:throw Error('未知备份操作');
