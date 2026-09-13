@@ -4,6 +4,7 @@
 <header class="page-head"><div><small>签屿 · TABISLE <span id="app-version"></span></small><h1>同步、备份与恢复</h1><p class="muted">多台电脑共用一套云端资料，每台浏览器保留自己的连接设置。同步保持一致，备份留住历史，恢复找回过去。</p></div><a href="newtab.html">返回书签首页 ↗</a></header>
 <div class="overview"><div><small>当前备份方案</small><strong id="mode-status">正在读取…</strong></div><div><small>最近本机版本</small><strong id="local-status">—</strong></div><div><small>最近云端上传</small><strong id="remote-status">—</strong></div></div>
 <p id="status" class="status" role="status" aria-live="polite"></p><p id="error" class="error" role="alert"></p><button id="reconnect-page" type="button" hidden>重新加载此页面</button>
+<section id="recovery-notice" class="card" role="status" hidden><h2>自动任务已暂停，需要处理未完成操作</h2><p id="recovery-note"></p><div class="action-row"><button id="recovery-history" type="button">查看本机保护副本</button><button id="recovery-sync" type="button">重新预览同步</button></div></section>
 <section class="card"><div class="section-title"><span class="step">1</span><div><h2>选择适合你的方式</h2><p class="muted">一次选择一种备份方案。签屿直接连接坚果云；Chrome / Edge 账号同步可按需保留。</p></div></div>
 <form id="policy-form"><fieldset class="mode-grid"><legend class="sr-only">备份方案</legend>
 <label class="mode-card"><input type="radio" name="mode" value="webdav"><span class="mode-top">坚果云 WebDAV <em>推荐</em></span><span class="muted">直接同步多台浏览器的书签、备注和标签，同时保留独立历史版本。</span></label>

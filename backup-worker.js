@@ -3,6 +3,7 @@ const PREF_KEYS=['view','recentCollapsed','filterMode'];
 const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
 const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
 const intervalOf=data=>[1,3,24,168,720].includes(data.backupIntervalHours)?data.backupIntervalHours:[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays*24:1;
+const policyState=data=>({mode:modeOf(data),auto:modeOf(data)!=='local'&&data.backupAuto!==false,intervalHours:intervalOf(data),device:String(data.backupDevice||'')});
 async function contentHash(text){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 function randomDeviceName() {
   const words=[
@@ -147,13 +148,15 @@ async function backupAction(message) {
       const receipt=data.lastBackupReceipt;delete data.lastBackupReceipt;
       const {endpoint,account,...safeReceipt}=receipt||{};
       const backupReceipt=endpoint===cfg.url&&account===cfg.username?safeReceipt:null;
-      return {...data,backupReceipt,backupMode:modeOf(data),backupIntervalHours:intervalOf(data),backupIntervalDays:intervalOf(data)/24,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
+      return {...data,policyState:policyState(data),backupReceipt,backupMode:modeOf(data),backupIntervalHours:intervalOf(data),backupIntervalDays:intervalOf(data)/24,backups:(data.backups||[]).map(b=>({id:b.id,createdAt:b.createdAt,reason:b.reason,device:b.device||'旧版本',bytes:new TextEncoder().encode(JSON.stringify(b)).length,count:BK.flatten(b.children).filter(n=>n.url).length})),webdav:{enabled:cfg.enabled&&modeOf(data)==='webdav',url:cfg.url,username:cfg.username,hasPassword:!!cfg.password}};
     }
     case 'BACKUP_POLICY_SAVE': {
       const hours=message.intervalHours??(message.intervalDays*24);
       if(!['webdav','browser','local'].includes(message.mode)||![1,3,24,168,720].includes(hours))throw Error('备份方案或频率不正确');
-      const {webdav=DAV_DEFAULT}=await chrome.storage.local.get('webdav');
       const identity=await ensureBackupDevice();
+      const saved=await chrome.storage.local.get(['webdav','backupMode','backupAuto','backupIntervalDays','backupIntervalHours','backupDevice']);
+      if(message.expectedPolicy&&BK.stableStringify(message.expectedPolicy)!==BK.stableStringify(policyState(saved)))throw Error('方案已在其他页面更新，未覆盖新设置。请先留存草稿，再刷新页面核对后保存。');
+      const {webdav=DAV_DEFAULT}=saved;
       await chrome.storage.local.set({backupMode:message.mode,...(message.mode!=='webdav'?{syncAuto:false}:{}),backupAuto:message.mode!=='local'&&!!message.auto,backupIntervalHours:hours,backupIntervalDays:hours/24,backupDevice:String(message.device||'').trim().slice(0,60)||identity.device,webdav:{...webdav,enabled:message.mode==='webdav'&&webdav.enabled}});
       return true;
     }

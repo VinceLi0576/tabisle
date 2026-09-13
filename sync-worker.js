@@ -152,8 +152,8 @@ async function applySync(token,auto=false){
     if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
     if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
-    await chrome.storage.local.set({lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied)},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
-    await chrome.storage.local.remove('syncInProgress');await chrome.storage.session.remove('syncPreview');return true;
+    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied)},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
+    await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});throw error;}finally{syncGuard=null;}
 }
 async function maybeSync(){

@@ -324,3 +324,17 @@ test('sync receipt proves matching remote and local content; corrupted accepted 
  a.context.fetch=async(url,o)=>{const r=await server.fetch(url,o);if(o.method==='PUT'&&url.endsWith('/sync/state.json')){const f=server.files.get(url),doc=JSON.parse(f.body);doc.snapshot.children[0].title='Corrupted';f.body=JSON.stringify(doc);}return r;};
  await assert.rejects(()=>a.call('syncAction',{type:'SYNC_APPLY',token:p.token}),/读回校验/);assert.equal(a.local.data.lastSyncAt,old);assert.equal(a.local.data.syncAuto,false);assert(a.local.data.syncInProgress);
 });
+test('observers never see a new successful sync receipt with an unfinished marker',async()=>{
+ const w=await syncedWorker(davServer());await w.api.seed([link('n','Name','https://example.test')]);
+ const set=w.local.set.bind(w.local);let observed=false;
+ w.local.set=async patch=>{await set(patch);if(patch.lastSyncReceipt){observed=true;assert.equal(!!w.local.data.syncInProgress,false);assert(w.local.data.syncState.base);}};
+ const p=await w.call('syncAction',{type:'SYNC_PREVIEW'});await w.call('syncAction',{type:'SYNC_APPLY',token:p.token});assert(observed);
+});
+test('stale policy submissions cannot overwrite a newer device name or backup interval',async()=>{
+ const w=await worker();const old=(await w.call('backupAction',{type:'BACKUP_STATUS'})).policyState;
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalHours:3,device:'New name',expectedPolicy:old});
+ await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'webdav',auto:false,intervalHours:1,device:'Old name',expectedPolicy:old}),/其他页面更新/);
+ assert.equal(w.local.data.backupDevice,'New name');assert.equal(w.local.data.backupIntervalHours,3);assert.equal(w.local.data.backupMode,'browser');
+ const fresh=(await w.call('backupAction',{type:'BACKUP_STATUS'})).policyState;
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalHours:24,device:'Confirmed',expectedPolicy:fresh});assert.equal(w.local.data.backupDevice,'Confirmed');
+});
