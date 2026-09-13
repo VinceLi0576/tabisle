@@ -5,6 +5,16 @@ async function editorAction(m) {
   if(m.type==='EDITOR_SELECT') {
     await chrome.storage.session.set({[selectionKey]:{id:m.id||null,parentId:m.parentId||null,stamp:Date.now()}});return true;
   }
+  if(m.type==='EDITOR_UNDO_DUPLICATE') {
+    const undoKey='editorDuplicateUndo:'+windowId;
+    const data=await chrome.storage.session.get(undoKey),undo=data[undoKey];
+    if(!undo)throw Error('没有可撤销的删除');
+    const parent=(await chrome.bookmarks.get(undo.parentId))[0];
+    if(!parent||parent.url)throw Error('原文件夹已不存在，请从保护备份恢复');
+    const children=await chrome.bookmarks.getChildren(parent.id);
+    await chrome.bookmarks.create({parentId:parent.id,index:Math.min(undo.index,children.length),title:undo.title,url:undo.url});
+    await chrome.storage.session.remove(undoKey);return true;
+  }
   const stored=await chrome.storage.session.get(selectionKey),selection=m.selection||stored[selectionKey];
   if(!selection)return null;
   const dk=draftKey(windowId,selection);
@@ -19,7 +29,24 @@ async function editorAction(m) {
     const bar=await bookmarkBar();const folders=[{id:bar.id,title:'未分组（书签栏）'}];
     const walk=(n,path)=>{for(const c of n.children||[])if(!c.url){const p=path?path+' / '+c.title:c.title;folders.push({id:c.id,title:p});walk(c,p);}};walk(bar,'');
     if(!draft.fields.parentId)draft.fields.parentId=bar.id;
-    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft};
+    const duplicates=[];
+    const visit=(nodes,path=[])=>{for(const n of nodes){const next=[...path,n.title||'未命名'];if(node&&n.url===node.url)duplicates.push({id:n.id,title:n.title,url:n.url,parentId:n.parentId,dateAdded:n.dateAdded,path:next.join(' / ')});if(n.children)visit(n.children,next);}};
+    visit((await chrome.bookmarks.getTree())[0].children||[]);
+    const undoKey='editorDuplicateUndo:'+windowId;
+    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft,duplicates,canUndoDuplicate:!!(await chrome.storage.session.get(undoKey))[undoKey]};
+  }
+  if(m.type==='EDITOR_DELETE_DUPLICATE') {
+    if(!node)throw Error('请先选择当前书签');
+    const target=(await chrome.bookmarks.get(String(m.id)))[0];
+    if(!target?.url||target.id===node.id||target.url!==node.url||target.dateAdded!==m.dateAdded)throw Error('这份收藏已变化，请刷新后重试');
+    let parent=(await chrome.bookmarks.get(target.parentId))[0];
+    while(parent){if(meta.groups?.[parent.title]?.locked)throw Error('这份收藏所在文件夹已锁定');if(!parent.parentId)break;parent=(await chrome.bookmarks.get(parent.parentId))[0];}
+    await makeSnapshot('删除重复收藏前');
+    const fresh=(await chrome.bookmarks.get(target.id))[0];
+    if(fresh.url!==target.url||fresh.parentId!==target.parentId||fresh.dateAdded!==target.dateAdded)throw Error('收藏已变化，请刷新后重试');
+    await chrome.bookmarks.remove(target.id);
+    await chrome.storage.session.set({['editorDuplicateUndo:'+windowId]:{parentId:target.parentId,index:target.index,title:target.title,url:target.url}});
+    return true;
   }
   if(m.type==='EDITOR_DRAFT') {
     const patch=m.patch||{};const allowed=['name','url','alias','desc','icon','tags','parentId'];

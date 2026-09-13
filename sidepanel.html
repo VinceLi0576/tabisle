@@ -43,6 +43,13 @@
         <select id="parentId"></select>
         <p id="path" class="folder-path"></p>
       </section>
+      <section class="edit-section" aria-labelledby="duplicates-heading">
+        <h2 id="duplicates-heading">相同网址的收藏</h2>
+        <p id="duplicate-summary" class="field-help"></p>
+        <p class="field-help">按完整网址匹配，保留参数和锚点。备注按网址共享；删除一份收藏不会删除共享备注。</p>
+        <div id="duplicates"></div>
+        <button type="button" id="duplicate-undo" hidden>撤销上次删除的重复收藏</button>
+      </section>
       <details class="editor-more">
         <summary>图标与更多操作</summary>
         <label for="icon">自定义图标</label>

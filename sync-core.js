@@ -34,7 +34,7 @@
     }
     const B=new Map(flat(base).map(n=>[n.uid,n])),L=new Map(flat(local).map(n=>[n.uid,n])),R=new Map(flat(remote).map(n=>[n.uid,n]));
     const conflicts=[],nodes=new Map(),forced=new Map();
-    function conflict(id,path,field,l,r){const choice=choices[id];conflicts.push({id,path,field,local:clone(l),remote:clone(r),choice:['local','remote'].includes(choice)?choice:null,...(field==='位置'?{localLabel:L.get(l)?.path||'书签栏',remoteLabel:R.get(r)?.path||'书签栏'}:field==='排序'?{localLabel:(l||[]).map(id=>L.get(id)?.title||id).join(' → '),remoteLabel:(r||[]).map(id=>R.get(id)?.title||id).join(' → ')}:{})});return clone(choice==='remote'?r:l);}
+    function conflict(id,path,field,l,r){const choice=choices[id];conflicts.push({id,path,field,url:(L.get(id.split(':')[0])||R.get(id.split(':')[0]))?.url,local:clone(l),remote:clone(r),choice:['local','remote'].includes(choice)?choice:null,...(field==='位置'?{localLabel:L.get(l)?.path||'书签栏',remoteLabel:R.get(r)?.path||'书签栏'}:field==='排序'?{localLabel:(l||[]).map(id=>L.get(id)?.title||id).join(' → '),remoteLabel:(r||[]).map(id=>R.get(id)?.title||id).join(' → ')}:{})});return clone(choice==='remote'?r:l);}
     function value(b,l,r,id,path,field){if(equal(l,r))return clone(l);if(equal(l,b))return clone(r);if(equal(r,b))return clone(l);return conflict(id,path,field,l,r);}
     const branch=(map,uid)=>{const n=map.get(uid);if(!n)return undefined;return {...content(n),children:[...map.values()].filter(x=>x.parent===uid).map(x=>({uid:x.uid,...branch(map,x.uid)}))};};
     for(const uid of new Set([...B.keys(),...L.keys(),...R.keys()])){

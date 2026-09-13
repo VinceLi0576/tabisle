@@ -64,3 +64,5 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 @media(prefers-color-scheme:dark) { .auto-badge { color: #74cba8; background: #74cba814; } .editor-page #save-state[data-state="saved"]::before { color: #74cba8; } .editor-page #save-state[data-state="dirty"] { color: #efb85e; } }
 
 @media(prefers-color-scheme:dark) { .tag-glyph { color: color-mix(in srgb, var(--tag-color) 65%, white); } }
+
+.duplicate-item{padding:12px 0;border-top:1px solid var(--border);overflow-wrap:anywhere}.duplicate-item p{font-size:12px;color:var(--muted);margin:6px 0}.duplicate-item button,.duplicate-item a{font-size:12px;margin:4px 8px 4px 0}.duplicate-item strong{font-size:13px}

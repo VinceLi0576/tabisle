@@ -5,7 +5,16 @@ function observeNative(type,id,info={}){
   nativeLastChange=Date.now();nativeRevision++;
   if(!syncGuard)return;
   const at=syncGuard.expected.findIndex(e=>e.type===type&&(!e.id||e.id===id)&&(!e.parentId||e.parentId===info.parentId)&&(!e.title||e.title===info.title)&&(!e.url||e.url===info.url));
-  if(at>=0)syncGuard.expected.splice(at,1);else syncGuard.dirty=true;
+  if(at>=0)syncGuard.expected.splice(at,1);else {
+    syncGuard.dirty=true;
+    if(!syncGuard.diagnostic){
+      const expected=syncGuard.expected.find(e=>e.type===type)||null;
+      const fields=expected?['id','parentId','title','url'].filter(k=>expected[k]&&expected[k]!== (k==='id'?id:info[k])):[];
+      const detail={type,expectedType:expected?.type||null,fields,remaining:syncGuard.expected.length,at:new Date().toISOString()};
+      if(expected?.url&&info.url){try{detail.normalizedUrlEqual=new URL(expected.url).href===new URL(info.url).href;}catch{}}
+      syncGuard.diagnostic=detail;
+    }
+  }
 }
 for(const [event,type]of [['onCreated','create'],['onChanged','update'],['onMoved','move'],['onRemoved','remove'],['onChildrenReordered','reorder']])chrome.bookmarks[event]?.addListener((id,info)=>observeNative(type,id,info));
 const syncVerification=c=>syncEndpoint(c)+'|move-v1';
@@ -159,7 +168,7 @@ async function applySync(token,auto=false){
     if(await fingerprint(await captureSnapshot())!==p.fingerprint)throw Error('云端保存期间本机有新变化；已暂停同步，请重新预览合并');
     syncGuard={dirty:false,expected:[]};const identity={},originalIds=new Set(BK.flatten(current.children).map(n=>n.id));
     const savedIdentity=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
-    const check=()=>{if(syncGuard.dirty)throw Error('检测到浏览器或用户同时修改书签，已停止应用；请重新预览合并');};
+    const check=()=>{if(syncGuard.dirty){const d=syncGuard.diagnostic;throw Error('检测到未预期的书签事件，已停止应用；请重新预览合并。诊断：'+JSON.stringify(d));}};
     const api={...bookmarkAPI};
     for(const method of ['create','update','move','remove','removeTree'])api[method]=async(...args)=>{
       check();const fields=method==='create'?args[0]:args[1]||{};
@@ -183,7 +192,7 @@ async function applySync(token,auto=false){
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
     await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
-  }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});throw error;}finally{syncGuard=null;}
+  }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;}
 }
 async function maybeSync(){
   const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);

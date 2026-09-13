@@ -25,10 +25,31 @@
       $('tags').closest('fieldset').hidden=!data.tags.length;
       $('name-help').textContent=draft.id?'收藏网页时带入的标题，可修改。':'通常使用网页标题，也可以自己填写。';
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
+      renderDuplicates(data);
       updateStatus();
     }catch(e){error(e);$('editor').hidden=true;$('empty').hidden=false;}
     finally{if(version===loadVersion)loading=false;}
   }
+  function renderDuplicates(data){
+    const entries=data.duplicates||[];
+    $('duplicate-summary').textContent=draft.id?'这个完整网址收藏了 '+entries.length+' 次。可保留多份，也可以删除不需要的那一份。':'保存书签后可查看相同网址的其他收藏。';
+    $('duplicates').replaceChildren(...entries.map(n=>{
+      const row=document.createElement('div');row.className='duplicate-item';
+      const title=document.createElement('strong');title.textContent=n.title||'未命名';
+      const path=document.createElement('p');path.textContent=n.path;
+      row.append(title,path);
+      if(safeLink(n.url)){const a=document.createElement('a');a.href=n.url;a.target='_blank';a.rel='noopener';a.textContent='打开网址 ↗';row.append(a);}
+      if(n.id===draft.id){const badge=document.createElement('span');badge.textContent=' 当前这份';row.append(badge);}
+      else {
+        const view=document.createElement('button');view.type='button';view.textContent='查看这份详情';view.onclick=async()=>{try{await pending;await ask('EDITOR_SELECT',{id:n.id});}catch(e){error(e);}};
+        const del=document.createElement('button');del.type='button';del.textContent='删除这一份';del.onclick=async()=>{del.disabled=true;try{await pending;await ask('EDITOR_DELETE_DUPLICATE',{selection,id:n.id,dateAdded:n.dateAdded});await load();}catch(e){error(e);del.disabled=false;}};
+        row.append(view,del);
+      }
+      return row;
+    }));
+    $('duplicate-undo').hidden=!data.canUndoDuplicate;
+  }
+  $('duplicate-undo').onclick=async()=>{try{await ask('EDITOR_UNDO_DUPLICATE');await load();}catch(e){error(e);}};
   function updateStatus(){
     const f=draft?.fields,b=draft?.base,dirty=!b||f.name!==b.title||f.url!==b.url||f.parentId!==b.parentId;
     $('save').textContent=draft?.id?'保存修改':'添加书签';
