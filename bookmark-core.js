@@ -22,6 +22,7 @@
     if (JSON.stringify(snapshot).length > 12e6) throw Error('备份文件过大（上限 12 MB）');
     const safe = (v) => { if (!v || typeof v !== 'object') return; for (const k of Object.keys(v)) { if (['__proto__', 'prototype', 'constructor'].includes(k)) throw Error('备份包含不安全的属性'); safe(v[k]); } };
     safe(snapshot);
+    if(snapshot.folderState!=null&&(Array.isArray(snapshot.folderState)||typeof snapshot.folderState!=='object'||Object.values(snapshot.folderState).some(v=>typeof v!=='boolean')))throw Error('文件夹折叠状态格式不正确');
     const ids = new Set(); let total = 0;
     const walk = (nodes, depth) => {
       if (depth > 100) throw Error('文件夹层级超过 100 层');
@@ -75,9 +76,9 @@
       }
     }
     for (const b of before) if (!used.has(b.uid)) add('删除',b);
-    return { before, after, match, used, changes, metaChanged: JSON.stringify(current.meta)!==JSON.stringify(desired.meta), prefsChanged: JSON.stringify(current.prefs)!==JSON.stringify(desired.prefs) };
+    return { before, after, match, used, changes, metaChanged: stableStringify(current.meta)!==stableStringify(desired.meta), prefsChanged: stableStringify(current.prefs)!==stableStringify(desired.prefs) };
   }
-  async function restore(api, barId, current, desired) {
+  async function restore(api, barId, current, desired, onPlaced) {
     const p = plan(current,desired), live = new Map(), desiredLive = new Set();
     async function place(nodes,parentId) {
       for (const n of nodes) {
@@ -88,13 +89,19 @@
           if (item.title !== n.title || item.url !== n.url) item = await api.update(item.id,{title:n.title,...(n.url ? {url:n.url}:{})});
         } else item = await api.create({parentId,title:n.title,...(n.url ? {url:n.url}:{})});
         live.set(n.uid,item); desiredLive.add(item.id);
+        if(onPlaced)await onPlaced(n.uid,item);
         if (n.children) await place(n.children,item.id);
       }
     }
     await place(desired.children,barId);
+    const originalIds=new Set(p.before.map(n=>n.id));
+    async function checkKnown(n){
+      if(!originalIds.has(n.id)&&!desiredLive.has(n.id))throw Error('发现同时新增的书签，请重新预览');
+      if(!n.url)for(const child of await api.children(n.id))await checkKnown(child);
+    }
     async function prune(parentId) {
       for (const n of await api.children(parentId)) {
-        if (!desiredLive.has(n.id)) { if (n.url) await api.remove(n.id); else await api.removeTree(n.id); }
+        if (!desiredLive.has(n.id)) { await checkKnown(n); if (n.url) await api.remove(n.id); else await api.removeTree(n.id); }
         else if (!n.url) await prune(n.id);
       }
     }
@@ -110,6 +117,10 @@
     await order(desired.children,barId);
     return live;
   }
-  root.BookmarkCore = { key, validUrl, flatten, validate, plan, restore };
+  function stableStringify(value){
+    const sort=v=>Array.isArray(v)?v.map(sort):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])])):v;
+    return JSON.stringify(sort(value));
+  }
+  root.BookmarkCore = { key, validUrl, flatten, validate, plan, restore, stableStringify };
   if (typeof module !== 'undefined') module.exports = root.BookmarkCore;
 })(globalThis);
