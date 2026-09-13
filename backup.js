@@ -33,7 +33,7 @@
   async function run(fn){if(busy)return;busy=true;$('error').textContent='';availability();try{await fn();}catch(e){$('error').textContent=e.message||String(e);}finally{busy=false;availability();}}
   function button(text,fn){const b=document.createElement('button');b.textContent=text;b.onclick=()=>run(fn);return b;}
   function download(snapshot){const u=URL.createObjectURL(new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='TabIsle-'+snapshot.createdAt.replace(/[:.]/g,'-')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);}
-  function syncMode(){const mode=selected();$('webdav-guide').hidden=mode!=='webdav';$('browser-guide').hidden=mode!=='browser';$('local-guide').hidden=mode!=='local';$('policy-note').textContent=dirty?'方案有未保存的修改。':mode==='webdav'&&!current?.webdav.enabled?'推荐方案尚未连接，当前不会上传。':'设置已保存。';availability();}
+  function syncMode(){const mode=selected();$('browser-guide').hidden=mode!=='browser';$('local-guide').hidden=mode!=='local';$('policy-note').textContent=dirty?'方案有未保存的修改。':mode==='webdav'&&!current?.webdav.enabled?'推荐方案尚未连接，当前不会上传。':'设置已保存。';availability();}
   function setTab(cloud){$('local-tab').setAttribute('aria-selected',String(!cloud));$('cloud-tab').setAttribute('aria-selected',String(cloud));$('local-tab').tabIndex=cloud?-1:0;$('cloud-tab').tabIndex=cloud?0:-1;$('local-panel').hidden=cloud;$('cloud-panel').hidden=!cloud;}
   let automation=null,automationReading=false;
   function renderCountdowns(){
@@ -94,6 +94,7 @@
     $('dav-pass').placeholder=data.webdav.hasPassword?'已保存，留空保留；更换账号须重新填写':'不是坚果云登录密码';
     $('history').replaceChildren(...data.backups.map(b=>{const row=document.createElement('div');row.className='backup-item';const info=document.createElement('div'),p=document.createElement('p'),small=document.createElement('small');p.textContent=date(b.createdAt);small.textContent=[b.device,b.reason,b.count+' 条书签',size(b.bytes)].join(' · ');info.append(p,small);const actions=document.createElement('div');actions.className='action-row';actions.append(button('预览恢复',async()=>preview(await ask('BACKUP_GET',{id:b.id}),'本机历史')),button('下载',async()=>download(await ask('BACKUP_GET',{id:b.id}))));if(data.backupMode==='webdav'&&data.webdav.enabled)actions.append(button('上传',async()=>{await ask('BACKUP_DAV_UPLOAD',{id:b.id});await refresh();$('status').textContent='这个版本已上传到坚果云。';}));row.append(info,actions);return row;}));
     await readAutomation();
+    window.BackupPage?.render(data,sync,latest);
     if(!data.backups.length){const p=document.createElement('p');p.className='empty';p.textContent='还没有本机版本。点击「立即备份」保存第一份。';$('history').append(p);}syncMode();
   }
   async function preview(snapshot,source='导入 JSON'){
@@ -102,7 +103,7 @@
     const counts={};for(const c of result.changes)counts[c.op]=(counts[c.op]||0)+1;
     $('preview-summary').textContent=[...Object.entries(counts).map(([k,v])=>k+' '+v+' 项'),result.metaChanged?'备注与标签等附属数据将更新':'附属数据无变化',result.prefsChanged?'显示偏好将更新':'',result.folderStateChanged?'文件夹折叠状态将更新':''].filter(Boolean).join(' · ');
     $('changes').replaceChildren(...result.changes.map(c=>{const li=document.createElement('li');li.textContent=c.op+'：'+c.path+(c.oldValue!=null?' · '+c.oldValue+' → '+c.newValue:'')+(c.before&&c.before!==c.path?'（当前：'+c.before+'）':'');return li;}));
-    if(!result.changes.length){const li=document.createElement('li');li.textContent='书签树无变化。';$('changes').append(li);}$('preview').scrollIntoView({behavior:'smooth',block:'start'});
+    if(!result.changes.length){const li=document.createElement('li');li.textContent='书签树无变化。';$('changes').append(li);}window.BackupPage?.reveal('preview',false);$('preview').scrollIntoView({behavior:'smooth',block:'start'});
   }
   // Only accept direct children of the directory we requested, never arbitrary DAV URLs.
   function parseDirectory({xml,base}){
@@ -157,32 +158,13 @@
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
-  function setupPageToc(){
-    const entries=[...document.querySelectorAll('.page-toc nav a')].map(link=>({link,target:document.querySelector(link.getAttribute('href'))})).filter(x=>x.target);
-    let frame=0;
-    const update=()=>{
-      frame=0;
-      const visible=entries.filter(({link,target})=>{const show=target.getClientRects().length>0;link.hidden=!show;return show;});
-      if(!visible.length)return;
-      const marker=scrollY+Math.min(innerHeight*.24,190);let current=visible[0];
-      for(const item of visible)if(item.target.getBoundingClientRect().top+scrollY<=marker)current=item;
-      if(innerHeight+scrollY>=document.documentElement.scrollHeight-4)current=visible.at(-1);
-      for(const item of entries){const active=item===current;item.link.toggleAttribute('aria-current',active);if(active)item.link.setAttribute('aria-current','location');}
-    };
-    const schedule=()=>{if(!frame)frame=requestAnimationFrame(update);};
-    for(const {link,target}of entries)link.onclick=e=>{e.preventDefault();target.scrollIntoView({behavior:'smooth',block:'start'});history.replaceState(null,'','#'+target.id);link.setAttribute('aria-current','location');};
-    addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule,{passive:true});
-    new MutationObserver(schedule).observe(document.body,{subtree:true,attributes:true,attributeFilter:['hidden']});
-    update();
-  }
-  setupPageToc();
-  $('recovery-history').onclick=()=>{setTab(false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
+  $('recovery-history').onclick=()=>{setTab(false);window.BackupPage?.reveal('backup-history',false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
   $('recovery-sync').onclick=()=>$('sync-preview').click();
   $('refresh-receipts').onclick=()=>run(()=>refresh());
   setInterval(renderCountdowns,1000);
   setInterval(()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});},15000);
   document.addEventListener('visibilitychange',()=>{if(!busy&&document.visibilityState==='visible')readAutomation().catch(()=>{});});
   let syncRefreshTimer=null;
-  chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState'].some(k=>k in changes)&&!busy){clearTimeout(syncRefreshTimer);syncRefreshTimer=setTimeout(()=>refresh().catch(()=>{}),250);}});
+  chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState','lastBackupAt','lastCloudBackupAt','lastBackupError','pendingCloudBackup','backupReceipt','restoreInProgress'].some(k=>k in changes)&&!busy){clearTimeout(syncRefreshTimer);syncRefreshTimer=setTimeout(()=>refresh().catch(()=>{}),250);}});
   run(()=>refresh({forms:true,preferWebdav:true}));
 })();
