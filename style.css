@@ -447,3 +447,17 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .side-item.scoped{background:var(--accent-bg);box-shadow:inset 2px 0 0 var(--accent)}
 .side-item.scoped .nm{color:var(--accent);font-weight:600}
 .side-item.scoped .nm::after{content:" ◂ AI 范围";font-size:9px;font-weight:400;opacity:.8}
+
+/* ── 文件夹说明：这个夹该放什么。写下来之后 AI 归类时照它办 ── */
+.hd-note-btn{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--muted-2);font-size:10px;cursor:pointer;white-space:nowrap}
+.hd-note-btn:hover{border-color:var(--accent);color:var(--accent)}
+.hd-note-btn.on{border-color:color-mix(in srgb,var(--accent) 40%,var(--border));color:var(--accent);background:var(--accent-bg)}
+.folder-note{display:flex;align-items:flex-start;gap:8px;margin:0 14px 8px;padding:8px 10px;border-left:2px solid var(--accent);border-radius:0 7px 7px 0;background:var(--well);font-size:11.5px;line-height:1.6}
+.folder-note .fn-text{flex:1;min-width:0;color:var(--muted)}
+.folder-note .fn-edit{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--muted-2);font-size:10px;cursor:pointer}
+.folder-note .fn-edit:hover{color:var(--accent);border-color:var(--accent)}
+.folder-note{flex-wrap:wrap}
+.fn-input{width:100%;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:inherit;font:inherit;font-size:11.5px;line-height:1.6;resize:vertical}
+.fn-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+.fn-actions{display:flex;gap:6px;flex-wrap:wrap}
+.fn-actions .btn{height:26px;padding:0 10px;font-size:11.5px}

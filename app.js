@@ -176,6 +176,17 @@ chrome:// ⚙️`;
   const folderLockedByTitle = (title) => !!(meta.groups[title] || {}).locked;
   const folderLocked = (n) => BmCore.folderLocked(meta, uidById, n);
   const isLocked = (id) => BmCore.lockedInTree(meta, uidById, bar, id);
+  // 文件夹说明＝这个夹该放什么。跟锁一样按 uid 存，改名不丢、同名夹不串
+  const folderNote = (id) => BmCore.folderNote(meta, uidById, id);
+  function setFolderNote(id, text) {
+    const uid = uidOf(id);
+    if (!uid) { toast('这个文件夹还没拿到稳定标识，先做一次自动备份再写说明'); return false; }
+    meta.folderNotes = meta.folderNotes || {};
+    const v = String(text || '').trim();
+    if (v) meta.folderNotes[uid] = v; else delete meta.folderNotes[uid];
+    saveMeta(); render();
+    return true;
+  }
   function setFolderLock(n, on) {
     const uid = uidOf(n.id);
     meta.locks = meta.locks || {};
@@ -438,10 +449,46 @@ chrome:// ⚙️`;
       (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
+      (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       `<span class="n">${countUrls(f)}</span>` +
       `<button class="more" type="button" title="更多">⋯</button>`;
     return head;
   }
+
+  // 「这个夹该放什么」那一条。写下来之后，AI 归类时会照它办。
+  function noteEl(f) {
+    const box = document.createElement('div');
+    box.className = 'folder-note'; box.dataset.id = f.id;
+    const txt = folderNote(f.id);
+    box.hidden = !txt;
+    box.innerHTML = txt
+      ? `<span class="fn-text">${esc(txt)}</span><button type="button" class="fn-edit">改</button>`
+      : '';
+    return box;
+  }
+  function openNoteEditor(id) {
+    const box = document.querySelector(`.folder-note[data-id="${CSS.escape(String(id))}"]`);
+    if (!box) return;
+    const node = findNode(String(id)); if (!node) return;
+    box.hidden = false;
+    box.innerHTML = `<textarea class="fn-input" rows="2" placeholder="一两句话写清楚这个夹该放哪类内容，例：只放能直接打开用的在线工具，教程和文章不放这儿"></textarea>` +
+      `<div class="fn-actions"><button type="button" class="btn fn-save">保存</button>` +
+      `<button type="button" class="btn ghost fn-ai">让 AI 看着写一条</button>` +
+      `<button type="button" class="btn ghost fn-cancel">取消</button></div>`;
+    const input = box.querySelector('.fn-input');
+    input.value = folderNote(id); input.focus();
+    box.querySelector('.fn-save').onclick = () => { if (setFolderNote(id, input.value)) toast('说明已保存'); };
+    box.querySelector('.fn-cancel').onclick = () => render();
+    box.querySelector('.fn-ai').onclick = () => {
+      // 把范围设成这个夹，再让 AI 照着里面的东西写 —— 它只看得到这一摊，不会拿别处的内容凑
+      window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: String(id) } }));
+      window.dispatchEvent(new CustomEvent('bm-ask', { detail: { text: `看一眼「${node.title}」这个文件夹里都是些什么，用一两句话写清楚它该放哪类内容、哪类不该放，然后用 propose_changes 的 folder_note 提交给我确认。` } }));
+    };
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.hd-note-btn'); if (b) { openNoteEditor(b.dataset.note); return; }
+    const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
+  });
 
   function subEl(f, level) {
     const sub = document.createElement('div');
@@ -450,6 +497,7 @@ chrome:// ⚙️`;
     markLevel(sub, level);
     const color = groupColor(f.title); if (color) sub.style.setProperty('--gc', color);
     sub.appendChild(headEl(f, 'sub-head', { level }));
+    sub.appendChild(noteEl(f));
     sub.appendChild(bodyEl(f, false, level));
     initFold(sub, f);
     return sub;
@@ -462,6 +510,7 @@ chrome:// ⚙️`;
     markLevel(card, 1);
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
+    if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
     if (!opts.fixed) initFold(card, f);
     return card;
@@ -1314,6 +1363,7 @@ chrome:// ⚙️`;
     store, key, host, label, rawLabel, domainParts, countUrls, esc,
     get bar() { return bar; }, get flat() { return flat; }, get meta() { return meta; }, get prefs() { return prefs; },
     itemMeta, setItemMeta, saveMeta, savePrefs, tagList, tagDef, findNode, refresh, render, openDetail, toast, MAX_TAGS, PALETTE, isLocked,
+    folderNote, setFolderNote,
     parseEmojiRules, setEmojiRules(txt) { meta.emojiRules = txt; emojiRules = parseEmojiRules(txt); saveMeta(); },
   };
   // 后台可能正在冷启动甚至没起来：超时也要有结论，🚫 别让状态条静默消失

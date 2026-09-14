@@ -7,7 +7,7 @@
   const MAX_TAGS = 9;
   const PALETTE = ['#2f6fdb','#1f9d55','#d08700','#d64545','#8e44ad','#0e9aa7','#e07a2f','#5c6b7a','#c2185b','#3d8b40'];
   let meta = await store.meta.get();
-  meta.items ||= {}; meta.groups ||= {}; meta.tags ||= []; meta.locks ||= {};
+  meta.items ||= {}; meta.groups ||= {}; meta.tags ||= []; meta.locks ||= {}; meta.folderNotes ||= {};
   let bar = await store.bar();
   let flat = BmCore.flatten(bar);
   let uidById = {};
@@ -43,6 +43,15 @@
     label: (n) => (n.url && (meta.items[BmCore.key(n.url)] || {}).name) || n.title || BmCore.host(n.url) || '（无名）',
     rawLabel: (n) => n.title || BmCore.host(n.url) || '（无名）',
     isLocked: (id) => BmCore.lockedInTree(meta, uidById, bar, id),
+    folderNote: (id) => BmCore.folderNote(meta, uidById, id),
+    setFolderNote(id, text) {
+      const uid = uidById[String(id)];
+      if (!uid) { toast('这个文件夹还没拿到稳定标识，先做一次自动备份再写说明'); return false; }
+      meta.folderNotes ||= {};
+      const v = String(text || '').trim();
+      if (v) meta.folderNotes[uid] = v; else delete meta.folderNotes[uid];
+      saveMeta(); return true;
+    },
     refresh, render: () => window.dispatchEvent(new Event('panel-bookmarks')), toast,
     openDetail: (id) => window.dispatchEvent(new CustomEvent('panel-open-detail', { detail: { id } })),
     parseEmojiRules: () => [], setEmojiRules: () => {},
@@ -51,6 +60,6 @@
   await refresh();
   // 别处（首页、同步）改了书签或备注，侧栏要跟上
   store.onChange(() => { refresh().catch(() => {}); });
-  store.meta.onChanged?.((fresh) => { meta = fresh; meta.items ||= {}; meta.groups ||= {}; meta.tags ||= []; meta.locks ||= {}; window.dispatchEvent(new Event('panel-bookmarks')); });
+  store.meta.onChanged?.((fresh) => { meta = fresh; meta.items ||= {}; meta.groups ||= {}; meta.tags ||= []; meta.locks ||= {}; meta.folderNotes ||= {}; window.dispatchEvent(new Event('panel-bookmarks')); });
   window.dispatchEvent(new Event('bm-ready'));          // ai.js 等的就是这一下
 })();

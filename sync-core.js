@@ -93,7 +93,9 @@
     const tagMap=s=>Object.fromEntries((s?.meta.tags||[]).map(t=>[t.id,t]));
     const meta={items:object(base?.meta.items,local.meta.items,remote?.meta.items||{},'备注')||{},groups:object(base?.meta.groups,local.meta.groups,remote?.meta.groups||{},'分组')||{},tags:Object.values(object(base?tagMap(base):undefined,tagMap(local),tagMap(remote),'标签')||{}),
       // 🔴 锁定按节点身份记在 meta.locks，必须一起合并；漏了它每同步一次锁就全没了
-      locks:object(base?.meta.locks,local.meta.locks||{},remote?.meta.locks||{},'锁定')||{}};
+      locks:object(base?.meta.locks,local.meta.locks||{},remote?.meta.locks||{},'锁定')||{},
+      // 🔴 同上：文件夹说明也按 uid 记在 meta 里，漏一个键就等于每同步一次全丢一次
+      folderNotes:object(base?.meta.folderNotes,local.meta.folderNotes||{},remote?.meta.folderNotes||{},'文件夹说明')||{}};
     const snapshot={...clone(local),children:order(''),meta};
     // Display and folding preferences stay per-device during sync; full backups still migrate them.
     BK.validate(snapshot);

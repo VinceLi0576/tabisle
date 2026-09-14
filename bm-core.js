@@ -127,6 +127,14 @@
     return { id: String(n.id), title: n.title || '（未命名）', path: folderPath(bar, rootId), count: countUrls(n), subfolders };
   }
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, SLD };
+  // 文件夹说明（这个夹该放哪类东西）。
+  // \u{1F534} 按 uid 存，跟锁同一套身份 —— 按标题存的话，改个名说明就跟丢了，
+  // 而且两个同名夹会共用一条说明（锁当初就是踩了这两个坑才迁到 uid 的）。
+  const folderNote = (meta, uidById, id) => {
+    const uid = uidById && uidById[String(id)];
+    return (uid && meta && meta.folderNotes && meta.folderNotes[uid]) || '';
+  };
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

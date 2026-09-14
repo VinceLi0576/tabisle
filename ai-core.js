@@ -67,7 +67,7 @@
   const reverseOrder = (journal) => [...(journal || [])].reverse();
 
   const UNDONAME = { update: '改名/改址', move: '移动', created: '新建', restore: '删除',
-                     order: '排序', tagAdded: '新增标签', group: '夹颜色', meta: '备注' };
+                     order: '排序', tagAdded: '新增标签', group: '夹颜色', meta: '备注', folderNote: '文件夹说明' };
 
   // 倒着重放逆操作。api 由调用方注入，便于在浏览器外用假数据层测。
   // 约定：每条逆操作之前先核对现状；对不上就跳过并记原因，🚫 不硬盖。
@@ -116,6 +116,7 @@
             break;
           case 'tagAdded': await api.removeTag(e.id); break;
           case 'group': await api.setGroup(e.title, e.to); break;
+          case 'folderNote': await api.setFolderNote(e.id, e.to); break;
           case 'meta': break;   // 统一在下面还原
         }
         for (const m of e.meta || []) await api.setMeta(m.url, m.snap);

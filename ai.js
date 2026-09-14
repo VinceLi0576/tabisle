@@ -33,7 +33,7 @@ window.addEventListener('bm-ready', () => {
     { type: 'function', function: { name: 'propose_changes', description: '提交一批修改让用户预览确认。用户点执行后才会真正写入。一次对话只调一次，把所有改动放在一起。', parameters: { type: 'object', required: ['summary', 'changes'], properties: {
       summary: { type: 'string', description: '一句话说明这批改动' },
       changes: { type: 'array', items: { type: 'object', required: ['op'], properties: {
-        op: { type: 'string', enum: ['move', 'rename', 'set_url', 'meta', 'create_folder', 'create_bookmark', 'delete', 'sort_folder', 'add_tag', 'set_folder_color'] },
+        op: { type: 'string', enum: ['move', 'rename', 'set_url', 'meta', 'create_folder', 'create_bookmark', 'delete', 'sort_folder', 'add_tag', 'set_folder_color', 'folder_note'] },
         id: { type: 'string', description: '书签或文件夹 id（move/rename/set_url/meta/delete/sort_folder/set_folder_color）' },
         parent_id: { type: 'string', description: '目标文件夹 id；可写 $ref 引用本批 create_folder 的 ref' },
         index: { type: 'integer', description: '目标位置（0 起）；不填＝末尾' },
@@ -42,6 +42,7 @@ window.addEventListener('bm-ready', () => {
         tags: { type: 'array', items: { type: 'string' }, description: '标签 id 列表（只能用已定义的标签 id，或本批 add_tag 的 ref）' },
         emoji: { type: 'string', description: '一个 emoji 当图标' },
         by: { type: 'string', enum: ['domain', 'title', 'alias'], description: 'sort_folder 的排序依据' },
+        note: { type: 'string', description: 'folder_note：这个文件夹该放哪类内容，一两句话，写给人看，留空＝清掉' },
         ref: { type: 'string', description: 'create_folder / add_tag 时给这个新对象起的引用名，后续 op 用 $ref 指它' },
         glyph: { type: 'string', description: 'add_tag：一个字' }, name: { type: 'string', description: 'add_tag：标签名' }, color: { type: 'string', description: '十六进制颜色' },
       } } },
@@ -83,20 +84,20 @@ window.addEventListener('bm-ready', () => {
         const p = path ? path + '/' + c.title : c.title;
         const mine = okIn(set, c.id);
         folders.push(mine
-          ? { id: c.id, title: c.title, depth, path: p, count: BM.countUrls(c), subfolders: (c.children || []).filter((x) => !x.url).length, ...(isLocked(c.id) ? { locked: true } : {}) }
+          ? { id: c.id, title: c.title, depth, path: p, count: BM.countUrls(c), subfolders: (c.children || []).filter((x) => !x.url).length, ...(BM.folderNote(c.id) ? { note: BM.folderNote(c.id) } : {}), ...(isLocked(c.id) ? { locked: true } : {}) }
           : { title: c.title, depth, path: p, count: BM.countUrls(c), out_of_scope: true });
         walk(c, depth + 1, p); } };
       walk(BM.bar, 0, '');
       return { bar_id: BM.bar.id, total_bookmarks: BM.flat.length,
         ...(set ? { scope: { folder: scope.path, bookmarks: scope.count, includes_subfolders: true },
           scope_note: 'out_of_scope:true 的夹只给了名字和条数，里面的书签拿不到、也不要对它们提改动。没有 id 的就是这类。' } : {}),
-        locked_note: 'locked:true 的文件夹及其内容用户已锁定，不要对它们提任何改动', folders, tags: BM.tagList().map((t) => ({ id: t.id, glyph: t.glyph, name: t.name, desc: t.desc })), max_tags: BM.MAX_TAGS, loose_in_bar: (BM.bar.children || []).filter((c) => c.url).length };
+        note_note: 'note 是用户给这个夹定的规矩「这里该放什么」。归类时照它办；它和夹里的实际内容对不上，就说出来。', locked_note: 'locked:true 的文件夹及其内容用户已锁定，不要对它们提任何改动', folders, tags: BM.tagList().map((t) => ({ id: t.id, glyph: t.glyph, name: t.name, desc: t.desc })), max_tags: BM.MAX_TAGS, loose_in_bar: (BM.bar.children || []).filter((c) => c.url).length };
     },
     get_folder({ folder_id }) {
       const f = BM.findNode(String(folder_id)); if (!f || f.url) return { error: '没有这个文件夹' };
       if (!okIn(inScope(), f.id)) return outOfScope(f.title || String(folder_id));
       const path = folderPath(f.id);
-      return { id: f.id, title: f.title, items: (f.children || []).map((c, i) => c.url ? { id: c.id, index: i, title: c.title, alias: BM.itemMeta(c.url).name || '', url: c.url, tags: BM.itemMeta(c.url).tags || [], desc: BM.itemMeta(c.url).desc || '', emoji: BM.itemMeta(c.url).icon || '' } : { id: c.id, index: i, folder: c.title, count: BM.countUrls(c) }) , path };
+      return { id: f.id, title: f.title, ...(BM.folderNote(f.id) ? { note: BM.folderNote(f.id) } : {}), items: (f.children || []).map((c, i) => c.url ? { id: c.id, index: i, title: c.title, alias: BM.itemMeta(c.url).name || '', url: c.url, tags: BM.itemMeta(c.url).tags || [], desc: BM.itemMeta(c.url).desc || '', emoji: BM.itemMeta(c.url).icon || '' } : { id: c.id, index: i, folder: c.title, count: BM.countUrls(c) }) , path };
     },
     search({ query, limit = 50 }) {
       const q = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
@@ -132,7 +133,7 @@ window.addEventListener('bm-ready', () => {
   };
 
   // ── 预览与执行 ──
-  const OPNAME = { move: '移动', rename: '改名', set_url: '改地址', meta: '改说明', create_folder: '新建夹', create_bookmark: '新建书签', delete: '删除', sort_folder: '排序', add_tag: '新增标签', set_folder_color: '夹颜色' };
+  const OPNAME = { move: '移动', rename: '改名', set_url: '改地址', meta: '改说明', create_folder: '新建夹', create_bookmark: '新建书签', delete: '删除', sort_folder: '排序', add_tag: '新增标签', set_folder_color: '夹颜色', folder_note: '夹说明' };
   function describe(ch) {
     const n = ch.id ? BM.findNode(String(ch.id)) : null; const nm = n ? (n.url ? BM.label(n) : '📁 ' + n.title) : (ch.id ? `#${ch.id}` : '');
     const tgt = ch.parent_id ? (String(ch.parent_id).startsWith('$') ? ch.parent_id : ('📁 ' + (BM.findNode(String(ch.parent_id))?.title || ch.parent_id))) : '';
@@ -147,6 +148,7 @@ window.addEventListener('bm-ready', () => {
       case 'sort_folder': return `${nm} 按${{ domain: '域名', title: '标题', alias: '备注名' }[ch.by] || '域名'}排序`;
       case 'add_tag': return `新增标签「${ch.glyph} ${ch.name}」`;
       case 'set_folder_color': return `${nm} 颜色 ${ch.color}`;
+      case 'folder_note': return `${nm} 说明：${ch.note ? '「' + ch.note + '」' : '（清空）'}`;
       default: return JSON.stringify(ch);
     }
   }
@@ -197,6 +199,7 @@ window.addEventListener('bm-ready', () => {
       setMeta: (url, snap) => BM.setItemMeta(url, snap),
       removeTag: (id) => { BM.meta.tags = BM.tagList().filter((t) => t.id !== id); BM.saveMeta(); },
       setGroup: (title, val) => { if (val) BM.meta.groups[title] = val; else delete BM.meta.groups[title]; BM.saveMeta(); },
+      setFolderNote: (id, val) => BM.setFolderNote(id, val || ''),
     };
     const wrapped = { ...api, create: async (props) => { const r = await store.create(props); await BM.refresh(); return r; } };
     const { ok, skipped } = await AiCore.replayUndo(lastBatch.journal, wrapped);
@@ -269,6 +272,9 @@ window.addEventListener('bm-ready', () => {
             const id = String(ch.id); const kids = (await store.children(id)).filter((k) => k.url); const keyOf = (k) => { const d = BM.domainParts(k.url); const m = BM.itemMeta(k.url); return ch.by === 'title' ? k.title : ch.by === 'alias' ? (m.name || k.title) : [d.root, d.pre, BM.label(k)].join(' '); }; for (const k of [...kids].sort((x, y) => keyOf(x).localeCompare(keyOf(y), 'zh'))) await store.move(k.id, { parentId: id, index: (await store.children(id)).length }); break; }
           case 'add_tag': { if (BM.tagList().length >= BM.MAX_TAGS) throw new Error('标签已满 9 个');
             journal.push({ kind: 'tagAdded' }); const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), glyph: String(ch.glyph || ch.name || '标').slice(0, 2), name: String(ch.name || ''), desc: String(ch.desc || ''), color: ch.color || BM.PALETTE[BM.tagList().length % BM.PALETTE.length] }; BM.meta.tags.push(t); BM.saveMeta(); journal[journal.length-1].id = t.id; if (ch.ref) refs[ch.ref] = t.id; break; }
+          case 'folder_note': { const n = BM.findNode(String(ch.id)); if (!n || n.url) throw new Error('不是文件夹');
+            journal.push({ kind: 'folderNote', id: String(ch.id), to: BM.folderNote(ch.id), after: {} });
+            BM.setFolderNote(ch.id, String(ch.note || '')); break; }
           case 'set_folder_color': { const n = BM.findNode(String(ch.id)); if (!n) throw new Error('不存在');
             journal.push({ kind: 'group', title: n.title, to: BM.meta.groups[n.title] ? { ...BM.meta.groups[n.title] } : null }); BM.meta.groups[n.title] = { ...(BM.meta.groups[n.title] || {}), color: ch.color }; BM.saveMeta(); break; }
           default: throw new Error('不认识的操作 ' + ch.op);
@@ -415,6 +421,13 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   chrome.storage.onChanged.addListener((ch, area) => {
     if (area !== 'session' || !ch[SCOPE_KEY]) return;
     scope = ch[SCOPE_KEY].newValue || null; renderScope();      // 另一边（首页/侧栏）改了范围，这边跟上
+  });
+  // 首页文件夹头上那个「让 AI 看着写一条」按钮
+  window.addEventListener('bm-ask', (e) => {
+    const text = e.detail && e.detail.text; if (!text) return;
+    showPanel(true);
+    if (!ai.key) { openSettings(); return; }
+    send(text);
   });
   window.addEventListener('bm-scope', (e) => {
     const id = e.detail && e.detail.id;
