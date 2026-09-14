@@ -18,6 +18,13 @@
   </header>
   <p id="panel-toast" class="panel-toast" hidden></p>
   <div id="pane-detail" role="tabpanel" aria-labelledby="tab-detail">
+  <div id="detail-nudge" class="detail-nudge" hidden>
+    <button type="button" class="dn" data-nudge="up" title="把这一条往前挪一格">▲ 上移</button>
+    <button type="button" class="dn" data-nudge="down" title="把这一条往后挪一格">▼ 下移</button>
+    <span class="dn-sep"></span>
+    <button type="button" class="dn" data-nudge="out" title="移出当前文件夹，升一层">⇤ 移出</button>
+    <button type="button" class="dn" data-nudge="in" title="收进上面紧挨着的文件夹，降一层">⇥ 收进</button>
+  </div>
   <p id="error" class="error" role="alert"></p>
   <p id="empty" class="empty-note">点击书签卡片右侧的箭头，开始编辑。<br>再点同一个箭头，即可收起侧栏。</p>
   <form id="editor" hidden>
@@ -41,8 +48,10 @@
         <p id="alias-help" class="field-help">只改变首页显示的名称，建议 4～6 个字。</p>
         <div class="name-preview"><span>首页显示</span><strong id="preview-name"></strong></div>
         <fieldset><legend>标签组</legend><div id="tags" class="tag-options"></div></fieldset>
-        <label for="desc">说明</label>
-        <textarea id="desc" rows="2" placeholder="记一下用途或需要留意的事"></textarea>
+        <label for="desc">一句话说明 <span class="label-hint">首页卡片上显示这句</span></label>
+        <textarea id="desc" rows="2" placeholder="这是什么，一句话，例：查快递单号"></textarea>
+        <label for="note">详细说明 <span class="label-hint">只在这里看得到</span></label>
+        <textarea id="note" rows="4" placeholder="什么场景下会用到？要不要一直留着？&#10;例：每次给客户寄样品之后用它查物流；等这批订单走完就可以删了。"></textarea>
       </section>
       <section class="edit-section folder-fields" aria-label="所在文件夹">
         <label for="parentId">这条放在哪个文件夹 <span class="label-hint">改完要按底下的保存</span></label>

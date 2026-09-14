@@ -60,7 +60,8 @@ window.addEventListener('bm-ready', () => {
         parent_id: { type: 'string', description: '目标文件夹 id；可写 $ref 引用本批 create_folder 的 ref' },
         index: { type: 'integer', description: '目标位置（0 起）；不填＝末尾' },
         title: { type: 'string' }, url: { type: 'string' },
-        alias: { type: 'string', description: '备注名（≤12 字）' }, desc: { type: 'string', description: '一句话说明（≤20 字）' },
+        alias: { type: 'string', description: '备注名（≤12 字）' }, desc: { type: 'string', description: '一句话说明（≤20 字），写「这是什么」' },
+        note: { type: 'string', description: '详细说明：什么场景下会用到、要不要留着。几句话，写给人看的' },
         tags: { type: 'array', items: { type: 'string' }, description: '标签 id 列表（只能用已定义的标签 id，或本批 add_tag 的 ref）' },
         emoji: { type: 'string', description: '一个 emoji 当图标' },
         by: { type: 'string', enum: ['domain', 'title', 'alias'], description: 'sort_folder 的排序依据' },
@@ -73,7 +74,7 @@ window.addEventListener('bm-ready', () => {
 
   const compact = (n, path) => {
     const m = BM.itemMeta(n.url); const d = BM.domainParts(n.url);
-    return `${n.id}|${path}|${n.title}|${m.name || ''}|${d.pre ? d.pre + '.' : ''}${d.root}|${(m.tags || []).join(',')}${m.desc ? '|' + m.desc : ''}`;
+    return `${n.id}|${path}|${n.title}|${m.name || ''}|${d.pre ? d.pre + '.' : ''}${d.root}|${(m.tags || []).join(',')}${m.desc ? '|' + m.desc : ''}`;   // 紧凑清单不带详细说明，太长；要看详细说明用 get_folder
   };
   function folderPath(id) { const b = BM.flat.find((x) => x.parentId === id); if (b) return b.path || '书签栏'; const walk = (n, p) => { if (n.id === id) return p; for (const c of n.children || []) if (!c.url) { const r = walk(c, p ? p + '/' + c.title : c.title); if (r !== null) return r; } return null; }; return walk(BM.bar, '') || '书签栏'; }
 
@@ -119,7 +120,7 @@ window.addEventListener('bm-ready', () => {
       const f = BM.findNode(String(folder_id)); if (!f || f.url) return { error: '没有这个文件夹' };
       if (!okIn(inScope(), f.id)) return outOfScope(f.title || String(folder_id));
       const path = folderPath(f.id);
-      return { id: f.id, title: f.title, ...(BM.folderNote(f.id) ? { note: BM.folderNote(f.id) } : {}), items: (f.children || []).map((c, i) => c.url ? { id: c.id, index: i, title: c.title, alias: BM.itemMeta(c.url).name || '', url: c.url, tags: BM.itemMeta(c.url).tags || [], desc: BM.itemMeta(c.url).desc || '', emoji: BM.itemMeta(c.url).icon || '' } : { id: c.id, index: i, folder: c.title, count: BM.countUrls(c) }) , path };
+      return { id: f.id, title: f.title, ...(BM.folderNote(f.id) ? { note: BM.folderNote(f.id) } : {}), items: (f.children || []).map((c, i) => c.url ? { id: c.id, index: i, title: c.title, alias: BM.itemMeta(c.url).name || '', url: c.url, tags: BM.itemMeta(c.url).tags || [], desc: BM.itemMeta(c.url).desc || '', note: BM.itemMeta(c.url).note || '', emoji: BM.itemMeta(c.url).icon || '' } : { id: c.id, index: i, folder: c.title, count: BM.countUrls(c) }) , path };
     },
     search({ query, limit = 50 }) {
       const q = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
@@ -163,7 +164,7 @@ window.addEventListener('bm-ready', () => {
       case 'move': return `${nm} → ${tgt}${ch.index != null ? ' 第 ' + (ch.index + 1) + ' 位' : ''}`;
       case 'rename': return `${nm} 改名为「${ch.title}」`;
       case 'set_url': return `${nm} 地址改为 ${ch.url}`;
-      case 'meta': return `${nm}：${[ch.alias != null && '备注「' + ch.alias + '」', ch.desc != null && '说明「' + ch.desc + '」', ch.tags && '标签 ' + ch.tags.map((t) => BM.tagDef(t)?.glyph || t).join(''), ch.emoji && '图标 ' + ch.emoji].filter(Boolean).join(' · ')}`;
+      case 'meta': return `${nm}：${[ch.alias != null && '备注「' + ch.alias + '」', ch.desc != null && '说明「' + ch.desc + '」', ch.note != null && '详细说明「' + String(ch.note).slice(0, 30) + (String(ch.note).length > 30 ? '…' : '') + '」', ch.tags && '标签 ' + ch.tags.map((t) => BM.tagDef(t)?.glyph || t).join(''), ch.emoji && '图标 ' + ch.emoji].filter(Boolean).join(' · ')}`;
       case 'create_folder': return `在 ${tgt || '书签栏'} 新建文件夹「${ch.title}」${ch.ref ? ' (' + ch.ref + ')' : ''}`;
       case 'create_bookmark': return `在 ${tgt || '书签栏'} 新建书签「${ch.title}」 ${ch.url}`;
       case 'delete': return `🗑 删除 ${nm}`;
@@ -304,7 +305,7 @@ window.addEventListener('bm-ready', () => {
               meta: [{ url: String(ch.url), snap: AiCore.metaSnapshot(BM.itemMeta(String(ch.url))) }] });
             const n = BM.findNode(String(ch.id)); await store.update(String(ch.id), { url: String(ch.url) }); if (n) { const m = BM.itemMeta(n.url); if (Object.keys(m).length) BM.setItemMeta(ch.url, m); } break; }
           case 'meta': { const n = BM.findNode(String(ch.id)); if (!n || !n.url) throw new Error('不是书签');
-            journal.push({ kind: 'meta', meta: [{ url: n.url, snap: AiCore.metaSnapshot(BM.itemMeta(n.url)) }] }); const patch = {}; if (ch.alias != null) patch.name = String(ch.alias); if (ch.desc != null) patch.desc = String(ch.desc); if (ch.emoji != null) patch.icon = String(ch.emoji); if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); BM.setItemMeta(n.url, patch); break; }
+            journal.push({ kind: 'meta', meta: [{ url: n.url, snap: AiCore.metaSnapshot(BM.itemMeta(n.url)) }] }); const patch = {}; if (ch.alias != null) patch.name = String(ch.alias); if (ch.desc != null) patch.desc = String(ch.desc); if (ch.note != null) patch.note = String(ch.note); if (ch.emoji != null) patch.icon = String(ch.emoji); if (Array.isArray(ch.tags)) patch.tags = ch.tags.map(R).filter((t) => BM.tagDef(t)); BM.setItemMeta(n.url, patch); break; }
           case 'create_folder': { journal.push({ kind: 'created' });
             const f = await store.create({ parentId: String(R(ch.parent_id) || barId), title: String(ch.title || '新文件夹'), ...(ch.index != null ? { index: Number(ch.index) } : {}) }); journal[journal.length-1].id = f.id; if (ch.ref) refs[ch.ref] = f.id; if (ch.color) { BM.meta.groups[f.title] = { color: ch.color }; BM.saveMeta(); } break; }
           case 'create_bookmark': { journal.push({ kind: 'created' });

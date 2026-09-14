@@ -12,7 +12,7 @@
       if(data.selection?.id!==selection?.id)domainExpanded=false;
       selection=data.selection;draft=data.draft;$('error').textContent='';
       $('heading').textContent=draft.id?'书签详情':'新书签';
-      for(const id of ['alias','name','url','desc','icon'])$(id).value=draft.fields[id]||'';
+      for(const id of ['alias','name','url','desc','note','icon'])$(id).value=draft.fields[id]||'';
       $('parentId').replaceChildren(...data.folders.map(f=>{const o=document.createElement('option');o.value=f.id;o.textContent=f.title;return o;}));$('parentId').value=draft.fields.parentId;
       updatePreview();
       $('tags').replaceChildren(...data.tags.map((tag,index)=>{
@@ -25,6 +25,8 @@
       }));
       $('tags').closest('fieldset').hidden=!data.tags.length;
       $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
+      $('detail-nudge').hidden=!draft.id;
+      for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
       renderDuplicates(data);
       renderDomain(data);
@@ -92,6 +94,15 @@
     $('duplicate-undo').hidden=!data.canUndoDuplicate;
   }
   $('duplicate-undo').onclick=async()=>{try{await ask('EDITOR_UNDO_DUPLICATE');await load();}catch(e){error(e);}};
+  // 🔴 老徐原话：卡片上那个点太小，「会不会误触」。详情页里这一排大按钮是给精确操作用的。
+  // 真正挪书签的活交给后台，侧栏只发指令 —— 🚫 别在这儿再写一份移动逻辑。
+  $('detail-nudge').addEventListener('click',async(e)=>{
+    const b=e.target.closest('[data-nudge]'); if(!b||!draft?.id)return;
+    b.disabled=true;
+    try{await pending;await ask('EDITOR_NUDGE',{id:draft.id,dir:b.dataset.nudge});await load();}
+    catch(err){error(err);}
+    finally{b.disabled=false;}
+  });
   function updateStatus(){
     const f=draft?.fields,b=draft?.base,dirty=!b||f.name!==b.title||f.url!==b.url||f.parentId!==b.parentId;
     $('save').textContent=draft?.id?'保存修改':'添加书签';
@@ -120,7 +131,7 @@
     pending=Promise.all([pending.catch(()=>{}),request]).then(()=>{});
     pending.then(()=>{if(version===editVersion){updateStatus();$('promote').disabled=!draft.fields.alias;}}).catch(error);
   }
-  for(const id of ['alias','name','url','desc','icon'])$(id).addEventListener('input',()=>persist({[id]:$(id).value}));
+  for(const id of ['alias','name','url','desc','note','icon'])$(id).addEventListener('input',()=>persist({[id]:$(id).value}));
   $('parentId').addEventListener('change',()=>persist({parentId:$('parentId').value}));
   $('tags').addEventListener('change',()=>persist({tags:[...$('tags').querySelectorAll('input:checked')].map(e=>e.value)}));
   $('editor').addEventListener('submit',async e=>{e.preventDefault();$('save').disabled=true;try{await pending;await ask('EDITOR_SAVE',{selection});await load();}catch(e){error(e);updateStatus();}});

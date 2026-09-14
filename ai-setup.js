@@ -109,13 +109,15 @@
   // 三家不放行跨域，没有主机权限就是 Failed to fetch，连鉴权那一步都到不了。
   // 权限走「按需申请」而不是写死在清单里：装扩展时不该为你没用的服务索权。
   // ⚠️ 必须在用户点击那一下里发起，await 之后再调会被当成非用户操作拒掉。
-  async function ensureHost(base) {
-    if (!base) return true;
-    let origin; try { origin = new URL(base).origin + '/*'; } catch { return true; }
-    try {
-      if (await chrome.permissions.contains({ origins: [origin] })) return true;
-      return await chrome.permissions.request({ origins: [origin] });
-    } catch { return true; }          // 拿不准就放行，真不通时 fetch 会报出来
+  function ensureHost(base) {
+    if (!base) return Promise.resolve(true);
+    let origin; try { origin = new URL(base).origin + '/*'; } catch { return Promise.resolve(true); }
+    // 🔴 260914 实撞：原来先 await contains 再 request —— 那个 await 就把用户手势用掉了，
+    // request 必然抛「This function must be called during a user gesture」。
+    // 正确写法是点击后第一件事就 request（🚫 前面一个 await 都不许有）；
+    // 已经授权过的它会直接返回 true，不会重复弹窗，所以 contains 那一步根本不需要。
+    try { return chrome.permissions.request({ origins: [origin] }).catch(() => true); }
+    catch { return Promise.resolve(true); }   // 拿不准就放行，真不通时 fetch 会报出来
   }
   const readForm = (temp) => {
     const provider = $('ai-provider').value, p = PROVIDERS[provider];
@@ -127,15 +129,19 @@
       // 会思考的模型本来就不吃这个参数，摆出来只会让人以为它有用。
       temperature: temp ?? 0.3 };
   };
-  $('ai-save').onclick = async () => { try { ai = readForm();
-    if (!ai.base) { oops(Error('接口地址不能为空')); return; }
-    if (!ai.model) { oops(Error('模型名不能为空')); return; }
-    $('error').textContent = '';
-    if (!await ensureHost(ai.base)) { oops(Error('没有拿到访问这个接口的权限，保存了也调不通。再点一次保存并在弹窗里选「允许」。')); return; } await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
+  $('ai-save').onclick = async () => { try {
+    // 🔴 手势只在第一个 await 之前有效 ⇒ 申请权限必须是点击后的第一件事，前面全是同步的
+    const form = readForm();
+    if (!form.base) { oops(Error('接口地址不能为空')); return; }
+    if (!form.model) { oops(Error('模型名不能为空')); return; }
+    const granted = ensureHost(form.base);
+    ai = form; $('error').textContent = '';
+    if (!await granted) { oops(Error('没有拿到访问这个接口的权限，保存了也调不通。再点一次保存并在弹窗里选「允许」。')); return; } await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
   $('ai-test').onclick = async () => {
-    const out = $('ai-test-out'); out.textContent = '测试中…';
     const c = readForm(0);
-    if (!await ensureHost(c.base)) { out.textContent = '❌ 没拿到访问这个接口的权限，再点一次并选「允许」'; return; }
+    const granted = ensureHost(c.base);          // 同上：🚫 这一行前面不许有 await
+    const out = $('ai-test-out'); out.textContent = '测试中…';
+    if (!await granted) { out.textContent = '❌ 没拿到访问这个接口的权限，再点一次并选「允许」'; return; }
     try {
       const r = await fetch(`${c.base.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.key}` },
         body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: '回复两个字：可以' }], max_tokens: 256, ...(AiProviders.noTemperature(c.model) ? {} : { temperature: 0 }) }) });

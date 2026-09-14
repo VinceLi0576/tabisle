@@ -36,7 +36,7 @@
   // 附属数据写入是「四个字段一起判空」：全空就把整条删掉，不留空壳
   function applyItemMeta(meta, url, patch) {
     const k = key(url); const cur = { ...(meta.items[k] || {}), ...patch };
-    if (!(cur.tags && cur.tags.length) && !cur.desc && !cur.icon && !cur.name) delete meta.items[k];
+    if (!(cur.tags && cur.tags.length) && !cur.desc && !cur.note && !cur.icon && !cur.name) delete meta.items[k];
     else meta.items[k] = cur;
     return meta;
   }

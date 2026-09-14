@@ -501,9 +501,9 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .tile:hover .strip3 .nudge,.tile .strip3 .nudge:focus-visible{flex:0 0 26%;height:auto}
 .tile .strip3 .nudge:hover{background:var(--accent-bg);color:var(--accent)}
 /* 文件夹标题栏上那一组 */
-.hd-nudge{display:inline-flex;gap:2px;flex:none;opacity:0;transition:opacity .12s}
+.hd-nudge{display:inline-flex;gap:4px;flex:none;opacity:0;transition:opacity .12s}
 .head:hover .hd-nudge,.sub-head:hover .hd-nudge,.hd-nudge:focus-within{opacity:1}
-.hd-nudge .nudge{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:var(--card);color:var(--muted-2);font-size:9px;line-height:1;cursor:pointer}
+.hd-nudge .nudge{width:30px;height:26px;padding:0;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--muted);font-size:12px;line-height:1;cursor:pointer}
 .hd-nudge .nudge:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
 /* 键盘走到了也要看得见 */
 .nudge:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

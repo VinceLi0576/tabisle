@@ -5,6 +5,22 @@ async function editorAction(m) {
   if(m.type==='EDITOR_SELECT') {
     await chrome.storage.session.set({[selectionKey]:{id:m.id||null,parentId:m.parentId||null,stamp:Date.now()}});return true;
   }
+  if(m.type==='EDITOR_NUDGE') {
+    const id=String(m.id||'');
+    const node=(await chrome.bookmarks.get(id))[0];
+    if(!node)throw Error('这一条已经不在了');
+    const bar=await bookmarkBar();
+    const to=BmCore.nudgeTarget(bar,id,String(m.dir||''));
+    if(!to)throw Error({up:'已经是第一个了',down:'已经是最后一个了',out:'已经在最外层了',in:'上面紧挨着的不是文件夹，没法收进去'}[m.dir]||'这个方向挪不动');
+    const {meta={}}=await chrome.storage.local.get('meta');
+    const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
+    const locked=(n)=>!!(meta.locks?.[uidMap[String(n.id)]?.uid]||meta.groups?.[n.title]?.locked);
+    if(locked(node))throw Error('这一条已锁定');
+    const target=(await chrome.bookmarks.get(String(to.parentId)))[0];
+    if(target&&locked(target))throw Error('目标文件夹已锁定');
+    await chrome.bookmarks.move(id,to);
+    return true;
+  }
   if(m.type==='EDITOR_UNDO_DUPLICATE') {
     const undoKey='editorDuplicateUndo:'+windowId;
     const data=await chrome.storage.session.get(undoKey),undo=data[undoKey];
@@ -24,7 +40,7 @@ async function editorAction(m) {
   const {meta={items:{},groups:{},tags:[]}}=await chrome.storage.local.get('meta');
   const item=node ? meta.items[BK.key(node.url)]||{} : {};
   const { [dk]: savedDraft }=await chrome.storage.session.get(dk);
-  const draft=savedDraft||{id:node?.id||null,parentId:node?.parentId||selection.parentId,base:node?{title:node.title,url:node.url,parentId:node.parentId,dateAdded:node.dateAdded}:null,fields:{name:node?.title||'',url:node?.url||'',alias:item.name||'',desc:item.desc||'',icon:item.icon||'',tags:item.tags||[],parentId:node?.parentId||selection.parentId}};
+  const draft=savedDraft||{id:node?.id||null,parentId:node?.parentId||selection.parentId,base:node?{title:node.title,url:node.url,parentId:node.parentId,dateAdded:node.dateAdded}:null,fields:{name:node?.title||'',url:node?.url||'',alias:item.name||'',desc:item.desc||'',note:item.note||'',icon:item.icon||'',tags:item.tags||[],parentId:node?.parentId||selection.parentId}};
   if(m.type==='EDITOR_LOAD') {
     const bar=await bookmarkBar();const folders=[{id:bar.id,title:'未分组（书签栏）'}];
     const walk=(n,path)=>{for(const c of n.children||[])if(!c.url){const p=path?path+' / '+c.title:c.title;folders.push({id:c.id,title:p});walk(c,p);}};walk(bar,'');
@@ -35,7 +51,7 @@ async function editorAction(m) {
     visit(roots);
     const domain=BmCore.sameDomainFolders(roots, draft.fields.url||node?.url||'', node?.id||null);
     const undoKey='editorDuplicateUndo:'+windowId;
-    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft,duplicates,domain,canUndoDuplicate:!!(await chrome.storage.session.get(undoKey))[undoKey]};
+    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft,duplicates,domain,canNudge:node?BmCore.nudgeable(bar,node.id):{},canUndoDuplicate:!!(await chrome.storage.session.get(undoKey))[undoKey]};
   }
   if(m.type==='EDITOR_DELETE_DUPLICATE') {
     if(!node)throw Error('请先选择当前书签');
@@ -84,7 +100,7 @@ async function editorAction(m) {
       }
     } else {
       result=await chrome.bookmarks.create({parentId,title:fields.name.trim()||fields.alias.trim()||new URL(url).hostname,url});
-      meta.items[BK.key(url)]={...(meta.items[BK.key(url)]||{}),name:fields.alias,desc:fields.desc,icon:fields.icon,tags:fields.tags};
+      meta.items[BK.key(url)]={...(meta.items[BK.key(url)]||{}),name:fields.alias,desc:fields.desc,note:fields.note,icon:fields.icon,tags:fields.tags};
       await chrome.storage.local.set({meta});
     }
     await chrome.storage.session.remove(dk);

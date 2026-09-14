@@ -38,7 +38,7 @@ function fakeTree(){
 test('先移动再删父夹：撤销后整棵树一字不差回到原样',async()=>{
   const T=fakeTree();
   const f=T.add(null,'测试夹'), 甲=T.add(f.id,'甲','https://a/1'), sub=T.add(f.id,'子夹'), 乙=T.add(sub.id,'乙','https://a/2');
-  T.meta.set('https://a/1',{name:'原名',desc:'原说明',icon:'',tags:[]});
+  T.meta.set('https://a/1',{name:'原名',desc:'原说明',note:'',icon:'',tags:[]});
   const before=JSON.stringify(T.shape(f.id));
   const metaBefore=JSON.stringify(T.meta.get('https://a/1'));
 
@@ -47,7 +47,7 @@ test('先移动再删父夹：撤销后整棵树一字不差回到原样',async(
   journal.push({kind:'update',id:甲.id,to:{title:'甲'},after:{title:'甲改过'}});
   T.api.update(甲.id,{title:'甲改过'});
   journal.push({kind:'meta',meta:[{url:'https://a/1',snap:metaSnapshot(T.meta.get('https://a/1'))}]});
-  T.api.setMeta('https://a/1',{name:'新名',desc:'新说明',icon:'',tags:[]});
+  T.api.setMeta('https://a/1',{name:'新名',desc:'新说明',note:'',icon:'',tags:[]});
   journal.push({kind:'move',id:甲.id,to:{parentId:f.id,index:0}});
   T.api.move(甲.id,{parentId:sub.id,index:0});
   const 丙=T.api.create({parentId:f.id,title:'丙',url:'https://a/3'});

@@ -16,7 +16,7 @@ test('域名拆分：认二级后缀',()=>{
   assert.deepEqual(C.domainParts('https://192.168.1.2/'),{root:'192.168.1.2',pre:''});
 });
 
-test('附属数据：四个字段全空就把整条删掉，不留空壳',()=>{
+test('附属数据：五个字段全空就把整条删掉，不留空壳',()=>{
   const m={items:{},groups:{},tags:[]};
   C.applyItemMeta(m,'https://a.com/','{}'&&{name:'甲'});
   assert.deepEqual(m.items['https://a.com'],{name:'甲'});

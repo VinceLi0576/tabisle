@@ -46,7 +46,7 @@
 
   // 附属数据是「整条替换」语义：要还原成旧样子，四个字段都得显式给值，
   // 旧的没有的字段必须给空（setItemMeta 会把空值删掉），否则新写进去的会留下来。
-  const META_KEYS = ['name', 'desc', 'icon', 'tags'];
+  const META_KEYS = ['name', 'desc', 'note', 'icon', 'tags'];
   function metaSnapshot(m) {
     const out = {};
     for (const k of META_KEYS) out[k] = k === 'tags' ? [...((m && m.tags) || [])] : ((m && m[k]) || '');

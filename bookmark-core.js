@@ -45,7 +45,7 @@
     if (m.locks != null && (Array.isArray(m.locks) || typeof m.locks !== 'object')) throw Error('锁定数据结构不正确');
     if (m.folderNotes != null && (Array.isArray(m.folderNotes) || typeof m.folderNotes !== 'object' || Object.values(m.folderNotes).some((v) => typeof v !== 'string'))) throw Error('文件夹说明数据结构不正确');
     for (const item of Object.values(m.items)) {
-      if (!item || typeof item !== 'object' || ['name', 'desc', 'icon'].some(k => item[k] != null && typeof item[k] !== 'string') || item.tags != null && (!Array.isArray(item.tags) || item.tags.some(t => typeof t !== 'string'))) throw Error('书签附属数据格式不正确');
+      if (!item || typeof item !== 'object' || ['name', 'desc', 'note', 'icon'].some(k => item[k] != null && typeof item[k] !== 'string') || item.tags != null && (!Array.isArray(item.tags) || item.tags.some(t => typeof t !== 'string'))) throw Error('书签附属数据格式不正确');
     }
     return snapshot;
   }

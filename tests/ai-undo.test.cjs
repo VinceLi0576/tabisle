@@ -3,11 +3,13 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {metaSnapshot,flattenForRebuild,reverseOrder,META_KEYS}=require('../ai-core.js');
 
-test('附属数据快照四个字段都在，旧的没有的给空值（否则新写的会残留）',()=>{
-  assert.deepEqual(metaSnapshot({name:'甲',tags:['t1']}),{name:'甲',desc:'',icon:'',tags:['t1']});
-  assert.deepEqual(metaSnapshot({}),{name:'',desc:'',icon:'',tags:[]});
-  assert.deepEqual(metaSnapshot(undefined),{name:'',desc:'',icon:'',tags:[]});
-  assert.deepEqual(META_KEYS,['name','desc','icon','tags']);
+test('附属数据快照五个字段都在，旧的没有的给空值（否则新写的会残留）',()=>{
+  assert.deepEqual(metaSnapshot({name:'甲',tags:['t1']}),{name:'甲',desc:'',note:'',icon:'',tags:['t1']});
+  assert.deepEqual(metaSnapshot({}),{name:'',desc:'',note:'',icon:'',tags:[]});
+  assert.deepEqual(metaSnapshot(undefined),{name:'',desc:'',note:'',icon:'',tags:[]});
+  assert.deepEqual(META_KEYS,['name','desc','note','icon','tags']);
+  // 🔴 撤销要靠这份快照把旧值写回去：漏一个字段，AI 写的那个值就永远留在那儿撤不掉
+  assert.deepEqual(metaSnapshot({note:'详细说明'}),{name:'',desc:'',note:'详细说明',icon:'',tags:[]});
 });
 
 test('快照要脱开引用，之后改原对象不影响快照',()=>{
