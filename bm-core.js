@@ -59,6 +59,31 @@
     if (bar) walk(bar, false);
     return hit;
   }
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, SLD };
+  // 同一个网站的收藏分布在哪几个文件夹里。
+  // 🔴 按注册域归并（cc.xntj.tv 和 www.xntj.tv 算同一个网站），子域只在明细里显示 ——
+  // 要的是「同一个站的东西散在几个夹里」，按 hostname 分会把它们拆散、看不出散乱。
+  function sameDomainFolders(rootNodes, url, currentId, cap = 50) {
+    const target = domainParts(url).root;
+    if (!target) return { root: '', total: 0, folders: [] };
+    const byFolder = new Map();
+    const walk = (nodes, path) => {
+      for (const n of nodes || []) {
+        if (n.children) { walk(n.children, path ? path + ' / ' + (n.title || '未命名') : (n.title || '未命名')); continue; }
+        if (!n.url || domainParts(n.url).root !== target) continue;
+        const at = path || '书签栏';
+        if (!byFolder.has(at)) byFolder.set(at, { path: at, parentId: n.parentId, count: 0, items: [], hasCurrent: false });
+        const g = byFolder.get(at);
+        g.count++;
+        const current = String(n.id) === String(currentId);
+        if (current) g.hasCurrent = true;
+        if (g.items.length < cap) g.items.push({ id: n.id, title: n.title || '未命名', url: n.url, sub: host(n.url), current });
+      }
+    };
+    walk(rootNodes, '');
+    const folders = [...byFolder.values()].sort((a, b) => Number(b.hasCurrent) - Number(a.hasCurrent) || b.count - a.count || a.path.localeCompare(b.path, 'zh'));
+    return { root: target, total: folders.reduce((s, f) => s + f.count, 0), folders };
+  }
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

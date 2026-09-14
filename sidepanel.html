@@ -45,9 +45,13 @@
         <textarea id="desc" rows="2" placeholder="记一下用途或需要留意的事"></textarea>
       </section>
       <section class="edit-section folder-fields" aria-label="所在文件夹">
-        <label for="parentId">所在文件夹 <span class="label-hint">修改后保存</span></label>
+        <label for="parentId">这条放在哪个文件夹 <span class="label-hint">改完要按底下的保存</span></label>
         <select id="parentId"></select>
-        <p id="path" class="folder-path"></p>
+      </section>
+      <section class="edit-section" id="domain-spread" aria-labelledby="domain-heading" hidden>
+        <h2 id="domain-heading">同一个网站的收藏</h2>
+        <p id="domain-summary" class="field-help"></p>
+        <div id="domain-folders"></div>
       </section>
       <section class="edit-section" aria-labelledby="duplicates-heading">
         <h2 id="duplicates-heading">相同网址的收藏</h2>

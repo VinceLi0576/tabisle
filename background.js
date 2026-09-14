@@ -1,4 +1,4 @@
-importScripts('write-lease.js', 'bookmark-core.js', 'backup-worker.js', 'sync-core.js', 'sync-worker.js', 'editor-worker.js', 'automation-worker.js');
+importScripts('write-lease.js', 'bookmark-core.js', 'bm-core.js', 'backup-worker.js', 'sync-core.js', 'sync-worker.js', 'editor-worker.js', 'automation-worker.js');
 
 const DELETE_SNAPSHOT_WINDOW = 90e3;   // 90 秒内的连续删除算同一批，只留第一份副本
 let taskTail = Promise.resolve();

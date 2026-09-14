@@ -31,9 +31,11 @@ async function editorAction(m) {
     if(!draft.fields.parentId)draft.fields.parentId=bar.id;
     const duplicates=[];
     const visit=(nodes,path=[])=>{for(const n of nodes){const next=[...path,n.title||'未命名'];if(node&&n.url===node.url)duplicates.push({id:n.id,title:n.title,url:n.url,parentId:n.parentId,dateAdded:n.dateAdded,path:next.join(' / ')});if(n.children)visit(n.children,next);}};
-    visit((await chrome.bookmarks.getTree())[0].children||[]);
+    const roots=(await chrome.bookmarks.getTree())[0].children||[];
+    visit(roots);
+    const domain=BmCore.sameDomainFolders(roots, draft.fields.url||node?.url||'', node?.id||null);
     const undoKey='editorDuplicateUndo:'+windowId;
-    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft,duplicates,canUndoDuplicate:!!(await chrome.storage.session.get(undoKey))[undoKey]};
+    return {selection,draft,folders,tags:meta.tags||[],hasDraft:!!savedDraft,duplicates,domain,canUndoDuplicate:!!(await chrome.storage.session.get(undoKey))[undoKey]};
   }
   if(m.type==='EDITOR_DELETE_DUPLICATE') {
     if(!node)throw Error('请先选择当前书签');

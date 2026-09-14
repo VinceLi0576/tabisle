@@ -24,7 +24,10 @@ function storage(initial={}){const data=structuredClone(initial);return {data,as
 async function worker(){const api=new Bookmarks(),local=storage({meta:{items:{},groups:{},tags:[]}}),session=storage(),requests=[];
  const chrome={bookmarks:{getTree:()=>api.getTree(),get:async id=>[await api.get(id)],getChildren:id=>api.children(id),create:p=>api.create(p),update:(id,p)=>api.update(id,p),move:(id,p)=>api.move(id,p),remove:id=>api.remove(id),removeTree:id=>api.removeTree(id)},storage:{local,session},permissions:{contains:async()=>true},alarms:{get:async()=>({}),create:async()=>{},clear:async()=>{}}};
  const context=vm.createContext({chrome,crypto:webcrypto,TextEncoder,URL,AbortSignal,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),fetch:async(url,options)=>{requests.push({url,options});return {ok:options.method!=='GET',status:options.method==='GET'?404:201,text:async()=>'<d:multistatus xmlns:d="DAV:"/>',json:async()=>({})};}});
- for(const f of ['write-lease.js','bookmark-core.js','backup-worker.js','sync-core.js','sync-worker.js','editor-worker.js','automation-worker.js'])vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
+ // 🔴 直接读 background.js 的 importScripts 名单，别在这儿抄一份 ——
+ // 抄的那份漏掉新加的文件时，报的是 "XxxCore is not defined"，看不出是名单没跟上
+ const WORKER_FILES=fs.readFileSync(require.resolve('../background.js'),'utf8').match(/importScripts\(([^)]*)\)/)[1].match(/'([^']+)'/g).map(x=>x.slice(1,-1));
+ for(const f of WORKER_FILES)vm.runInContext(fs.readFileSync(require.resolve('../'+f),'utf8'),context);
  vm.runInContext('automationJitter=()=>0',context);
  const call=(name,m)=>{context.message=m;return vm.runInContext(name+'(message)',context);};return {api,local,session,requests,call,context};
 }
