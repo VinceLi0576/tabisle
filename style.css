@@ -575,25 +575,33 @@ dialog .palette span.on { border-color: var(--text); }
 .card[data-kind="folder"] > .head { margin: 0 0 8px; border-radius: 5px; }
 .card[data-kind="folder"].is-collapsed { padding-bottom: 6px; }
 .card[data-kind="folder"].is-collapsed > .head { margin-bottom: 0; border-bottom: 0; }
-/* 折叠那一行：左段（箭头·名字·层级·数量·状态）｜ 右段（说明一行）｜ 操作按钮 */
+/* 折叠那一行：左段（箭头·名字·层级·数量·状态）｜ 中间留白 ｜ 操作按钮 */
 .is-collapsed > .head .hd-tags, .is-collapsed > .head .hd-note-btn { display: none; }
 .is-collapsed > .head > * { order: 0; }          /* 同一档里按 DOM 顺序排 */
 .is-collapsed > .head .n { order: 1; }           /* 数量跟在名字层级后面，仍属左段 */
-.is-collapsed > .head .hd-toggle { order: 2; }   /* 右段：说明那一行 */
+.is-collapsed > .head .hd-toggle { order: 2; }
 .is-collapsed > .head .hd-nudge,
 .is-collapsed > .head .hd-view,
 .is-collapsed > .head .hd-detail,
 .is-collapsed > .head .more { order: 3; }
-.hd-note-line { display: none; }
-.is-collapsed > .head .hd-note-line {
-  display: block; width: 100%; min-width: 0; padding: 3px 6px; margin-left: 2px;
-  border: 0; border-radius: 6px; background: transparent; text-align: left;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--muted); font: inherit; font-size: 12px; font-weight: 400; cursor: text;
+
+/* ── 说明小框：标题栏底下自己一条，🔴 只在折叠时出现（老徐 260914 选的「只折叠时留着」）──
+   展开之后标题栏下面直接就是书签，🚫 别让长说明把版面撑散。 */
+.note-card, .note-card.empty { display: none; }
+/* 收集箱那句「这是什么」是写死的模块说明，折叠展开都在（老徐 260914 就是对着展开态说的「再框一个小框」）*/
+.note-card.fixed { display: -webkit-box; }
+.is-collapsed > .note-card:not(.empty), .note-card.fixed {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;   /* 再长也不许把它撑成一屏 */
+  margin: 2px 2px 4px; padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, var(--border));
+  border-radius: 8px; background: var(--card);
+  color: var(--muted); font-size: 12px; line-height: 1.65;
 }
-.is-collapsed > .head .hd-note-line:hover { background: var(--card); color: var(--text); }
-.is-collapsed > .head .hd-note-line.empty { color: var(--muted-2); opacity: 0; transition: opacity .12s; }
-.is-collapsed:hover > .head .hd-note-line.empty,
-.is-collapsed > .head .hd-note-line.empty:focus-visible { opacity: 1; }
+
+.card.inbox > .note-card { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); background: color-mix(in srgb, var(--accent) 3%, var(--card)); }
+.note-card-btn { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; font: inherit; cursor: text; }
+.note-card-btn:hover { color: var(--text); }
+.note-card-btn.empty { color: var(--muted-2); }
+.note-card-btn.empty:hover { color: var(--accent); }
 /* 展开时说明整条不出现（编辑时 openNoteEditor 会把它打开） */
 .folder-note[hidden] { display: none; }

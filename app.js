@@ -472,11 +472,11 @@ chrome:// ⚙️`;
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
-      (opts.fixed ? '<span class="inbox-hint">星号收藏落在根目录的都在这 · 点「归入」挪进文件夹</span>' : '') +
+
       (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
       (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
-      `<span class="hd-toggle">${opts.fixed ? '' : (() => { const t = folderNote(f.id); return `<button type="button" class="hd-note-line${t ? '' : ' empty'}" data-note="${f.id}" title="${esc(t || '还没写说明，点一下写一句')}">${t ? esc(t) : '＋ 这个夹是干什么的'}</button>`; })()}</span>` +
+      `<span class="hd-toggle"></span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed
         ? `<span class="hd-nudge inbox-nudge">${[['up','▲','收集箱上移一格'],['down','▼','收集箱下移一格'],['top','⇱','复位：回到最顶上']].map(([d,g,t])=>`<button type="button" class="nudge" data-inbox="${d}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`
@@ -496,6 +496,20 @@ chrome:// ⚙️`;
     const box = document.createElement('div');
     box.className = 'folder-note'; box.dataset.id = f.id;
     box.hidden = true; box.innerHTML = '';
+    return box;
+  }
+  // 标题栏底下那一条说明小框。老徐 260914：「只折叠时留着」——展开之后标题栏下面直接是书签。
+  // 内容来源两种：普通夹是他自己写的文件夹说明；收集箱和最近访问是写死的一句「这是什么」。
+  function noteCardEl(f, fixedText) {
+    const box = document.createElement('div');
+    box.className = 'note-card'; box.dataset.id = f.id;
+    if (fixedText) { box.classList.add('fixed'); box.textContent = fixedText; return box; }
+    const t = folderNote(f.id);
+    if (!t) { box.classList.add('empty'); return box; }   // 没写说明就不占地方，🚫 别让 31 个夹各挂一个空框
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'note-card-btn';
+    btn.dataset.note = f.id; btn.textContent = t; btn.title = t;
+    box.appendChild(btn);
     return box;
   }
   function openNoteEditor(id) {
@@ -541,7 +555,7 @@ chrome:// ⚙️`;
     const hd = e.target.closest('.hd-detail'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
     if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
-    const b = e.target.closest('.hd-note-btn, .hd-note-line'); if (b) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
+    const b = e.target.closest('.hd-note-btn, .note-card-btn'); if (b) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
     const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
 
@@ -579,6 +593,7 @@ chrome:// ⚙️`;
     markLevel(card, 1);
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
+    card.appendChild(noteCardEl(f, opts.fixed ? '收集箱：在别处点星号收藏、没归类的网址都落在这里。整理完点「归入」挪进文件夹，这里就空了。' : ''));
     if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
     initFold(card, f);   // 收集箱也能折（老徐 260914「收件箱也可以折叠嘛」）
@@ -909,7 +924,7 @@ chrome:// ⚙️`;
   let recentRender = 0;
   async function renderRecent() {
     const request = ++recentRender;
-    const items = deprecatedLast(await store.recent(16));
+    const items = deprecatedLast(await store.recent(8));   // 老徐 260914：「最多就显示 8 个好了，不要 16 个」
     if (request !== recentRender) return;
     const box = $('#recent-body'); box.innerHTML = '';
     $('#recent').hidden = !!search.value.trim() || !items.length;
