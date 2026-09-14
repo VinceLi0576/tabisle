@@ -27,6 +27,12 @@
     if(meta.folderNotes)meta.folderNotes=rekey(meta.folderNotes);
     return {...clone(local),meta,children:walk(local.children),folderState:rekey(local.folderState)};
   }
+  // 墓碑保质期：过了就不再压制「重新出现」。没有时间戳的是老版本留下的，一律当过期
+  // （老墓碑正是现在挡着恢复的那些，留着只会继续挡）。
+  const TOMB_TTL = 3 * 24 * 3600e3;
+  // 🚫 没有时间戳的（老版本留下的）不当过期 —— 那会把「可疑的删除项回归要人确认」
+  // 这条正当行为一起去掉。只让新记的墓碑到期失效。
+  const tombstoneStale = (t) => !!(t && t.at) && (Date.now() - Date.parse(t.at)) > TOMB_TTL;
   function merge(base,inputLocal,remote,choices={},tombstones=[]){
     BK.validate(inputLocal);if(base)BK.validate(base);if(remote)BK.validate(remote);
     let local=align(inputLocal,base||remote);
@@ -61,7 +67,11 @@
         if(('url' in l)!==('url' in r))throw Error('同步标识对应了不同类型，请重新检查备份');
         n={...l};for(const k of ['title','url','parent'])n[k]=value(b?.[k],l[k],r[k],uid+':'+k,path,{title:'名称',url:'网址',parent:'位置'}[k]);
       }
-      if(n&&!b&&tombstones.some(t=>t.uid===uid||(t.path===n.path&&t.url===n.url))){
+      // 🔴 墓碑是用来挡「同一轮同步的回声」的，🚫 不该一直挡下去。
+      // 260914 实撞：删掉一条再从备份恢复，另一端的墓碑把它当回声，来回拉锯三轮都站不住；
+      // 而且墓碑按「路径＋网址」认，换个新标识重建照样命中 —— 于是「重新收藏同一个网址」
+      // 也会被当成旧删除的回声。回声只可能发生在紧挨着的那几轮里，过了就是人的新意图。
+      if(n&&!b&&tombstones.some(t=>(t.uid===uid||(t.path===n.path&&t.url===n.url))&&!tombstoneStale(t))){
         const keep=conflict(uid+':return',path,'可能是旧同步回流，也可能是重新收藏','保留','移除');if(keep==='移除')n=undefined;
       }
       if(n){
@@ -122,7 +132,7 @@
     const snapshot={...clone(local),children:order(''),meta};
     // Display and folding preferences stay per-device during sync; full backups still migrate them.
     BK.validate(snapshot);
-    return {snapshot,local,conflicts,laggards,unresolved:conflicts.filter(c=>!c.choice).length,tombstones:[...tombstones,...[...B.values()].filter(n=>!nodes.has(n.uid)).map(n=>({uid:n.uid,path:n.path,url:n.url}))].slice(-1000)};
+    return {snapshot,local,conflicts,laggards,unresolved:conflicts.filter(c=>!c.choice).length,tombstones:[...tombstones,...[...B.values()].filter(n=>!nodes.has(n.uid)).map(n=>({uid:n.uid,path:n.path,url:n.url,at:new Date().toISOString()}))].filter(t=>!t.at||Date.now()-Date.parse(t.at)<TOMB_TTL*3).slice(-1000)};
   }
   root.SyncCore={merge,align,equal};if(typeof module!=='undefined')module.exports=root.SyncCore;
 })(globalThis);
