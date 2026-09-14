@@ -667,3 +667,6 @@ dialog .palette span.on { border-color: var(--text); }
 .fold-bar .tb-label{margin:0}
 .fold-bar .fold-act{height:26px;padding:0 10px;border:1px solid var(--border);border-radius:13px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap}
 .fold-bar .fold-act:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 整理页里被选中的那一块：右边侧栏正在看的就是它 */
+.fchip.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}

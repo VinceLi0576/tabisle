@@ -749,8 +749,12 @@ chrome:// ⚙️`;
       renderOrganize(); return;
     }
     const c = e.target.closest('.fchip'); if (!c || dragJustHappened) return;
-    toggleOrganize(false);
-    revealFolder(c.dataset.id);
+    // 老徐 260914：「点一级还是二级，都应该直接弹出右边的配置选项，而不是跳来跳去、不知道跳到哪里去」
+    // ⇒ 留在整理页不动，右边侧栏开这个夹的详情（名字、颜色、说明、锁、挪位置）。
+    selectedId = c.dataset.id;
+    $$('#organize .fchip.on').forEach((x) => x.classList.remove('on'));
+    c.classList.add('on');
+    openDetail(c.dataset.id);
   });
   $('#organize').addEventListener('contextmenu', (e) => {
     const c = e.target.closest('.fchip');

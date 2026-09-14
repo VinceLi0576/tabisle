@@ -119,9 +119,10 @@ test('四种宽度都不横向溢出：靠的是这几条，🚫 别删', () => 
 
 test('展开折起：三角只管开合，🚫 不许顺手跳走；另外有全部展开/全部折起', () => {
   const click = app.match(/\$\('#organize'\)\.addEventListener\('click', \(e\) => \{([\s\S]*?)\n  \}\);/)[1];
-  const iAll = click.indexOf('data-orgall'), iTw = click.indexOf('ftwist'), iReveal = click.indexOf('revealFolder');
+  const iAll = click.indexOf('data-orgall'), iTw = click.indexOf('ftwist'), iOpen = click.indexOf('openDetail(');
   assert.ok(iAll >= 0 && iTw >= 0, '没有全部展开/折起，或没有三角开合');
-  assert.ok(iAll < iReveal && iTw < iReveal, '三角/全部展开排在跳转后面 ⇒ 点一下就跳走了，根本折不了');
+  // 260914 老徐改了点块的行为：从「跳回首页找那个夹」改成「右边开详情」。三角和全展仍要排在它前面。
+  assert.ok(iAll < iOpen && iTw < iOpen, '三角/全部展开排在开详情后面 ⇒ 点一下就开侧栏了，根本折不了');
   assert.match(click, /orgFold\.set\(id, orgOpen\(id, lv\)\)/, '三角没记住开合状态');
   assert.match(app, /const orgOpen = \(id, lv\) => \(orgFold\.has\(id\) \? !orgFold\.get\(id\) : lv <= 1\)/,
     '默认不是「一级展开、二级及以下折起」');
