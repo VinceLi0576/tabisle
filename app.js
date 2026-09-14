@@ -423,7 +423,7 @@ chrome:// ⚙️`;
     paintFold(section, folderCollapsed(f));
   }
   async function toggleFolder(section) {
-    const f = findNode(section.dataset.id); if (!f) return;
+    const f = section.dataset.id === bar.id ? bar : findNode(section.dataset.id); if (!f) return;
     const key = foldKey(f), previous = prefs.folderCollapsed[key];
     const collapsed = !section.classList.contains('is-collapsed');
     prefs.folderCollapsed[key] = collapsed;
@@ -463,7 +463,7 @@ chrome:// ⚙️`;
     const counts = tagCounts(f);
     const gf = groupFilter.get(f.id) || new Set();
     head.innerHTML =
-      (opts.fixed ? '' : levelMark(opts.level || 1) + `<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
+      (opts.fixed ? '' : levelMark(opts.level || 1)) + (`<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
       (opts.fixed ? '' : `<span class="grip" draggable="true" title="拖动排序">⋮⋮</span>`) +
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
@@ -560,7 +560,7 @@ chrome:// ⚙️`;
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
     if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
-    if (!opts.fixed) initFold(card, f);
+    initFold(card, f);   // 收集箱也能折（老徐 260914「收件箱也可以折叠嘛」）
     return card;
   }
 
@@ -689,7 +689,7 @@ chrome:// ⚙️`;
     const loose = kids.filter((k) => k.url), folders = kids.filter((k) => !k.url);
     folders.filter(f => !isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
     // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失
-    if (loose.length) { const c = cardEl({ id: bar.id, title: '收集箱', children: loose }, { fixed: true }); c.classList.add('inbox'); groups.prepend(c); }
+    if (loose.length) { const c = cardEl({ id: bar.id, title: '收集箱', children: loose, dateAdded: bar.dateAdded }, { fixed: true }); c.classList.add('inbox'); groups.prepend(c); }
     folders.filter(f => isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
