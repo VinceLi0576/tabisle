@@ -1395,6 +1395,14 @@ chrome:// ⚙️`;
       pillFailed=false;
       const st=latest.data.state,at=hhmm(latest.data.checkedAt);
       const map={latest:['ok','云端最新版 · '+at],'cloud-new':['warn','云端有新版 · 点一下同步'],'local-new':['warn','本机待上传 · 点一下同步'],diverged:['warn','两端有修改 · 点一下合并']};
+      // 这台设成「只接收」时，本机改动本来就不会上传 ⇒ 别再拿「本机待上传」吓人，
+      // 说清楚它的角色：它跟着云端走，自己的改动会被盖掉
+      if(d.followOnly){
+        const f={latest:['ok','只接收 · 已是最新 · '+at],'cloud-new':['warn','只接收 · 云端有新版 · 点一下拉取'],'local-new':['ok','只接收 · 已是最新 · '+at],diverged:['warn','只接收 · 云端有新版 · 点一下拉取']};
+        const [t2,x2]=f[st]||['ok','只接收 · '+at];
+        setPill(t2,x2,'这台设成了「只接收，不上传」：它跟着云端走，本机的改动不会传出去，也会被云端盖掉。要改这个设置去「备份与恢复」。');
+        return;
+      }
       const [tone,text]=map[st]||['attention','同步待处理'];
       const r=d.receipt;
       setPill(tone,text,(r?'最近核验 '+hhmm(r.verifiedAt)+' · '+r.count+' 条':'尚无核验回执')+'　右边「备份与恢复」是设置入口');

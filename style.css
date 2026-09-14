@@ -461,3 +461,12 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .fn-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
 .fn-actions{display:flex;gap:6px;flex-wrap:wrap}
 .fn-actions .btn{height:26px;padding:0 10px;font-size:11.5px}
+
+/* ── 顶栏改版：第一行只放主要功能（搜索 · AI · 备份恢复 · 同步），第二行放怎么看和标签组 ── */
+.bar-actions{display:flex;align-items:center;gap:8px;flex:none}
+.bar-actions .btn{height:34px}
+.bar-ai{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:var(--accent-bg);font-weight:600;letter-spacing:.02em}
+.bar-ai:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+.bar .sync-pill{height:30px}
+.search-wrap{flex:0 1 320px}
+@media (max-width:1100px){.bar-actions .btn{padding:0 10px}.search-wrap{flex:0 1 200px}}

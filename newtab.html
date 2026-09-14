@@ -14,14 +14,19 @@
     <span class="count" id="total"></span>
   </div>
   <div class="search-wrap">
-    <input id="search" type="search" placeholder="搜书签（/ 聚焦）" autocomplete="off" spellcheck="false">
+    <input id="search" type="search" placeholder="搜书签" title="按 / 直接跳到这里" autocomplete="off" spellcheck="false">
   </div>
-  <div class="ai-bar">
+  <div class="bar-actions">
+    <button type="button" class="btn bar-ai" id="ai-side" title="在右侧栏打开 AI">✦ AI</button>
+    <button class="btn ghost" id="backup-btn">备份与恢复</button>
+    <button class="sync-pill" id="sync-pill" type="button" hidden>检查云端</button>
+  </div>
+  <!-- 🔴 顶栏不再摆输入框（AI 全部走右侧栏），但这一块不能删：ai.js 按 id 直接抓这些元素 -->
+  <div class="ai-bar" id="ai-bar" hidden>
     <button class="chev ai-gear" id="ai-settings" type="button" title="Kimi 设置">⚙</button>
-    <input id="ai-input" type="text" placeholder="跟 Kimi 说怎么整理书签…" autocomplete="off">
+    <input id="ai-input" type="text" autocomplete="off">
     <button type="button" class="btn" id="ai-send">发送</button>
-    <button type="button" class="chev" id="ai-side" title="在侧栏打开 AI（整列，方便长对话）">⇥</button>
-    <button type="button" class="chev" id="ai-toggle" title="展开 / 收起对话">▾</button>
+    <button type="button" class="chev" id="ai-toggle">▾</button>
   </div>
   <div class="ai-panel" id="ai-panel" hidden>
     <div class="ai-panel-head"><span id="ai-status"></span><span style="flex:1"></span><button class="chev" id="ai-clear" type="button" title="清空对话">⌫</button><button class="chev" id="ai-close" type="button" title="收起">×</button></div>
@@ -43,8 +48,6 @@
   <div class="seg" data-key="view" title="显示方式"><button data-val="card">卡片</button><button data-val="list">列表</button></div>
   <button class="btn" id="new-group">＋ 新分组</button>
   <button class="btn ghost" id="organize-btn" title="把所有文件夹摊开成一排，左右拖动改顺序">整理文件夹</button>
-  <button class="btn ghost" id="backup-btn">备份与恢复</button>
-  <button class="sync-pill" id="sync-pill" type="button" hidden>检查云端</button>
   <button class="btn ghost" id="more-btn" title="更多">⋯</button>
   <span class="tb-sep"></span>
   <span class="tb-label">标签</span>
