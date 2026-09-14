@@ -200,9 +200,9 @@ async function applySync(token,auto=false){
     if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
     if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint,followOnly:!!p.followOnly,laggards:p.laggards||0};
-    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
+    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false,syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
-  }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
+  }catch(error){await noteSyncFailure(error.message);if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
 }
 async function syncCloudFirst(){
   const {data,c}=await syncConfiguration();
@@ -221,24 +221,50 @@ async function syncCloudFirst(){
   await applySync(p.token);
   await chrome.storage.local.set({syncAuto:true});return true;
 }
+// 🔴 260914 实撞（老徐「每次都这样」）：原来任何一次失败都 syncAuto:false，
+// 于是一次网络抖动 ＝ 自动同步永久停摆，顶栏那颗药丸从此一直是「同步失败」，
+// 而且它不会自己再试，非要人手动成功一次才清掉。
+// 把错误分成两类：
+//   · 自己会好的（网络不通、服务端 5xx、超时、被别人占着）⇒ 保持自动同步开着，等下一轮
+//   · 要人来拿主意的（冲突、首次同步、大量删除、读回核验对不上、账号密码不对）⇒ 才停下来等人
+const TRANSIENT = /网络|超时|timeout|failed to fetch|network|ECONN|5\d\d\)|请求失败（5|暂时|稍后再试|正在改书签|请等它结束/i;
+const transientError = (msg) => TRANSIENT.test(String(msg || ''));
+async function noteSyncFailure(message){
+  const keepAuto = transientError(message);
+  await chrome.storage.local.set({ syncError: String(message || ''), syncErrorTransient: keepAuto,
+    ...(keepAuto ? {} : { syncAuto: false }) });
+  if (keepAuto && typeof deferFailedAutomation === 'function') await deferFailedAutomation();
+}
 async function maybeSync(){
   // 🔴 有人正在成批改书签（AI 整理／恢复）就不要插进去：两边同时写，守卫只会把对方当外来改动，双双中止
   if(await WriteLease.heldByOther('sync'))return;
-  const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);
+  const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav','syncError','syncState']);
+  // 🔴 自愈：v0.10.18 之前，任何一次失败（哪怕只是网络抖一下）都会把自动同步关掉，
+  // 而它自己永远不会再打开 —— 用户看到的就是「每次都这样」。
+  // 判据：自动同步是关的 ＋ 挂着一条会自己好的错 ＋ 以前确实同步成功过
+  //      ⇒ 那它一定是被失败关掉的，不是用户自己关的（用户自己关时会把 syncError 清掉）。
+  if(!d.syncAuto&&d.syncError&&transientError(d.syncError)&&d.syncState){
+    await chrome.storage.local.set({syncAuto:true,syncErrorTransient:true});
+    d.syncAuto=true;
+  }
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
   const schedule=await automationStatus();if(schedule.sync.state!=='waiting'||Date.now()<schedule.sync.nextAt)return;
   try{
     const latest=await latestSyncStatus();
     if(latest.state==='latest'){
-      await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:''});
+      await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false});
       return;
     }
     await syncCloudFirst();
-  }catch(e){await chrome.storage.local.set({syncError:e.message,syncAuto:false});}
+  }catch(e){await noteSyncFailure(e.message);}
 }
 async function syncAction(message){
   switch(message.type){
-    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt','syncFollowOnly']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,followOnly:!!d.syncFollowOnly,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
+    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncErrorTransient','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt','syncFollowOnly']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,followOnly:!!d.syncFollowOnly,lastSyncAt:d.lastSyncAt,error:d.syncError,
+      // 🔴 这个标记是 v0.10.18 才有的：在那之前记下的失败一律没有它，
+      // 直接当 false 会把老的「503／连不上」全归到「要你处理」，白白吓人一跳。
+      // 字段不存在时（≠ 存着 false）现场按错误文本判一次。
+      errorTransient:d.syncErrorTransient===undefined?transientError(d.syncError):!!d.syncErrorTransient,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
     case 'SYNC_NOW':return syncCloudFirst();
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);

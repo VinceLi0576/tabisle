@@ -1416,7 +1416,14 @@ chrome:// ⚙️`;
       if(!status.data.initialized||status.data.verified===false){setPill('idle','☁ 备份与恢复','还没设置多设备同步，点开可以备份、恢复，或连上坚果云');return;}
       const d=status.data;
       if(d.inProgress){setPill('attention','上次同步未完成','点一下按云端共同版本恢复；写入前会先留本机保护副本');return;}
-      if(d.error){pillFailed=true;setPill('attention','同步失败 · 点开查看','最近一次同步没有成功：'+d.error);return;}
+      if(d.error){
+        // 网络抖一下跟「两边改了同一条、要你选」是两回事，原来一律显示「同步失败」并且都停掉自动同步
+        if(d.errorTransient){
+          setPill('warn','上次没连上 · 会自动重试','上次同步没连上云端，自动同步还开着，过几分钟会自己再试一次。点一下可以立刻手动试。\n原因：'+d.error);
+          pillFailed=false; return;          // 这种可以直接点了重试，🚫 别推去设置页
+        }
+        pillFailed=true;setPill('attention','同步要你处理 · 点开查看','这次同步需要你拿个主意，自动同步已暂停。点一下打开设置页看详情。\n原因：'+d.error);return;
+      }
       const latest=await askBg('SYNC_LATEST_STATUS',15000);
       if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
       pillFailed=false;
