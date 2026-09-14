@@ -112,9 +112,14 @@ chrome:// ⚙️`;
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
   if (!prefs.folderCollapsed || typeof prefs.folderCollapsed !== 'object' || Array.isArray(prefs.folderCollapsed)) prefs.folderCollapsed = {};
   if (!['list', 'detail'].includes(prefs.view)) prefs.view = 'card';   // card＝紧凑 · detail＝详细 · list＝列表
+  // 老徐 260914：「紧凑 / 详细」要能在每个文件夹上单独点。顶栏那组管全部（会清掉各夹自己的选择），夹上那颗只管这一夹。
+  if (!prefs.folderView || typeof prefs.folderView !== 'object' || Array.isArray(prefs.folderView)) prefs.folderView = {};
+  for (const [k, v] of Object.entries(prefs.folderView)) if (!['card', 'detail', 'list'].includes(v)) delete prefs.folderView[k];
+  const viewFor = (id) => prefs.folderView[id] || prefs.view;
+  const viewName = (v) => ({ card: '紧凑', detail: '详细', list: '列表' })[v] || '紧凑';
   function applyPrefs() {
-    const h = document.documentElement;
-    h.dataset.view = prefs.view;
+    for (const el of $$('.card, #recent')) el.dataset.view = viewFor(el.dataset.id || '__recent');
+    for (const b of $$('.hd-view')) b.textContent = viewName(viewFor(b.dataset.viewof));
     $$('.seg').forEach((seg) => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.val === String(prefs[seg.dataset.key]))));
     $('#recent').classList.toggle('collapsed', !!prefs.recentCollapsed);
   }
@@ -470,6 +475,7 @@ chrome:// ⚙️`;
       `<span class="hd-toggle"></span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed ? '' : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
+      (cls === 'head' ? `<button class="hd-view" type="button" data-viewof="${f.id}" title="这一组怎么显示：点一下在紧凑 / 详细之间切；顶栏那组是管全部的">${viewName(viewFor(f.id))}</button>` : '') +
       `<span class="n">${countUrls(f)}</span>` +
       (opts.fixed ? '' : `<button class="hd-detail" type="button" data-detail="${f.id}" title="文件夹详情：说明、锁定、挪位置">›</button>`) +
       `<button class="more" type="button" title="更多">⋯</button>`;
@@ -548,6 +554,7 @@ chrome:// ⚙️`;
     const card = document.createElement('div');
     card.className = 'card'; card.id = 'sec-' + f.id;
     card.dataset.id = f.id; card.dataset.kind = opts.fixed ? 'bar' : 'folder';
+    card.dataset.view = viewFor(f.id);
     markLevel(card, 1);
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
@@ -880,14 +887,21 @@ chrome:// ⚙️`;
     const box = $('#recent-body'); box.innerHTML = '';
     $('#recent').hidden = !!search.value.trim() || !items.length;
     $('#recent-count').textContent = items.length;
+    // 老徐 260914「最近访问我不要列表」：跟收集箱一样用卡片。已收藏的就是那条书签本身（能进详情、能挪）；
+    // 没收藏过的是「影子卡」——只能点开，没有箭头、不能拖
+    const body = document.createElement('div'); body.className = 'body';
     for (const it of items) {
-      const a = document.createElement('a'); a.className = 'pill'; a.href = it.url; a.target = '_blank'; a.title = `${it.title}\n${it.url}`;
-      a.appendChild(copyLogo(it));
-      const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = it.title || host(it.url); a.appendChild(nm);
-      box.appendChild(a);
+      const node = flat.find((b) => key(b.url) === key(it.url));
+      if (node) { body.appendChild(tileEl(node)); continue; }
+      const ghost = tileEl({ id: '', url: it.url, title: it.title || host(it.url), parentId: null });
+      ghost.classList.add('ghost'); ghost.draggable = false; ghost.dataset.kind = 'ghost'; delete ghost.dataset.id;
+      ghost.querySelector('.strip3')?.remove(); ghost.title = `${it.title || host(it.url)}\n${it.url}\n（还没收藏）`;
+      body.appendChild(ghost);
     }
+    box.appendChild(body); paintSince();
   }
-  $('#recent-head').addEventListener('click', () => {
+  $('#recent-head').addEventListener('click', (e) => {
+    if (e.target.closest('.hd-view')) return;
     prefs.recentCollapsed = !prefs.recentCollapsed; applyPrefs(); savePrefs();
   });
 
@@ -946,6 +960,7 @@ chrome:// ⚙️`;
     const b = e.target.closest('button'); if (!b) return;
     if (!seg.dataset.key) return;   // #filter-mode 有自己的 handler；没有 data-key 时这里会写出一个字面量 'undefined' 键
     prefs[seg.dataset.key] = b.dataset.val;
+    if (seg.dataset.key === 'view') prefs.folderView = {};   // 顶栏选的是「全部」，各夹自己的选择让路
     applyPrefs(); savePrefs();
   }));
   $('#new-group').addEventListener('click', async () => {
@@ -1024,6 +1039,14 @@ chrome:// ⚙️`;
   main.addEventListener('click', async (e) => {
     if (dragJustHappened) { dragJustHappened = false; return; }
     const box = e.target.closest('.card, .sub');
+    const hv = e.target.closest('.hd-view');
+    if (hv) {
+      e.preventDefault(); e.stopPropagation();
+      const id = hv.dataset.viewof, next = viewFor(id) === 'detail' ? 'card' : 'detail';
+      prefs.folderView[id] = next; savePrefs();
+      const holder = hv.closest('.card, #recent'); if (holder) holder.dataset.view = next;
+      hv.textContent = viewName(next); return;
+    }
     if (e.target.closest('.folder-toggle')) { e.preventDefault(); await toggleFolder(box); return; }
     if (e.target.closest('.hd-tags .tag')) {
       const t = e.target.closest('.tag').dataset.tag; const id = box.dataset.id;
@@ -1383,7 +1406,7 @@ chrome:// ⚙️`;
   function computeTarget(e) {
     const t = e.target;
     if (!(t instanceof Element)) return null;
-    const isList = prefs.view === 'list';
+    const isList = (t.closest('[data-view]')?.dataset.view || prefs.view) === 'list';
     const side = (el, vertical) => {
       const r = el.getBoundingClientRect();
       return vertical ? (e.clientY < r.top + r.height / 2 ? 'before' : 'after') : (e.clientX < r.left + r.width / 2 ? 'before' : 'after');

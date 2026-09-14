@@ -12,7 +12,7 @@ test('卡片上准备好了详细版要露的三样，紧凑版靠样式藏起�
   const a = R('app.js'), css = R('style.css');
   assert.match(a, /className = 'orig'/); assert.match(a, /className = 'note'/); assert.match(a, /className = 'foot'/);
   assert.match(css, /\.tile \.orig,\.tile \.note,\.tile \.foot\{display:none\}/, '紧凑版不露');
-  assert.match(css, /html\[data-view="detail"\] \.tile \.note\{display:-webkit-box;-webkit-line-clamp:2/, '详细说明只露两行');
+  assert.match(css, /\[data-view="detail"\] \.tile \.note\{display:-webkit-box;-webkit-line-clamp:2/, '详细说明只露两行');
 });
 test('最近打开走浏览历史，一次查完并缓存；🚫 不用 dateLastUsed', () => {
   const st = R('store.js');

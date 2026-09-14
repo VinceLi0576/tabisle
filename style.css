@@ -117,7 +117,7 @@ a { color: inherit; text-decoration: none; }
 .tile .strip[aria-expanded="true"] svg { transform: rotate(180deg); }
 .tile .strip:hover { background: var(--accent-bg); color: var(--accent); }
 .tile { padding-right: 38px; }
-html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; background: transparent; }
+[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; background: transparent; }
 
 /* ── 标签 chip：一标签一色，浅底深字 ── */
 .tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 4px; border: 1px solid transparent; border-radius: 6px; background: var(--well); color: var(--muted); cursor: pointer; font-size: 12px; white-space: nowrap; }
@@ -153,7 +153,9 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .recent-head .title { font-weight: 650; font-size: 15px; color: var(--accent); white-space: nowrap; }
 .recent-head .n { margin-left: auto; }
 .recent.collapsed .recent-head { margin-bottom: 0; border-bottom: 0; }
-.recent-body { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 6px 10px; padding: 0 2px 2px; }
+.recent-body { padding: 0 2px 2px; }
+.recent .tile.ghost { opacity: .88; padding-right: 12px; }
+.recent .tile.ghost .strip3, .recent .tile.ghost .tile-move { display: none; }
 .recent.collapsed .recent-body { display: none; }
 .recent.collapsed .chev svg { transform: rotate(-90deg); }
 .recent .pill { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); min-width: 0; }
@@ -248,9 +250,9 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .copy-url { position: relative; display: grid; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: copy; }
 .copy-url:hover, .copy-url:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .copy-url.copied::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: var(--accent); color: #fff; font-size: 16px; font-weight: 700; pointer-events: none; }
-html[data-view="list"] .body .copy-url, .recent .copy-url { border-radius: 5px; }
+[data-view="list"] .body .copy-url, .recent .copy-url { border-radius: 5px; }
 .well.emoji { font-size: 20px; line-height: 1; color: inherit; }
-html[data-view="list"] .body .well.emoji, .recent .pill .well.emoji { font-size: 13px; }
+[data-view="list"] .body .well.emoji, .recent .pill .well.emoji { font-size: 13px; }
 .txt { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
 .line1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .name { font-size: 14px; line-height: 1.3; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
@@ -265,23 +267,23 @@ html[data-view="list"] .body .well.emoji, .recent .pill .well.emoji { font-size:
 .tile.add .well { background: transparent; color: inherit; font-size: 22px; font-weight: 300; }
 
 /* 列表模式：一行一条；名字 · 原名 · 域名列 180 · 完整网址 */
-html[data-view="list"] .body { grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr)); gap: 2px 14px; }
-html[data-view="list"] .body > .sub, html[data-view="list"] .body > .tile.add { grid-column: 1 / -1; }
-html[data-view="list"] .body .tile { height: 32px; padding: 0 8px; border-color: transparent; background: transparent; gap: 8px; box-shadow: none; }
-html[data-view="list"] .body .tile:hover { background: var(--card); border-color: var(--border); transform: none; box-shadow: none; }
-html[data-view="list"] .body .tile.add { height: 26px; border-style: dashed; border-color: var(--border-2); }
-html[data-view="list"] .body .well { width: 22px; height: 22px; border-radius: 5px; font-size: 10px; }
-html[data-view="list"] .body .well img { width: 14px; height: 14px; }
-html[data-view="list"] .body .txt { flex-direction: row; align-items: center; gap: 10px; }
-html[data-view="list"] .body .line1 { flex: 0 1 auto; max-width: 42%; }
-html[data-view="list"] .body .name { flex: 0 1 auto; font-size: 13px; }
-html[data-view="list"] .body .orig { display: block; font-size: 11px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
-html[data-view="list"] .body .desc { display: block; flex: none; width: 180px; font-family: var(--mono); font-size: 11.5px; }
-html[data-view="list"] .body .desc.said { font-family: var(--font); }
-html[data-view="list"] .body .url { display: block; flex: 1; min-width: 80px; font-size: 11px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
-html[data-view="list"] .body .tile.drop-before::before, html[data-view="list"] .body .tile.drop-after::after { top: auto; bottom: auto; left: 4px; right: 4px; width: auto; height: 3px; }
-html[data-view="list"] .body .tile.drop-before::before { top: -2px; }
-html[data-view="list"] .body .tile.drop-after::after { bottom: -2px; }
+[data-view="list"] .body { grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr)); gap: 2px 14px; }
+[data-view="list"] .body > .sub, [data-view="list"] .body > .tile.add { grid-column: 1 / -1; }
+[data-view="list"] .body .tile { height: 32px; padding: 0 8px; border-color: transparent; background: transparent; gap: 8px; box-shadow: none; }
+[data-view="list"] .body .tile:hover { background: var(--card); border-color: var(--border); transform: none; box-shadow: none; }
+[data-view="list"] .body .tile.add { height: 26px; border-style: dashed; border-color: var(--border-2); }
+[data-view="list"] .body .well { width: 22px; height: 22px; border-radius: 5px; font-size: 10px; }
+[data-view="list"] .body .well img { width: 14px; height: 14px; }
+[data-view="list"] .body .txt { flex-direction: row; align-items: center; gap: 10px; }
+[data-view="list"] .body .line1 { flex: 0 1 auto; max-width: 42%; }
+[data-view="list"] .body .name { flex: 0 1 auto; font-size: 13px; }
+[data-view="list"] .body .orig { display: block; font-size: 11px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+[data-view="list"] .body .desc { display: block; flex: none; width: 180px; font-family: var(--mono); font-size: 11.5px; }
+[data-view="list"] .body .desc.said { font-family: var(--font); }
+[data-view="list"] .body .url { display: block; flex: 1; min-width: 80px; font-size: 11px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+[data-view="list"] .body .tile.drop-before::before, [data-view="list"] .body .tile.drop-after::after { top: auto; bottom: auto; left: 4px; right: 4px; width: auto; height: 3px; }
+[data-view="list"] .body .tile.drop-before::before { top: -2px; }
+[data-view="list"] .body .tile.drop-after::after { bottom: -2px; }
 
 /* 搜索结果 */
 .results { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px 16px; }
@@ -331,7 +333,7 @@ dialog .palette span.on { border-color: var(--text); }
 .tile .strip { position: absolute; right: 0; top: 0; bottom: 0; width: 32px; border: 0; border-left: 1px solid var(--border); border-radius: 0; padding: 0; cursor: pointer; display: grid; place-items: center; color: var(--muted-2); background: color-mix(in srgb, var(--gc, var(--muted-2)) 8%, transparent); }
 .tile .strip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tile { padding-right: 44px; }
-html[data-view="list"] .body .tile .strip { width: 26px; }
+[data-view="list"] .body .tile .strip { width: 26px; }
 
 /* ── AI 助手 ── */
 .ai-log { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; margin-bottom: 8px; scrollbar-width: thin; }
@@ -532,16 +534,16 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .tile .name{font-size:14px}
 .tile .desc{font-size:12px}
 .tile .orig,.tile .note,.tile .foot{display:none}                 /* 紧凑：不露 */
-html[data-view="card"] .body{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}   /* 文字区放宽一点 */
-html[data-view="detail"] .body{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px}
-html[data-view="detail"] .tile{height:auto;min-height:64px;align-items:flex-start;padding:12px 26px 12px 12px}
-html[data-view="detail"] .tile .txt{gap:3px}
-html[data-view="detail"] .tile .orig{display:block;font-size:11px;color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-html[data-view="detail"] .tile .note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.55;color:var(--text);opacity:.85;margin-top:2px}
-html[data-view="detail"] .tile .foot{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted-2);margin-top:2px}
-html[data-view="detail"] .tile .foot .since.never{color:#c9822e}   /* 没打开过的标出来 —— 判断要不要留的第一依据 */
-html[data-view="detail"] .tile .desc .pre,html[data-view="detail"] .tile .desc .sep,html[data-view="detail"] .tile .desc .dom{display:none}  /* 域名挪到脚注去了，别显示两遍 */
-html[data-view="detail"] .tile .desc:not(.said){display:none}
+[data-view="card"] .body{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}   /* 文字区放宽一点 */
+[data-view="detail"] .body{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px}
+[data-view="detail"] .tile{height:auto;min-height:64px;align-items:flex-start;padding:12px 26px 12px 12px}
+[data-view="detail"] .tile .txt{gap:3px}
+[data-view="detail"] .tile .orig{display:block;font-size:11px;color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-view="detail"] .tile .note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.55;color:var(--text);opacity:.85;margin-top:2px}
+[data-view="detail"] .tile .foot{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted-2);margin-top:2px}
+[data-view="detail"] .tile .foot .since.never{color:#c9822e}   /* 没打开过的标出来 —— 判断要不要留的第一依据 */
+[data-view="detail"] .tile .desc .pre,[data-view="detail"] .tile .desc .sep,[data-view="detail"] .tile .desc .dom{display:none}  /* 域名挪到脚注去了，别显示两遍 */
+[data-view="detail"] .tile .desc:not(.said){display:none}
 
 /* 收集箱：根目录散着的网址。虚线框 + 强调底色，跟正经分组一眼分开（老徐 260914） */
 .card.inbox { border: 1.5px dashed var(--accent); padding: 8px 10px 10px; background: color-mix(in srgb, var(--accent) 4%, var(--card)); }
@@ -552,3 +554,8 @@ html[data-view="detail"] .tile .desc:not(.said){display:none}
 .side-item.inbox .nm { color: var(--accent); }
 .tile-move { flex: none; margin-left: auto; padding: 1px 7px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-bg); color: var(--accent); font-size: 11px; line-height: 1.5; cursor: pointer; }
 .tile-move:hover { background: var(--accent); color: #fff; }
+
+/* 每个文件夹自己的「紧凑 / 详细」 */
+.hd-view{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--muted-2);font-size:10px;cursor:pointer;white-space:nowrap}
+.hd-view:hover{border-color:var(--accent);color:var(--accent)}
+.recent-head .hd-view{margin-left:6px}
