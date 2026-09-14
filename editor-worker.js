@@ -104,13 +104,13 @@ async function editorAction(m) {
     return true;
   }
   if(m.type==='EDITOR_DRAFT') {
-    const patch=m.patch||{};const allowed=['name','url','alias','desc','icon','tags','parentId'];
+    const patch=m.patch||{};const allowed=['name','url','alias','desc','note','icon','tags','parentId'];   // 🔴 note 曾经漏在这儿：侧栏每敲一个字都发过来，这里静默丢掉，保存时写回的还是旧值 ⇒ 详细说明永远存不上（codex 260914 查出）
     for(const k of Object.keys(patch))if(allowed.includes(k))draft.fields[k]=patch[k];
     await chrome.storage.session.set({[dk]:draft});
-    if(node && ['alias','desc','icon','tags'].some(k=>k in patch)) {
+    if(node && ['alias','desc','note','icon','tags'].some(k=>k in patch)) {
       if(node.dateAdded!==draft.base.dateAdded || node.url!==draft.base.url) throw Error('书签地址已在其他地方改变。编辑草稿已保留，请重新载入后保存。');
       const k=BK.key(node.url),entry={...(meta.items[k]||{})};
-      for(const f of ['alias','desc','icon','tags'])if(f in patch)entry[f==='alias'?'name':f]=patch[f];
+      for(const f of ['alias','desc','note','icon','tags'])if(f in patch)entry[f==='alias'?'name':f]=patch[f];
       meta.items[k]=entry;await chrome.storage.local.set({meta});
     }
     return true;
