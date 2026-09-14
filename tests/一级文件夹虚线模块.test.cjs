@@ -50,20 +50,34 @@ test('折叠状态下点说明要先展开，否则编辑框在藏起来的容�
 });
 
 test('没写说明的夹不出这个框，写了的点一下就能改', () => {
-  const fn = app.match(/function noteCardEl\(f, fixedText\) \{([\s\S]*?)\n  \}/)[1];
+  const fn = app.match(/function noteCardEl\(f\) \{([\s\S]*?)\n  \}/)[1];
   assert.match(fn, /if \(!t\) \{ box\.classList\.add\('empty'\); return box; \}/, '没写说明也挂一个空框 ⇒ 31 个夹全是噪音');
   assert.match(app, /closest\('\.hd-note-btn, \.note-card-btn'\)/, '点说明框打不开编辑器');
 });
 
-test('收集箱和最近访问各有一句写死的「这是什么」，折叠展开都在', () => {
-  assert.match(app, /noteCardEl\(f, opts\.fixed \? '收集箱：/, '收集箱没有自己的说明框');
-  assert.match(css, /\.note-card\.fixed \{ display: -webkit-box; \}/, '写死的那句展开后会消失');
+test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不许写死在代码里', () => {
+  // 老徐 260914：「你不能自动给我写进去啊，那别人用的时候没有 AI 怎么写？不能直接写到代码里面去」
+  assert.match(app, /const DEFAULT_NOTES = \{/, '没有默认文案这一层');
+  assert.match(app, /recentNote: undefined, inboxNote: undefined/, '这两个键没进 DEFAULTS ⇒ 写得进读不回来');
+  const set = app.match(/function setFolderNote\(id, text\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(set, /prefs\[k\] = String\(text/, '这两块的说明存不回去 ⇒ 等于还是写死的');
+  const get = app.match(/const folderNote = \(id\) => \{([\s\S]*?)\n  \};/)[1];
+  assert.match(get, /typeof prefs\[k\] === 'string'/, '他清空之后应该真的空着，不能又弹回默认那句');
+  assert.match(app, /pseudoNote = \(id\) =>/, '收集箱拿不到稳定标识，说明得另找地方存');
+  assert.match(css, /\.note-card\.fixed \{ display: -webkit-box; \}/, '常驻那两块展开后会消失');
   assert.ok(!/inbox-hint/.test(app), '标题行上那句灰字还在');
   const html = fs.readFileSync(p('newtab.html'), 'utf8');
-  assert.match(html, /id="recent-note"[^>]*>最近访问：/, '最近访问没有说明框');
+  assert.match(html, /id="recent-note"><\/div>/, '最近访问的说明还硬写在 HTML 里');
   assert.ok(!/inbox-hint/.test(html), '最近访问标题行上那句灰字还在');
   assert.match(html, /<span class="title">最近访问<\/span><span class="hd-toggle">/,
     '最近访问标题后面少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
+});
+
+test('折叠那一行点空白处要能开侧栏，但别把改名和按钮抢走', () => {
+  const h = app.match(/const collapsedHead = e\.target\.closest\('\.card\.is-collapsed > \.head'\);([\s\S]*?)\n    \}/);
+  assert.ok(h, '折叠行没有接点击');
+  assert.match(h[1], /button, \.grip, \.swatch, \.hd-name, \.tag/, '没把按钮和改名排除掉');
+  assert.match(h[1], /openDetail\(/, '点了没开侧栏');
 });
 
 test('最近访问最多 8 条', () => {

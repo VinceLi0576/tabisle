@@ -584,6 +584,9 @@ dialog .palette span.on { border-color: var(--text); }
 .is-collapsed > .head .hd-view,
 .is-collapsed > .head .hd-detail,
 .is-collapsed > .head .more { order: 3; }
+/* 折叠行整行可点：点空白处开侧栏 */
+.card.is-collapsed > .head { cursor: pointer; }
+.card.is-collapsed > .head:hover { background: color-mix(in srgb, var(--gc, var(--muted-2)) 9%, transparent); }
 /* 右边这排按钮别顶到虚线上（老徐 260914：「都顶到那条线外面去了」）*/
 .card[data-kind="folder"] > .head, .card.inbox > .head, .recent-head { padding-right: 14px; }
 .card.inbox > .head .hd-nudge { margin-right: 4px; }
@@ -595,12 +598,13 @@ dialog .palette span.on { border-color: var(--text); }
 .note-card.fixed { display: -webkit-box; }
 .is-collapsed > .note-card:not(.empty), .note-card.fixed {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;   /* 再长也不许把它撑成一屏 */
-  margin: 2px 2px 4px; padding: 7px 11px;
+  margin: 2px 16px 6px 58px; padding: 7px 12px;
   border: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, var(--border));
   border-radius: 8px; background: var(--card);
   color: var(--muted); font-size: 13px; line-height: 1.7;
 }
 
+.card[data-kind="folder"] > .note-card { margin-left: 66px; }   /* 一级夹标题前面多一个拖动把手 */
 .card.inbox > .note-card { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); background: color-mix(in srgb, var(--accent) 3%, var(--card)); }
 .note-card-btn { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; font: inherit; cursor: text; }
 .note-card-btn:hover { color: var(--text); }

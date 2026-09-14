@@ -108,7 +108,7 @@ chrome:// ⚙️`;
   // ── 本机偏好 ──
   // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
   //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0 };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined };
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
@@ -197,8 +197,24 @@ chrome:// ⚙️`;
   const folderLocked = (n) => BmCore.folderLocked(meta, uidById, n);
   const isLocked = (id) => BmCore.lockedInTree(meta, uidById, bar, id);
   // 文件夹说明＝这个夹该放什么。跟锁一样按 uid 存，改名不丢、同名夹不串
-  const folderNote = (id) => BmCore.folderNote(meta, uidById, id);
+  // 老徐 260914：「不能直接写到代码里面去」⇒ 收集箱和最近访问那两句也是可改的，代码里只给一句默认文案。
+  // 收集箱本身就是书签栏这个文件夹，走 folderNotes；最近访问不是文件夹，存在本机偏好里。
+  // 最近访问和收集箱不是普通文件夹：前者根本不是夹，后者是书签栏根目录、拿不到稳定标识
+  // ⇒ 这两块的说明存在本机偏好里；代码里只给一句默认文案，他改了就用他的、清空了就真的空着。
+  const RECENT_NOTE = '__recent';
+  const pseudoNote = (id) => (String(id) === RECENT_NOTE ? 'recentNote' : String(id) === String(bar?.id) ? 'inboxNote' : '');
+  const DEFAULT_NOTES = {
+    recentNote: '最近访问：这台浏览器最近打开过的几个网页，按时间排。已经收藏的就是那条书签本身，点右边箭头能进详情；没收藏过的是影子卡，只能点开。',
+    inboxNote: '收集箱：在别处点星号收藏、没归类的网址都落在这里。整理完点「归入」挪进文件夹，这里就空了。',
+  };
+  const folderNote = (id) => {
+    const k = pseudoNote(id);
+    if (k) return typeof prefs[k] === 'string' ? prefs[k] : DEFAULT_NOTES[k];
+    return BmCore.folderNote(meta, uidById, id);
+  };
   function setFolderNote(id, text) {
+    const k = pseudoNote(id);
+    if (k) { prefs[k] = String(text || '').trim(); savePrefs(); render(); return true; }
     const uid = uidOf(id);
     if (!uid) { toast('这个文件夹还没拿到稳定标识，先做一次自动备份再写说明'); return false; }
     meta.folderNotes = meta.folderNotes || {};
@@ -500,10 +516,11 @@ chrome:// ⚙️`;
   }
   // 标题栏底下那一条说明小框。老徐 260914：「只折叠时留着」——展开之后标题栏下面直接是书签。
   // 内容来源两种：普通夹是他自己写的文件夹说明；收集箱和最近访问是写死的一句「这是什么」。
-  function noteCardEl(f, fixedText) {
+  function noteCardEl(f) {
     const box = document.createElement('div');
     box.className = 'note-card'; box.dataset.id = f.id;
-    if (fixedText) { box.classList.add('fixed'); box.textContent = fixedText; return box; }
+    // 收集箱和最近访问这两块是常驻说明：折叠展开都在，但内容照样是他自己能改的
+    if (String(f.id) === String(bar?.id) || String(f.id) === RECENT_NOTE) box.classList.add('fixed');
     const t = folderNote(f.id);
     if (!t) { box.classList.add('empty'); return box; }   // 没写说明就不占地方，🚫 别让 31 个夹各挂一个空框
     const btn = document.createElement('button');
@@ -513,22 +530,24 @@ chrome:// ⚙️`;
     return box;
   }
   function openNoteEditor(id) {
-    const box = document.querySelector(`.folder-note[data-id="${CSS.escape(String(id))}"]`);
+    const box = document.querySelector(`.folder-note[data-id="${CSS.escape(String(id))}"]`)
+      || document.querySelector(`.note-card[data-id="${CSS.escape(String(id))}"]`);
     if (!box) return;
-    const node = findNode(String(id)); if (!node) return;
+    const node = String(id) === RECENT_NOTE ? { id: RECENT_NOTE, title: '最近访问' } : findNode(String(id));
+    if (!node) return;
     // 折起来的时候编辑框会连同内容区一起被藏掉 ⇒ 先展开这一个夹
     const section = box.closest('.card, .sub');
     if (section?.classList.contains('is-collapsed')) toggleFolder(section);
     box.hidden = false;
     box.innerHTML = `<textarea class="fn-input" rows="2" placeholder="一两句话写清楚这个夹该放哪类内容，例：只放能直接打开用的在线工具，教程和文章不放这儿"></textarea>` +
       `<div class="fn-actions"><button type="button" class="btn fn-save">保存</button>` +
-      `<button type="button" class="btn ghost fn-ai">让 AI 看着写一条</button>` +
+      (String(id) === RECENT_NOTE ? '' : `<button type="button" class="btn ghost fn-ai">让 AI 看着写一条</button>`) +
       `<button type="button" class="btn ghost fn-cancel">取消</button></div>`;
     const input = box.querySelector('.fn-input');
     input.value = folderNote(id); input.focus();
     box.querySelector('.fn-save').onclick = () => { if (setFolderNote(id, input.value)) toast('说明已保存'); };
     box.querySelector('.fn-cancel').onclick = () => render();
-    box.querySelector('.fn-ai').onclick = () => {
+    if (box.querySelector('.fn-ai')) box.querySelector('.fn-ai').onclick = () => {
       // 把范围设成这个夹，再让 AI 照着里面的东西写 —— 它只看得到这一摊，不会拿别处的内容凑
       window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: String(id) } }));
       window.dispatchEvent(new CustomEvent('bm-ask', { detail: { text: `看一眼「${node.title}」这个文件夹里都是些什么，用一两句话写清楚它该放哪类内容、哪类不该放，然后用 propose_changes 的 folder_note 提交给我确认。` } }));
@@ -593,7 +612,7 @@ chrome:// ⚙️`;
     markLevel(card, 1);
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
-    card.appendChild(noteCardEl(f, opts.fixed ? '收集箱：在别处点星号收藏、没归类的网址都落在这里。整理完点「归入」挪进文件夹，这里就空了。' : ''));
+    card.appendChild(noteCardEl(f));
     if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
     initFold(card, f);   // 收集箱也能折（老徐 260914「收件箱也可以折叠嘛」）
@@ -929,6 +948,8 @@ chrome:// ⚙️`;
     const box = $('#recent-body'); box.innerHTML = '';
     $('#recent').hidden = !!search.value.trim() || !items.length;
     $('#recent-count').textContent = items.length;
+    $('#recent').replaceChild(noteCardEl({ id: RECENT_NOTE }), $('#recent-note'));
+    $('#recent').querySelector('.note-card').id = 'recent-note';
     // 老徐 260914「最近访问我不要列表」：跟收集箱一样用卡片。已收藏的就是那条书签本身（能进详情、能挪）；
     // 没收藏过的是「影子卡」——只能点开，没有箭头、不能拖
     const body = document.createElement('div'); body.className = 'body';
@@ -1083,6 +1104,11 @@ chrome:// ⚙️`;
     const box = e.target.closest('.card, .sub');
     const ib = e.target.closest('[data-inbox]');
     if (ib) { e.preventDefault(); e.stopPropagation(); await moveInbox(ib.dataset.inbox); return; }
+    // 折叠状态下点这一行的空白处 ⇒ 开右边侧栏看这个夹的详情（有几条书签、几个子夹、说明、锁）
+    const collapsedHead = e.target.closest('.card.is-collapsed > .head');
+    if (collapsedHead && !e.target.closest('button, .grip, .swatch, .hd-name, .tag')) {
+      e.preventDefault(); openDetail(collapsedHead.parentElement.dataset.id); return;
+    }
     const hv = e.target.closest('.hd-view');
     if (hv) {
       e.preventDefault(); e.stopPropagation();
