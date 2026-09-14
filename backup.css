@@ -67,3 +67,4 @@ body.backup-page{max-width:none;margin:0;padding:0 32px 28px}
 .guide-card{margin-bottom:22px}.guide-card h2{margin:0 0 14px}.guide-card h3{margin:20px 0 8px;font-size:14px}
 .guide-card ol{margin:6px 0 0;padding-left:22px}.guide-card li{margin:6px 0;line-height:1.7}
 .guide-card p{line-height:1.75}.guide-card code{font-size:12px;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card))}
+.guide-card .guide-table th[scope=row]{width:64px;white-space:nowrap}.guide-card .guide-table td{width:auto}
