@@ -476,7 +476,7 @@ chrome:// ⚙️`;
       (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
       (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
-      `<span class="hd-toggle"></span>` +
+      `<span class="hd-toggle">${opts.fixed ? '' : (() => { const t = folderNote(f.id); return `<button type="button" class="hd-note-line${t ? '' : ' empty'}" data-note="${f.id}" title="${esc(t || '还没写说明，点一下写一句')}">${t ? esc(t) : '＋ 这个夹是干什么的'}</button>`; })()}</span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed
         ? `<span class="hd-nudge inbox-nudge">${[['up','▲','收集箱上移一格'],['down','▼','收集箱下移一格'],['top','⇱','复位：回到最顶上']].map(([d,g,t])=>`<button type="button" class="nudge" data-inbox="${d}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`
@@ -489,20 +489,22 @@ chrome:// ⚙️`;
   }
 
   // 「这个夹该放什么」那一条。写下来之后，AI 归类时会照它办。
+  // 老徐 260914：「折叠时回答『这个文件夹是干什么的』，展开时内容本身回答『里面有什么』」
+  // ⇒ 说明的**只读**形态只出现在折叠那一行的右段（headEl 里的 .hd-note-line）；
+  //   这个盒子从此只当编辑器用，平时是空的、不占版面。
   function noteEl(f) {
     const box = document.createElement('div');
     box.className = 'folder-note'; box.dataset.id = f.id;
-    const txt = folderNote(f.id);
-    box.hidden = !txt;
-    box.innerHTML = txt
-      ? `<span class="fn-text">${esc(txt)}</span><button type="button" class="fn-edit">改</button>`
-      : '';
+    box.hidden = true; box.innerHTML = '';
     return box;
   }
   function openNoteEditor(id) {
     const box = document.querySelector(`.folder-note[data-id="${CSS.escape(String(id))}"]`);
     if (!box) return;
     const node = findNode(String(id)); if (!node) return;
+    // 折起来的时候编辑框会连同内容区一起被藏掉 ⇒ 先展开这一个夹
+    const section = box.closest('.card, .sub');
+    if (section?.classList.contains('is-collapsed')) toggleFolder(section);
     box.hidden = false;
     box.innerHTML = `<textarea class="fn-input" rows="2" placeholder="一两句话写清楚这个夹该放哪类内容，例：只放能直接打开用的在线工具，教程和文章不放这儿"></textarea>` +
       `<div class="fn-actions"><button type="button" class="btn fn-save">保存</button>` +
@@ -539,7 +541,7 @@ chrome:// ⚙️`;
     const hd = e.target.closest('.hd-detail'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
     if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
-    const b = e.target.closest('.hd-note-btn'); if (b) { openNoteEditor(b.dataset.note); return; }
+    const b = e.target.closest('.hd-note-btn, .hd-note-line'); if (b) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
     const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
 

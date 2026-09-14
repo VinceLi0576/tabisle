@@ -562,3 +562,38 @@ dialog .palette span.on { border-color: var(--text); }
 
 /* 收集箱头上的 ▲▼⇱ 一直露着（老徐 260914 要的三颗按钮） */
 .inbox-nudge{opacity:1}
+
+/* ══ 一级文件夹统一成虚线模块（老徐 260914）══
+   判据：折叠时这一行回答「这个文件夹是干什么的」，展开时内容本身回答「里面有什么」。
+   🔴 只管一级（.card），二级三级（.sub）这轮不动。
+   普通分组用各自的分组色、极淡；最近访问和收集箱继续是显眼的强调色 —— 三十多个分组不能一起抢眼。 */
+.card[data-kind="folder"] {
+  border: 1px dashed color-mix(in srgb, var(--gc, var(--muted-2)) 38%, transparent);
+  background: color-mix(in srgb, var(--gc, var(--muted-2)) 2.5%, transparent);
+  padding: 6px 8px 8px;
+}
+.card[data-kind="folder"] > .head { margin: 0 0 8px; border-radius: 5px; }
+.card[data-kind="folder"].is-collapsed { padding-bottom: 6px; }
+.card[data-kind="folder"].is-collapsed > .head { margin-bottom: 0; border-bottom: 0; }
+/* 折叠那一行：左段（箭头·名字·层级·数量·状态）｜ 右段（说明一行）｜ 操作按钮 */
+.is-collapsed > .head .hd-tags, .is-collapsed > .head .hd-note-btn { display: none; }
+.is-collapsed > .head > * { order: 0; }          /* 同一档里按 DOM 顺序排 */
+.is-collapsed > .head .n { order: 1; }           /* 数量跟在名字层级后面，仍属左段 */
+.is-collapsed > .head .hd-toggle { order: 2; }   /* 右段：说明那一行 */
+.is-collapsed > .head .hd-nudge,
+.is-collapsed > .head .hd-view,
+.is-collapsed > .head .hd-detail,
+.is-collapsed > .head .more { order: 3; }
+.hd-note-line { display: none; }
+.is-collapsed > .head .hd-note-line {
+  display: block; width: 100%; min-width: 0; padding: 3px 6px; margin-left: 2px;
+  border: 0; border-radius: 6px; background: transparent; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font: inherit; font-size: 12px; font-weight: 400; cursor: text;
+}
+.is-collapsed > .head .hd-note-line:hover { background: var(--card); color: var(--text); }
+.is-collapsed > .head .hd-note-line.empty { color: var(--muted-2); opacity: 0; transition: opacity .12s; }
+.is-collapsed:hover > .head .hd-note-line.empty,
+.is-collapsed > .head .hd-note-line.empty:focus-visible { opacity: 1; }
+/* 展开时说明整条不出现（编辑时 openNoteEditor 会把它打开） */
+.folder-note[hidden] { display: none; }
