@@ -35,9 +35,9 @@ test('🔴 要人拿主意的那些，必须停下来等人', () => {
 test('失败分两类之后，只有第二类才关自动同步', () => {
   assert.match(src, /async function noteSyncFailure/, '要有统一的失败处理');
   const i = src.indexOf('async function noteSyncFailure');
-  const body = src.slice(i, i + 600);
+  const body = src.slice(i, src.indexOf('\n}', i));   // 🚫 别用固定长度截，函数一长就截断了
   assert.match(body, /keepAuto \? \{\} : \{ syncAuto: false \}/, '只有非暂时性错误才关自动同步');
-  assert.match(body, /deferFailedAutomation/, '暂时性错误要退避后自己再试，别原地打转');
+  assert.match(body, /syncRetryAfter/, '暂时性错误要退避后自己再试，别原地打转');
   // 🔴 旧写法一律关掉，不许再出现
   assert.doesNotMatch(src, /set\(\{syncError:e\.message,syncAuto:false\}\)/, '旧的「一律关掉」写法不能留');
 });
@@ -79,4 +79,34 @@ test('用户自己关掉的自动同步，不许被自愈逻辑偷偷打开', ()
 test('没成功同步过的（还没连云端）不许自愈 —— 那是首次设置，要人来走一遍', () => {
   const i = src.indexOf('async function maybeSync');
   assert.match(src.slice(i, i + 1400), /&&d\.syncState/, '必须要求 syncState 存在');
+});
+
+test('🔴 连着试不成要升级成「要你处理」—— 不能让「会自动重试」变成永久借口', () => {
+  const i = src.indexOf('async function noteSyncFailure');
+  const body = src.slice(i, src.indexOf('\n}', i));
+  assert.match(body, /RETRY_MAX/, '要有一个「试到第几次就别扛了」的上限');
+  assert.match(body, /streak < RETRY_MAX/, '没到上限才继续当暂时性错误');
+  assert.match(body, /连续 \$\{streak\} 次/, '升级时要说清楚试了多少次，别只报最后一次的原因');
+});
+
+test('退避是指数的，而且封顶 —— 别每分钟砸云端，也别退到天荒地老', () => {
+  const line = src.match(/const retryDelay = [^\n]+/)[0];
+  const ctx = {}; vm.runInNewContext(line + '\nglobalThis.D = retryDelay;', ctx);
+  const min = (n) => ctx.D(n) / 60000;
+  assert.equal(min(1), 1, '第一次失败等 1 分钟');
+  assert.equal(min(2), 2);
+  assert.equal(min(4), 8);
+  assert.equal(min(6), 30, '封顶 30 分钟');
+  assert.equal(min(99), 30, '再多也不超过封顶');
+});
+
+test('🔴 同步的排期按 lastSyncAt 算，失败时它不更新 ⇒ 必须另有一道退避闸', () => {
+  const i = src.indexOf('async function maybeSync');
+  const body = src.slice(i, i + 1600);
+  assert.match(body, /Date\.now\(\)<d\.syncRetryAfter/, '没这一行就会每分钟砸一次云端');
+});
+
+test('成功一次就把连败计数清零，不然好了之后还会被判死', () => {
+  const hits = src.match(/syncFailStreak:0/g) || [];
+  assert.ok(hits.length >= 4, '成功、自愈、用户手动开关这几处都要清零，实际 ' + hits.length + ' 处');
 });

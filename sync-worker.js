@@ -200,7 +200,7 @@ async function applySync(token,auto=false){
     if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
     if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint,followOnly:!!p.followOnly,laggards:p.laggards||0};
-    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false,syncAuto:auto||!!data.syncAuto});
+    await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false,syncFailStreak:0,syncRetryAfter:0,syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await noteSyncFailure(error.message);if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
 }
@@ -229,30 +229,46 @@ async function syncCloudFirst(){
 //   · 要人来拿主意的（冲突、首次同步、大量删除、读回核验对不上、账号密码不对）⇒ 才停下来等人
 const TRANSIENT = /网络|超时|timeout|failed to fetch|network|ECONN|5\d\d\)|请求失败（5|暂时|稍后再试|正在改书签|请等它结束/i;
 const transientError = (msg) => TRANSIENT.test(String(msg || ''));
+// 连着失败几次就别再自己扛了。
+// 🔴 两头都要防：
+//   · 只重试不升级 ⇒ 密码改了、云端挂了一整天，它每分钟白试一次，永远不告诉人
+//   · 只升级不重试 ⇒ 网络抖一下就把自动同步永久关掉（v0.10.18 之前就是这样）
+// 退避 1 → 2 → 4 → 8 → 16 → 30 分钟封顶，累计约一小时还不成，就转成「要你处理」。
+// 真抖动一两次就过去了，人根本不会看见；真故障一小时内一定会摆到台面上。
+const RETRY_MAX = 6;
+const retryDelay = (n) => Math.min(30, Math.pow(2, Math.max(0, n - 1))) * 60e3;
 async function noteSyncFailure(message){
-  const keepAuto = transientError(message);
-  await chrome.storage.local.set({ syncError: String(message || ''), syncErrorTransient: keepAuto,
+  const { syncFailStreak = 0 } = await chrome.storage.local.get('syncFailStreak');
+  const streak = syncFailStreak + 1;
+  // 一直连不上也是一种「要你处理」—— 只是这个结论要等它试够了才下
+  const keepAuto = transientError(message) && streak < RETRY_MAX;
+  const note = transientError(message) && streak >= RETRY_MAX
+    ? `连续 ${streak} 次都没能同步成功，已暂停自动同步。最后一次的原因：${message}`
+    : String(message || '');
+  await chrome.storage.local.set({ syncError: note, syncErrorTransient: keepAuto, syncFailStreak: streak,
+    syncRetryAfter: keepAuto ? Date.now() + retryDelay(streak) : 0,
     ...(keepAuto ? {} : { syncAuto: false }) });
-  if (keepAuto && typeof deferFailedAutomation === 'function') await deferFailedAutomation();
 }
 async function maybeSync(){
   // 🔴 有人正在成批改书签（AI 整理／恢复）就不要插进去：两边同时写，守卫只会把对方当外来改动，双双中止
   if(await WriteLease.heldByOther('sync'))return;
-  const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav','syncError','syncState']);
+  const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav','syncError','syncState','syncRetryAfter']);
   // 🔴 自愈：v0.10.18 之前，任何一次失败（哪怕只是网络抖一下）都会把自动同步关掉，
   // 而它自己永远不会再打开 —— 用户看到的就是「每次都这样」。
   // 判据：自动同步是关的 ＋ 挂着一条会自己好的错 ＋ 以前确实同步成功过
   //      ⇒ 那它一定是被失败关掉的，不是用户自己关的（用户自己关时会把 syncError 清掉）。
   if(!d.syncAuto&&d.syncError&&transientError(d.syncError)&&d.syncState){
-    await chrome.storage.local.set({syncAuto:true,syncErrorTransient:true});
+    await chrome.storage.local.set({syncAuto:true,syncErrorTransient:true,syncFailStreak:0,syncRetryAfter:0});
     d.syncAuto=true;
   }
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
+  // 🔴 同步的排期是按 lastSyncAt 算的，而失败时它不更新 ⇒ 没有这一行就会每分钟砸一次云端
+  if(d.syncRetryAfter&&Date.now()<d.syncRetryAfter)return;
   const schedule=await automationStatus();if(schedule.sync.state!=='waiting'||Date.now()<schedule.sync.nextAt)return;
   try{
     const latest=await latestSyncStatus();
     if(latest.state==='latest'){
-      await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false});
+      await chrome.storage.local.set({lastSyncAt:new Date().toISOString(),syncError:'',syncErrorTransient:false,syncFailStreak:0,syncRetryAfter:0});
       return;
     }
     await syncCloudFirst();
@@ -271,7 +287,7 @@ async function syncAction(message){
     case 'SYNC_LATEST_STATUS':return latestSyncStatus();
     case 'SYNC_AUTO':{
       if(message.enabled){const {data,c}=await syncConfiguration();if(data.syncInProgress||data.syncState?.endpoint!==syncEndpoint(c)||data.syncVerified!==syncVerification(c))throw Error('请先完成一次同步');}
-      await chrome.storage.local.set({syncAuto:!!message.enabled,syncError:''});return true;
+      await chrome.storage.local.set({syncAuto:!!message.enabled,syncError:'',syncFailStreak:0,syncRetryAfter:0});return true;
     }
     case 'SYNC_FOLLOW_ONLY':
       // 这台只接收、不上传。🔴 只存本机，🚫 不进同步内容 —— 否则一开就传染给所有设备
