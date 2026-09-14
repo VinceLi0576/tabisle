@@ -91,7 +91,9 @@
       return conflict('meta:'+path,path,'附属字段',l,r);
     }
     const tagMap=s=>Object.fromEntries((s?.meta.tags||[]).map(t=>[t.id,t]));
-    const meta={items:object(base?.meta.items,local.meta.items,remote?.meta.items||{},'备注')||{},groups:object(base?.meta.groups,local.meta.groups,remote?.meta.groups||{},'分组')||{},tags:Object.values(object(base?tagMap(base):undefined,tagMap(local),tagMap(remote),'标签')||{})};
+    const meta={items:object(base?.meta.items,local.meta.items,remote?.meta.items||{},'备注')||{},groups:object(base?.meta.groups,local.meta.groups,remote?.meta.groups||{},'分组')||{},tags:Object.values(object(base?tagMap(base):undefined,tagMap(local),tagMap(remote),'标签')||{}),
+      // 🔴 锁定按节点身份记在 meta.locks，必须一起合并；漏了它每同步一次锁就全没了
+      locks:object(base?.meta.locks,local.meta.locks||{},remote?.meta.locks||{},'锁定')||{}};
     const snapshot={...clone(local),children:order(''),meta};
     // Display and folding preferences stay per-device during sync; full backups still migrate them.
     BK.validate(snapshot);

@@ -42,6 +42,7 @@
     const color = (c) => c == null || /^#[0-9a-f]{3,8}$/i.test(c);
     for (const t of m.tags) if (!t || !/^[\w-]+$/.test(t.id) || typeof t.name !== 'string' || typeof t.glyph !== 'string' || !color(t.color)) throw Error('标签格式不正确');
     for (const g of Object.values(m.groups)) if (!g || typeof g !== 'object' || !color(g.color)) throw Error('分组颜色格式不正确');
+    if (m.locks != null && (Array.isArray(m.locks) || typeof m.locks !== 'object')) throw Error('锁定数据结构不正确');
     for (const item of Object.values(m.items)) {
       if (!item || typeof item !== 'object' || ['name', 'desc', 'icon'].some(k => item[k] != null && typeof item[k] !== 'string') || item.tags != null && (!Array.isArray(item.tags) || item.tags.some(t => typeof t !== 'string'))) throw Error('书签附属数据格式不正确');
     }

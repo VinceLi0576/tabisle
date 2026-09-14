@@ -9,9 +9,15 @@
 </head>
 <body class="editor-page">
   <header class="page-head">
-    <div class="heading-group"><span class="heading-mark" aria-hidden="true">▤</span><h1 id="heading">书签详情</h1></div>
+    <div class="panel-tabs" role="tablist" aria-label="侧栏内容">
+      <button id="tab-detail" class="panel-tab" role="tab" aria-selected="true" aria-controls="pane-detail">详情</button>
+      <button id="tab-ai" class="panel-tab" role="tab" aria-selected="false" aria-controls="pane-ai">AI</button>
+    </div>
+    <h1 id="heading" class="sr-only">书签详情</h1>
     <button id="close" class="icon-button" title="收起侧栏" aria-label="收起侧栏">×</button>
   </header>
+  <p id="panel-toast" class="panel-toast" hidden></p>
+  <div id="pane-detail" role="tabpanel" aria-labelledby="tab-detail">
   <p id="error" class="error" role="alert"></p>
   <p id="empty" class="empty-note">点击书签卡片右侧的箭头，开始编辑。<br>再点同一个箭头，即可收起侧栏。</p>
   <form id="editor" hidden>
@@ -63,7 +69,56 @@
       <div class="save-buttons"><button type="submit" id="save" class="primary">保存修改</button><button type="button" id="close-footer">收起</button></div>
     </footer>
   </form>
+  </div>
+
+  <div id="pane-ai" role="tabpanel" aria-labelledby="tab-ai" hidden>
+    <div class="ai-bar panel-ai-bar">
+      <button class="chev ai-gear" id="ai-settings" type="button" title="Kimi 设置">⚙</button>
+      <input id="ai-input" type="text" placeholder="粘网址直接入库，或说说怎么整理…" autocomplete="off">
+      <button type="button" class="btn" id="ai-send">发送</button>
+      <button type="button" class="chev" id="ai-toggle" title="展开 / 收起对话" hidden>▾</button>
+    </div>
+  <div class="ai-panel" id="ai-panel" hidden>
+    <div class="ai-panel-head"><span id="ai-status"></span><span style="flex:1"></span><button class="chev" id="ai-clear" type="button" title="清空对话">⌫</button><button class="chev" id="ai-close" type="button" title="收起">×</button></div>
+    <div class="ai-quick" id="ai-quick">
+      <button type="button" data-q="看一下我的书签整体情况，哪些文件夹太杂、哪些重复">体检</button>
+      <button type="button" data-q="给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览">补说明打标签</button>
+      <button type="button" data-q="把「未分组」里散着的书签归到合适的文件夹">归置未分组</button>
+    </div>
+    <div class="ai-log" id="ai-log"></div>
+    <div class="ai-proposal" id="ai-proposal" hidden></div>
+  </div>
+  </div>
+
+<dialog id="dlg-ai">
+  <form method="dialog" id="dlg-ai-form">
+    <h3>Kimi 设置</h3>
+    <p class="dlg-note">钥匙只存在这台浏览器的插件本机存储里，不进导出文件。到 platform.moonshot.cn 的「API Key 管理」生成一把贴进来。</p>
+    <label>接口<select id="ai-provider">
+      <option value="moonshot">Moonshot 开放平台（platform.moonshot.cn 的 Key，按量付费）</option>
+      <option value="kimicode">Kimi Code 会员（kimi.com/code 控制台的 Key，走会员额度）</option>
+    </select></label>
+    <label>API Key<input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label>
+    <div class="row2b">
+      <label>模型<select id="ai-model"></select></label>
+      <label>温度<input id="ai-temp" type="number" step="0.1" min="0" max="1"></label>
+    </div>
+    <input id="ai-base" type="hidden">
+    <p class="dlg-note" id="ai-model-note"></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="ai-test">测试连接</button><span class="dlg-note" id="ai-test-out" style="flex:1;margin:0 8px"></span>
+      <button type="button" class="btn ghost" id="ai-cancel">取消</button>
+      <button type="submit" class="btn">保存</button>
+    </div>
+  </form>
+</dialog>
   <script src="bg.js"></script>
+<script src="bm-core.js"></script>
+<script src="store.js"></script>
+<script src="ai-core.js"></script>
+<script src="panel-bridge.js"></script>
 <script src="sidepanel.js"></script>
+<script src="panel-tabs.js"></script>
+<script src="ai.js"></script>
 </body>
 </html>

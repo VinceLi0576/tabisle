@@ -129,7 +129,7 @@ chrome:// ⚙️`;
     const r = emojiRules.find((x) => hay.includes(x.k));
     return r ? r.e : '';
   }
-  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const { esc, key, host, domainParts, countUrls } = BmCore;   // 派生逻辑跟侧栏共用一份
   const tagList = () => meta.tags;
   const tagDef = (id) => meta.tags.find((t) => t.id === id);
   const deprecatedTags = () => meta.tags.filter((t) => t.name?.trim() === '废弃');
@@ -164,13 +164,8 @@ chrome:// ⚙️`;
     emojiRules = parseEmojiRules(meta.emojiRules);
     if (typeof render === 'function' && bar) render();
   });
-  const key = (u) => { try { const x = new URL(u); x.hash = ''; return x.href.replace(/\/$/, ''); } catch { return String(u || ''); } };
   const itemMeta = (u) => meta.items[key(u)] || {};
-  function setItemMeta(u, patch) {
-    const k = key(u); const cur = { ...(meta.items[k] || {}), ...patch };
-    if (!(cur.tags && cur.tags.length) && !cur.desc && !cur.icon && !cur.name) delete meta.items[k]; else meta.items[k] = cur;
-    saveMeta();
-  }
+  function setItemMeta(u, patch) { BmCore.applyItemMeta(meta, u, patch); saveMeta(); }
   const groupColor = (title) => (meta.groups[title] || {}).color || '';
   // ── 锁定：锁在文件夹的稳定身份（uid）上，不再认名字 ──
   // 🔴 原先按文件夹名记（meta.groups[title].locked）有三个后果：同名夹互相串；
@@ -179,17 +174,8 @@ chrome:// ⚙️`;
   let uidById = {};                       // chrome id → 稳定身份 uid，由后台维护
   const uidOf = (id) => uidById[String(id)] || null;
   const folderLockedByTitle = (title) => !!(meta.groups[title] || {}).locked;
-  function folderLocked(n) {
-    if (!n || n.url) return false;
-    const uid = uidOf(n.id);
-    if (uid && meta.locks && meta.locks[uid]) return true;
-    return folderLockedByTitle(n.title);   // 兼容还没迁过来的旧锁
-  }
-  function isLocked(id) {
-    let hit = false;
-    const walk = (n, chain) => { if (hit) return; const c2 = n.url ? chain : chain || folderLocked(n); if (n.id === id) { hit = c2; return; } for (const c of n.children || []) walk(c, c2); };
-    walk(bar, false); return hit;
-  }
+  const folderLocked = (n) => BmCore.folderLocked(meta, uidById, n);
+  const isLocked = (id) => BmCore.lockedInTree(meta, uidById, bar, id);
   function setFolderLock(n, on) {
     const uid = uidOf(n.id);
     meta.locks = meta.locks || {};
@@ -226,22 +212,12 @@ chrome:// ⚙️`;
   // ── 数据 ──
   let bar = null;
   let flat = [];
-  const countUrls = (n) => (n.children || []).reduce((s, c) => s + (c.url ? 1 : countUrls(c)), 0);
   const tagCounts = (n) => {
     const c = {}; tagList().forEach((t) => { c[t.id] = 0; });
     const walk = (x) => { for (const k of x.children || []) { if (k.url) effectiveTags(k).forEach((t) => { if (t in c) c[t]++; }); else walk(k); } };
     walk(n); return c;
   };
-  function buildFlat() {
-    flat = [];
-    const walk = (n, path) => {
-      for (const c of n.children || []) {
-        if (c.url) flat.push({ id: c.id, title: c.title, url: c.url, path, parentId: n.id });
-        else walk(c, path ? `${path} / ${c.title}` : c.title);
-      }
-    };
-    walk(bar, '');
-  }
+  function buildFlat() { flat = BmCore.flatten(bar); }
   async function refresh() {
     bar = await store.bar();
     if (store.kind === 'chrome') {
@@ -256,15 +232,6 @@ chrome:// ⚙️`;
 
   // ── 渲染 ──
   const svgChev = '<svg viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
-  const SLD = new Set(['com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'co.uk', 'org.uk', 'com.au', 'co.jp', 'com.hk', 'com.tw', 'com.sg']);
-  function domainParts(u) {
-    const h = host(u); if (!h) return { root: '', pre: '' };
-    if (/^(\d+\.){3}\d+$/.test(h) || !h.includes('.')) return { root: h, pre: '' };
-    const p = h.split('.');
-    const n = SLD.has(p.slice(-2).join('.')) ? 3 : 2;
-    return { root: p.slice(-n).join('.'), pre: p.slice(0, -n).join('.') };
-  }
   const label = (n) => (n.url && itemMeta(n.url).name) || n.title || host(n.url) || '（无名）';
   const rawLabel = (n) => n.title || host(n.url) || '（无名）';
   const hue = (s) => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; };
@@ -861,6 +828,14 @@ chrome:// ⚙️`;
     const r = await dialog({ title: '新分组', name: '', showUrl: false, ok: '创建' });
     if (r && r.name.trim()) await store.create({ parentId: bar.id, title: r.name.trim() });
   });
+  // 侧栏里有「详情 / AI」两个页签；这里直接把它开到 AI 那一页
+  $('#ai-side')?.addEventListener('click', async () => {
+    if (store.kind !== 'chrome' || !chrome.sidePanel) { toast('请在 Chrome 扩展中使用侧栏'); return; }
+    try {
+      await chrome.storage.session.set({ panelTab: 'ai' });
+      await chrome.sidePanel.open({ windowId: currentWindowId });
+    } catch (e) { toast('打不开侧栏：' + (e.message || e)); }
+  });
   $('#backup-btn').addEventListener('click', () => window.open('backup.html', '_blank'));
   $('#sync-pill').addEventListener('click', () => runSyncPill());
   $('#more-btn').addEventListener('click', (e) => {
@@ -939,13 +914,7 @@ chrome:// ⚙️`;
     openMenu([{ t: '＋ 新分组', f: () => $('#new-group').click() }], e.clientX, e.clientY);
   });
 
-  function findNode(id) {
-    if (id === bar.id) return bar;
-    let hit = null;
-    const walk = (n) => { if (hit) return; if (n.id === id) { hit = n; return; } (n.children || []).forEach(walk); };
-    walk(bar);
-    return hit;
-  }
+  const findNode = (id) => BmCore.findNode(bar, id);
 
   function urlMenu(id) {
     const n = findNode(id); if (!n) return [];

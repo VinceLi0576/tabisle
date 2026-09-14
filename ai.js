@@ -295,14 +295,17 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
       }
     } catch (e) { BM.toast('加书签失败：' + (e.message || e)); return; }
     await BM.refresh();
-    BM.toast(`已加 ${made.length} 条到「${where}」`, { t: '撤销', f: async () => {
+    // 🔴 撤销动作要一直挂着：补说明成功或失败都复用它，别让后续提示把撤销按钮顶掉
+    const undoStash = { t: '撤销', f: async () => {
       for (const id of made) { try { await BM.store.remove(id); } catch {} }
+      for (const u of urls) BM.setItemMeta(u, { name: '', desc: '', icon: '', tags: [] });
       await BM.refresh(); BM.toast('已撤销');
-    } });
-    if (ai.key) enrich(urls, made, where);       // 没配钥匙也能用，只是没有备注名
+    } };
+    BM.toast(`已加 ${made.length} 条到「${where}」`, undoStash);
+    if (ai.key) enrich(urls, made, where, undoStash);   // 没配钥匙也能用，只是没有备注名
   }
   // 让 Kimi 给这批网址起备注名、写一句话说明。只写附属数据，🚫 不动书签树、🚫 不移动位置
-  async function enrich(urls, ids, where) {
+  async function enrich(urls, ids, where, undoStash) {
     const tip = BM.toast ? null : null;
     try {
       const c = await callKimi([{ role: 'user', content:
@@ -318,9 +321,10 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
         if (it.desc) patch.desc = String(it.desc).slice(0, 60);
         if (Object.keys(patch).length) { BM.setItemMeta(it.url, patch); done++; }
       }
-      if (done) { BM.render(); BM.toast(`已为 ${done} 条补上备注名和说明`, { t: '看看', f: () => { const n = BM.findNode(ids[0]); if (n) BM.openDetail(n.id); } }); }
+      // 🔴 这条不带按钮：带撤销的那条还挂着，再弹一个带按钮的会把撤销顶掉，用户就点不到了
+      if (done) { BM.render(); BM.toast(`已加 ${ids.length} 条到「${where}」，并补上了备注名和说明`, undoStash); }
     } catch (e) {
-      BM.toast('书签已入库；AI 补说明没成功：' + String(e.message || e).slice(0, 60));
+      BM.toast(`已加 ${ids.length} 条到「${where}」；AI 没能补上说明（${String(e.message || e).slice(0, 40)}）`, undoStash);
     }
   }
 
