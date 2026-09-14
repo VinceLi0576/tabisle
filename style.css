@@ -148,7 +148,7 @@ a { color: inherit; text-decoration: none; }
 /* 最近访问 */
 /* 最近访问：跟收集箱同一套框（老徐 260914「一模一样，用收集箱这种框架比较好看」） */
 .recent { border: 1.5px dashed var(--accent); border-radius: 10px; padding: 8px 10px 10px; background: color-mix(in srgb, var(--accent) 4%, var(--card)); }
-.recent-head { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; margin-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; user-select: none; }
+.recent-head { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; margin-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; user-select: none; }
 .recent-head .swatch { --gc: var(--accent); cursor: pointer; }
 .recent-head .title { font-weight: 650; font-size: 15px; color: var(--accent); white-space: nowrap; }
 .recent-head .n { margin-left: auto; }
@@ -157,7 +157,10 @@ a { color: inherit; text-decoration: none; }
 .recent .tile.ghost { opacity: .88; padding-right: 12px; }
 .recent .tile.ghost .strip3, .recent .tile.ghost .tile-move { display: none; }
 .recent.collapsed .recent-body { display: none; }
-.recent.collapsed .chev svg { transform: rotate(-90deg); }
+.recent-head .folder-toggle { color: var(--accent); }
+.recent-head .level-label { color: var(--accent); }
+#recent > .level-mark, .recent-head > .level-mark { --level-color: var(--accent); }
+
 .recent .pill { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); min-width: 0; }
 .recent .pill .well { width: 22px; height: 22px; border-radius: 5px; font-size: 10px; }
 .recent .pill .well img { width: 14px; height: 14px; }
@@ -585,20 +588,19 @@ dialog .palette span.on { border-color: var(--text); }
 .is-collapsed > .head .hd-detail,
 .is-collapsed > .head .more { order: 3; }
 /* 折叠行整行可点：点空白处开侧栏 */
-.card.is-collapsed > .head { cursor: pointer; }
-.card.is-collapsed > .head:hover { background: color-mix(in srgb, var(--gc, var(--muted-2)) 9%, transparent); }
+.card > .head { cursor: pointer; }
+.card > .head:hover { background: color-mix(in srgb, var(--gc, var(--muted-2)) 9%, transparent); }
 /* 右边这排按钮别顶到虚线上（老徐 260914：「都顶到那条线外面去了」）*/
 .card[data-kind="folder"] > .head, .card.inbox > .head, .recent-head { padding-right: 14px; }
 .card.inbox > .head .hd-nudge { margin-right: 4px; }
 
 /* ── 说明小框：标题栏底下自己一条，🔴 只在折叠时出现（老徐 260914 选的「只折叠时留着」）──
    展开之后标题栏下面直接就是书签，🚫 别让长说明把版面撑散。 */
-.note-card, .note-card.empty { display: none; }
+.note-card { display: none; }
 /* 收集箱那句「这是什么」是写死的模块说明，折叠展开都在（老徐 260914 就是对着展开态说的「再框一个小框」）*/
-.note-card.fixed { display: -webkit-box; }
-.is-collapsed > .note-card:not(.empty), .note-card.fixed {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;   /* 再长也不许把它撑成一屏 */
-  margin: 2px 16px 6px 58px; padding: 7px 12px;
+
+.card > .note-card, #recent > .note-card {
+  display: flex; cursor: text; margin: 2px 16px 6px 58px; padding: 7px 12px;
   border: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, var(--border));
   border-radius: 8px; background: var(--card);
   color: var(--muted); font-size: 13px; line-height: 1.7;
@@ -606,9 +608,11 @@ dialog .palette span.on { border-color: var(--text); }
 
 .card[data-kind="folder"] > .note-card { margin-left: 66px; }   /* 一级夹标题前面多一个拖动把手 */
 .card.inbox > .note-card { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); background: color-mix(in srgb, var(--accent) 3%, var(--card)); }
-.note-card-btn { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; font: inherit; cursor: text; }
+/* 🔴 封顶要加在文字那一层。加在外面那个框上会让它变成 -webkit-box 容器，
+   里面的按钮被当成唯一一个「行盒」，文字被推到框底、框还撑得老高。 */
+.note-card-btn { display: block; max-height: calc(3 * 1.7em); overflow: hidden; color: inherit; font: inherit; }
 .note-card-btn:hover { color: var(--text); }
-.note-card-btn.empty { color: var(--muted-2); }
-.note-card-btn.empty:hover { color: var(--accent); }
+.note-card-btn.note-blank { color: var(--muted-2); font-size: 12px; }
+.note-card-btn.note-blank:hover { color: var(--accent); }
 /* 展开时说明整条不出现（编辑时 openNoteEditor 会把它打开） */
 .folder-note[hidden] { display: none; }

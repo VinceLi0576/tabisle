@@ -29,12 +29,20 @@ test('折叠行分两段：数量跟在名字层级后面，说明在右段，�
   assert.ok(css.includes('.is-collapsed > .head .more { order: 3; }') || /\.more \{ order: 3/.test(css), '操作按钮没排到最后');
 });
 
-test('说明是标题栏底下自己一个小框，只在折叠时出现', () => {
-  assert.match(css, /\.note-card, \.note-card\.empty \{ display: none; \}/, '说明小框默认没藏 ⇒ 展开时会把版面撑散');
-  const box = css.match(/\.is-collapsed > \.note-card:not\(\.empty\)[^{]*\{([^}]*)\}/)[1];
-  assert.match(box, /display: -webkit-box/, '折叠时没把说明小框放出来');
+test('说明是标题栏底下自己一个小框，折叠展开都在', () => {
+  // 老徐 260914 复议：「如果有备注就显示备注」⇒ 展开后那一行也留着
+  const box = css.match(/\.card > \.note-card, #recent > \.note-card \{([^}]*)\}/)[1];
+  assert.match(box, /display: flex/, '说明小框没显示出来');
   assert.match(box, /border:/, '不是一个框，只是一行字');
-  assert.match(box, /-webkit-line-clamp:\s*3/, '没封顶 ⇒ 写五百字会撑成一屏');
+  const inner = css.match(/\.note-card-btn \{([^}]*)\}/)[1];
+  assert.match(inner, /max-height: calc\(3 \* 1\.7em\)/, '没封顶 ⇒ 写五百字会撑成一屏');
+  assert.match(inner, /overflow: hidden/, '封了顶不裁掉，等于没封');
+});
+
+test('一级标题栏上不挂子夹快捷和标签筛选，那些东西往下排', () => {
+  // 老徐 260914：「上面堆了一堆文件夹、还显示那么多标签，这也不合理」
+  assert.match(app, /opts\.tags && opts\.level > 1 \? `<span class="hd-subs">/, '一级标题栏还挂着子夹快捷');
+  assert.match(app, /opts\.tags && opts\.level > 1 \? `<span class="hd-tags">/, '一级标题栏还挂着标签筛选');
 });
 
 test('说明小框在 DOM 里排在标题栏和内容区之间', () => {
@@ -49,10 +57,19 @@ test('折叠状态下点说明要先展开，否则编辑框在藏起来的容�
   assert.match(open, /toggleFolder\(section\)/);
 });
 
-test('没写说明的夹不出这个框，写了的点一下就能改', () => {
+test('没写说明那一行的类名不许叫 .empty —— 全局有个 .empty 会把框撑到 116px', () => {
+  // 实撞：span 挂上 .empty 之后继承了 .empty{margin-top:80px}，框从 38px 变 116px，查了半天
+  assert.ok(!/note-card-btn' \+ \(t \? '' : ' empty'\)/.test(app), '又叫回 .empty 了');
+  assert.match(app, /note-card-btn' \+ \(t \? '' : ' note-blank'\)/, '空说明那一行没有自己的类名');
+  assert.match(css, /\.note-card-btn\.note-blank \{/, '样式没跟着改名');
+});
+
+test('没写说明时这一行说清楚这夹由什么构成，点一下就能写', () => {
   const fn = app.match(/function noteCardEl\(f\) \{([\s\S]*?)\n  \}/)[1];
-  assert.match(fn, /if \(!t\) \{ box\.classList\.add\('empty'\); return box; \}/, '没写说明也挂一个空框 ⇒ 31 个夹全是噪音');
-  assert.match(app, /closest\('\.hd-note-btn, \.note-card-btn'\)/, '点说明框打不开编辑器');
+  assert.match(fn, /个文件夹 · /, '没说明时没有给出构成');
+  assert.match(fn, /条书签/, '没说明时没有给出条数');
+  assert.match(fn, /点这里写一句/, '没说明时没有写说明的入口');
+  assert.match(app, /closest\('\.hd-note-btn, \.note-card'\)/, '点说明框打不开编辑器');
 });
 
 test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不许写死在代码里', () => {
@@ -64,20 +81,35 @@ test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不
   const get = app.match(/const folderNote = \(id\) => \{([\s\S]*?)\n  \};/)[1];
   assert.match(get, /typeof prefs\[k\] === 'string'/, '他清空之后应该真的空着，不能又弹回默认那句');
   assert.match(app, /pseudoNote = \(id\) =>/, '收集箱拿不到稳定标识，说明得另找地方存');
-  assert.match(css, /\.note-card\.fixed \{ display: -webkit-box; \}/, '常驻那两块展开后会消失');
   assert.ok(!/inbox-hint/.test(app), '标题行上那句灰字还在');
   const html = fs.readFileSync(p('newtab.html'), 'utf8');
   assert.match(html, /id="recent-note"><\/div>/, '最近访问的说明还硬写在 HTML 里');
+  assert.match(html, /<span class="title">最近访问<\/span><span class="level-label">/, '最近访问标题后面该接层级标');
   assert.ok(!/inbox-hint/.test(html), '最近访问标题行上那句灰字还在');
-  assert.match(html, /<span class="title">最近访问<\/span><span class="hd-toggle">/,
-    '最近访问标题后面少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
+  assert.match(html, /<span class="hd-toggle"><\/span>/,
+    '最近访问标题那行少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
 });
 
-test('折叠那一行点空白处要能开侧栏，但别把改名和按钮抢走', () => {
-  const h = app.match(/const collapsedHead = e\.target\.closest\('\.card\.is-collapsed > \.head'\);([\s\S]*?)\n    \}/);
+test('标题栏点空白处＝展开收起，跟下面每个文件夹一样，🚫 不许弹侧栏', () => {
+  // 老徐 260914：「我点收集箱它就直接弹出左边，这样不对……展开逻辑也是一样的」
+  const h = app.match(/const rowHead = e\.target\.closest\('\.card > \.head'\);([\s\S]*?)\n    \}/);
   assert.ok(h, '折叠行没有接点击');
   assert.match(h[1], /button, \.grip, \.swatch, \.hd-name, \.tag/, '没把按钮和改名排除掉');
-  assert.match(h[1], /openDetail\(/, '点了没开侧栏');
+  assert.match(h[1], /toggleFolder\(/, '点了没有展开');
+  assert.ok(!/openDetail\(/.test(h[1]), '点一行就弹侧栏 ⇒ 跟下面的文件夹不一致');
+});
+
+test('最近访问和收集箱的标题结构跟下面的文件夹一样，只有颜色不同', () => {
+  const html = fs.readFileSync(p('newtab.html'), 'utf8');
+  const head = html.match(/<div class="recent-head"[\s\S]*?<\/div>/)[0];
+  assert.match(head, /class="folder-toggle"/, '最近访问还在用自己那套箭头');
+  assert.match(head, /class="level-mark"/, '最近访问没有层级条');
+  assert.match(head, /class="level-label"/, '最近访问没有层级标');
+  assert.ok(!/class="chev"/.test(head), '旧的 chev 还留着');
+  // 收集箱走 headEl，层级条和层级标不能再被 fixed 跳过
+  assert.match(app, /^\s*levelMark\(opts\.level \|\| 1\) \+ \(`<button class="folder-toggle"/m, '收集箱还是没有层级条');
+  assert.match(app, /^\s*`<span class="level-label">\$\{opts\.level \|\| 1\}级<\/span>` \+/m, '收集箱还是没有层级标');
+  assert.match(css, /\.recent-head \.folder-toggle \{ color: var\(--accent\) \}|\.recent-head \.folder-toggle \{ color: var\(--accent\); \}/, '最近访问的箭头没跟着换色调');
 });
 
 test('最近访问最多 8 条', () => {

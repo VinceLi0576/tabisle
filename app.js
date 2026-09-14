@@ -125,7 +125,11 @@ chrome:// ⚙️`;
     for (const el of $$('.card, #recent')) el.dataset.view = viewFor(el.dataset.id || '__recent');
     for (const b of $$('.hd-view')) b.textContent = viewName(viewFor(b.dataset.viewof));
     $$('.seg').forEach((seg) => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.val === String(prefs[seg.dataset.key]))));
-    $('#recent').classList.toggle('collapsed', !!prefs.recentCollapsed);
+    const rc = !!prefs.recentCollapsed;
+    $('#recent').classList.toggle('collapsed', rc);
+    $('#recent').classList.toggle('is-collapsed', rc);   // 跟下面的文件夹同一套类名，样式一份就够
+    $('#recent-head .folder-toggle')?.setAttribute('aria-expanded', String(!rc));
+    $('#recent-body').hidden = rc;
   }
   const savePrefs = () => { const { folderCollapsed, ...display } = prefs; return store.prefs.set(display); };
   applyPrefs();
@@ -483,15 +487,15 @@ chrome:// ⚙️`;
     const counts = tagCounts(f);
     const gf = groupFilter.get(f.id) || new Set();
     head.innerHTML =
-      (opts.fixed ? '' : levelMark(opts.level || 1)) + (`<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
+      levelMark(opts.level || 1) + (`<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
       (opts.fixed ? '' : `<span class="grip" draggable="true" title="拖动排序">⋮⋮</span>`) +
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
-      (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
+      `<span class="level-label">${opts.level || 1}级</span>` +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
 
       (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
-      (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
-      (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
+      (opts.tags && opts.level > 1 ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
+      (opts.tags && opts.level > 1 ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed
@@ -520,12 +524,21 @@ chrome:// ⚙️`;
     const box = document.createElement('div');
     box.className = 'note-card'; box.dataset.id = f.id;
     // 收集箱和最近访问这两块是常驻说明：折叠展开都在，但内容照样是他自己能改的
-    if (String(f.id) === String(bar?.id) || String(f.id) === RECENT_NOTE) box.classList.add('fixed');
+    // 老徐 260914：「如果有备注就显示备注」；没备注就说清楚这一夹由什么构成，点它就能写
     const t = folderNote(f.id);
-    if (!t) { box.classList.add('empty'); return box; }   // 没写说明就不占地方，🚫 别让 31 个夹各挂一个空框
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'note-card-btn';
-    btn.dataset.note = f.id; btn.textContent = t; btn.title = t;
+    // 🔴 这里曾经用 <button>：Chrome 给按钮的内部盒子另有一套排版，外框会被撑到 116px 高（实测）。
+    // 换成 span，点击交给外框那一层，高度就跟着文字走了。
+    const btn = document.createElement('span');
+    btn.className = 'note-card-btn' + (t ? '' : ' note-blank');   // 🔴 别叫 .empty：全局有个 .empty{margin-top:80px} 会把这个框撑到 116px
+    box.dataset.note = f.id;
+    if (t) { btn.textContent = t; btn.title = t; }
+    else {
+      const node = findNode(String(f.id));
+      const subs = node ? (node.children || []).filter((c) => !c.url).length : 0;
+      const urls = node ? countUrls(node) : 0;
+      btn.textContent = (subs ? subs + ' 个文件夹 · ' : '') + urls + ' 条书签　·　点这里写一句：这个夹是干什么的';
+      btn.title = '还没写说明，点一下写一句';
+    }
     box.appendChild(btn);
     return box;
   }
@@ -574,7 +587,7 @@ chrome:// ⚙️`;
     const hd = e.target.closest('.hd-detail'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
     if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
-    const b = e.target.closest('.hd-note-btn, .note-card-btn'); if (b) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
+    const b = e.target.closest('.hd-note-btn, .note-card'); if (b && b.dataset.note) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
     const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
 
@@ -1104,10 +1117,11 @@ chrome:// ⚙️`;
     const box = e.target.closest('.card, .sub');
     const ib = e.target.closest('[data-inbox]');
     if (ib) { e.preventDefault(); e.stopPropagation(); await moveInbox(ib.dataset.inbox); return; }
-    // 折叠状态下点这一行的空白处 ⇒ 开右边侧栏看这个夹的详情（有几条书签、几个子夹、说明、锁）
-    const collapsedHead = e.target.closest('.card.is-collapsed > .head');
-    if (collapsedHead && !e.target.closest('button, .grip, .swatch, .hd-name, .tag')) {
-      e.preventDefault(); openDetail(collapsedHead.parentElement.dataset.id); return;
+    // 折叠状态下点这一行的空白处 ⇒ 展开/收起，跟下面每个文件夹一模一样（老徐 260914）。
+    // 🚫 别在这儿弹侧栏 —— 侧栏走标题栏最右边那个 ›。
+    const rowHead = e.target.closest('.card > .head');
+    if (rowHead && !e.target.closest('button, .grip, .swatch, .hd-name, .tag')) {
+      e.preventDefault(); await toggleFolder(rowHead.parentElement); return;
     }
     const hv = e.target.closest('.hd-view');
     if (hv) {
