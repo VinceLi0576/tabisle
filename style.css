@@ -670,3 +670,16 @@ dialog .palette span.on { border-color: var(--text); }
 
 /* 整理页里被选中的那一块：右边侧栏正在看的就是它 */
 .fchip.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+
+/* 分组整理：二级往下平铺，每行几个跟着 --org-cols；每层末尾一个「新建」虚线格 */
+#organize .fkids{display:grid;grid-template-columns:repeat(var(--org-cols,3),minmax(0,1fr));gap:10px;align-items:start}
+#organize .fkids > .fnode{min-width:0}
+#organize .fkids .fkids{grid-column:1 / -1}
+.fnew{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:10px 14px;
+  border:1.5px dashed var(--border-2);border-radius:10px;background:transparent;color:var(--muted-2);
+  font-size:12.5px;cursor:pointer;box-sizing:border-box}
+.fnew:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.fnew-plus{font-size:16px;line-height:1}
+.ftree > .fnew{min-height:58px}
+.forg-cols{margin:0 4px}
+@media (max-width:1100px){#organize .fkids{grid-template-columns:1fr}}

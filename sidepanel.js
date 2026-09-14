@@ -112,6 +112,13 @@
     pending=Promise.all([pending.catch(()=>{}),req.catch(()=>{})]).then(()=>{});
     req.then(()=>load()).catch(error);
   };
+  // 老徐 260914：「点击展开右边详情，有『创建子文件夹』的按钮」—— 建在哪儿就在哪儿建，🚫 别在外面建好再拖进来
+  $('fp-newsub').onclick=async()=>{
+    if(!currentId)return;
+    const name=prompt('在这个文件夹里新建一个子文件夹，叫什么？');
+    if(name===null||!name.trim())return;
+    try{await pending;await ask('EDITOR_FOLDER_CREATE',{parentId:currentId,title:name.trim()});await load();}catch(e){error(e);}
+  };
   $('fp-title').addEventListener('change',()=>folderPatch({title:$('fp-title').value}));
   $('fp-title').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('fp-title').blur();}});
   let noteTimer=null;$('fp-note').addEventListener('input',()=>{clearTimeout(noteTimer);noteTimer=setTimeout(()=>folderPatch({note:$('fp-note').value}),500);});

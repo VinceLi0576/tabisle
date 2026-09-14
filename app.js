@@ -113,7 +113,7 @@ chrome:// ⚙️`;
   // ── 本机偏好 ──
   // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
   //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, foldDefault: 'auto' };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, foldDefault: 'auto', orgCols: 3 };
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
@@ -685,6 +685,21 @@ chrome:// ⚙️`;
     const walk = (f) => { for (const sf of orgSubs(f)) { orgFold.set(sf.id, collapse); walk(sf); } };
     for (const f of (bar.children || [])) if (!f.url) { orgFold.set(f.id, collapse); walk(f); }
   }
+  // 每一层末尾那个虚线格：在这儿直接建一个文件夹，🚫 不用先在外面建好再拖进来（老徐 260914）
+  function newFolderTile(parentId) {
+    const d = document.createElement('div');
+    d.className = 'fnew'; d.dataset.newin = parentId;
+    d.innerHTML = '<span class="fnew-plus">＋</span><span class="fnew-t">在这儿新建文件夹</span>';
+    d.title = '在这个位置新建一个文件夹';
+    return d;
+  }
+  async function createFolderIn(parentId) {
+    const where = parentId === bar.id ? '书签栏' : (findNode(parentId)?.title || '这个文件夹');
+    const r = await dialog({ title: `在「${where}」里新建文件夹`, name: '', showUrl: false, ok: '创建' });
+    if (!r || !r.name.trim()) return;
+    try { await store.create({ parentId, title: r.name.trim() }); toast(`「${r.name.trim()}」建好了`); }
+    catch (e) { toast('没建成：' + (e.message || e)); }
+  }
   function renderOrganize() {
     const box = $('#organize');
     box.innerHTML = '';
@@ -692,7 +707,7 @@ chrome:// ⚙️`;
     const withSubs = folders.filter((f) => orgSubs(f).length).length;
 
     const tip = document.createElement('p'); tip.className = 'forg-tip';
-    tip.textContent = '一棵缩进的树：子文件夹往右缩一层。上下拖到某一块的上边或下边改顺序；拖到右端 ↳ 就放进那个文件夹；拖回最外层那一列可提升为一级。改动直接写回书签栏。';
+    tip.textContent = '这一页直接改浏览器书签栏里的文件夹结构，改完立刻生效、也会同步到别的电脑。一级分组一行一个；子文件夹平铺，每行几个在右上角选。上下拖到某一块的上边或下边改顺序；拖到右端 ↳ 放进那个文件夹；拖回最外层那一列提升为一级。每一层最后那个虚线格是「在这儿新建一个文件夹」。';
 
     const head = document.createElement('div'); head.className = 'forg-h';
     head.innerHTML = `一级分组 <span class="n">${folders.length} 个 · ${withSubs} 个有子文件夹 · ${folders.length - withSubs} 个还没有</span>`;
@@ -701,7 +716,9 @@ chrome:// ⚙️`;
     bOpen.type = 'button'; bOpen.className = 'forg-act'; bOpen.dataset.orgall = 'open'; bOpen.textContent = '全部展开';
     const bClose = document.createElement('button');
     bClose.type = 'button'; bClose.className = 'forg-act'; bClose.dataset.orgall = 'close'; bClose.textContent = '全部折起';
-    head.append(sp, bOpen, bClose);
+    const cols = document.createElement('span'); cols.className = 'seg mini-seg forg-cols'; cols.title = '子文件夹每行摆几个';
+    cols.innerHTML = [2, 3, 4].map((n) => `<button type="button" data-orgcols="${n}"${Number(prefs.orgCols) === n ? ' class="on"' : ''}>${n}</button>`).join('');
+    head.append(sp, document.createTextNode('每行'), cols, bOpen, bClose);
 
     const root = document.createElement('div');
     root.className = 'frow ftree'; root.dataset.parent = bar.id; root.dataset.lv = 1;
@@ -719,11 +736,14 @@ chrome:// ⚙️`;
         kids.className = 'frow fkids'; kids.dataset.parent = f.id; kids.dataset.lv = lv + 1;
         markLevel(kids, lv + 1);
         subs.forEach((sf) => build(sf, f.id, lv + 1, kids));
+        kids.appendChild(newFolderTile(f.id));
         node.appendChild(kids);
       }
       into.appendChild(node);
     };
     folders.forEach((f) => build(f, bar.id, 1, root));
+    root.appendChild(newFolderTile(bar.id));
+    box.style.setProperty('--org-cols', String(Number(prefs.orgCols) || 3));
     box.append(tip, head, root);
   }
   function toggleOrganize(on) {
@@ -748,6 +768,10 @@ chrome:// ⚙️`;
       orgFold.set(id, orgOpen(id, lv));                         // 记的是「折起没有」：现在开着就折起
       renderOrganize(); return;
     }
+    const cols = e.target.closest('[data-orgcols]');
+    if (cols) { prefs.orgCols = Number(cols.dataset.orgcols); savePrefs(); renderOrganize(); return; }
+    const nw = e.target.closest('[data-newin]');
+    if (nw) { createFolderIn(nw.dataset.newin); return; }
     const c = e.target.closest('.fchip'); if (!c || dragJustHappened) return;
     // 老徐 260914：「点一级还是二级，都应该直接弹出右边的配置选项，而不是跳来跳去、不知道跳到哪里去」
     // ⇒ 留在整理页不动，右边侧栏开这个夹的详情（名字、颜色、说明、锁、挪位置）。
@@ -1096,10 +1120,9 @@ chrome:// ⚙️`;
     applyPrefs(); render();
     toast(prefs.foldDefault === 'closed' ? '都回到默认：折叠' : prefs.foldDefault === 'open' ? '都回到默认：展开' : '都回到默认：按每个夹原本的规矩');
   });
-  $('#new-group').addEventListener('click', async () => {
-    const r = await dialog({ title: '新分组', name: '', showUrl: false, ok: '创建' });
-    if (r && r.name.trim()) await store.create({ parentId: bar.id, title: r.name.trim() });
-  });
+  // 「新分组」这颗按钮 260914 并进了分组整理页：建在哪儿就在哪儿点那个虚线格。
+  // 右键菜单等入口仍然要能建，走同一个函数。
+  const newGroup = () => createFolderIn(bar.id);
   // 侧栏里有「详情 / AI」两个页签；这里直接把它开到 AI 那一页
   $('#ai-side')?.addEventListener('click', async () => {
     if (store.kind !== 'chrome' || !chrome.sidePanel) { toast('请在 Chrome 扩展中使用侧栏'); return; }
@@ -1218,7 +1241,7 @@ chrome:// ⚙️`;
     if (body) { e.preventDefault(); openMenu(folderMenu(body.closest('.card, .sub'), true), e.clientX, e.clientY); return; }
     if (e.target.closest('.recent, .legend')) return;
     e.preventDefault();
-    openMenu([{ t: '＋ 新分组', f: () => $('#new-group').click() }], e.clientX, e.clientY);
+    openMenu([{ t: '＋ 新分组', f: () => newGroup() }], e.clientX, e.clientY);
   });
 
   const findNode = (id) => BmCore.findNode(bar, id);
@@ -1236,7 +1259,7 @@ chrome:// ⚙️`;
       for (const c of deprecatedLast(f.children || []).filter((x) => !x.url)) push(c, 1);
     }
     if (n.parentId !== bar.id) items.push(null, { t: '放回收集箱（根目录）', f: () => moveTo(id, bar.id) });
-    return items.length ? items : [{ t: '还没有文件夹，先建一个分组', f: () => $('#new-group').click() }];
+    return items.length ? items : [{ t: '还没有文件夹，先建一个分组', f: () => newGroup() }];
   }
   async function moveTo(id, parentId) {
     const n = findNode(id); if (!n) return;

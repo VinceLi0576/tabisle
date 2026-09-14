@@ -32,6 +32,15 @@ async function editorAction(m) {
     }
     return true;
   }
+  if(m.type==='EDITOR_FOLDER_CREATE') {
+    const parentId=String(m.parentId||'');const title=String(m.title||'').trim();
+    if(!title)throw Error('得给它起个名字');
+    const parent=(await chrome.bookmarks.get(parentId))[0];
+    if(!parent||parent.url)throw Error('目标必须是文件夹');
+    const made=await chrome.bookmarks.create({parentId,title});
+    if(typeof markIntentional==='function')await markIntentional(made.id);   // 跟别处新建一样打记号，免得被墓碑当回声删掉
+    return {id:made.id};
+  }
   if(m.type==='EDITOR_NUDGE') {
     const id=String(m.id||'');
     const node=(await chrome.bookmarks.get(id))[0];
