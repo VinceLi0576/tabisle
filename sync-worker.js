@@ -207,6 +207,30 @@ async function applySync(token,auto=false){
     await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await noteSyncFailure(error.message);if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
 }
+// 自动同步遇到冲突时怎么选。
+// 墓碑触发的那类冲突（id 以 :return 结尾，「可能是旧同步回流，也可能是重新收藏」）本机写「保留」、云端写「移除」。
+// 🔴 两种情形在合并眼里长得一模一样，但该走相反的路：
+//   · 账号同步的回声（我们刚删，Chrome 账号同步几秒后又塞回来）⇒ 跟着云端删，这是 Codex 当初做墓碑的正当场景
+//   · 用户有意加回来（从备份恢复、撤销、重新收藏）⇒ 必须保留，否则下一分钟就被静默删掉、墓碑还续一笔
+// 260914 实撞：原来一律选云端，上午两条书签、下午的验收夹都是这么反复消失的。
+// 判据三条，命中任一就保留：⓪ 它是从云端来的（别的设备有意加的，回声到不了云端）① 这个节点是我们自己建的（intentionalCreates 里有它的 id）
+//                             ② 对应墓碑已经超过 10 分钟 —— 回声只会紧跟着删除发生，隔久了就是人的新意图
+const ECHO_WINDOW_MS=10*60e3;
+function cloudFirstChoices(conflicts,ctx={}){
+  const intentional=new Set((ctx.intentionalCreates||[]).map(x=>String(x.id)));
+  const idOfUid={};for(const [id,v] of Object.entries(ctx.bookmarkIdentity||{}))if(v&&v.uid)idOfUid[v.uid]=String(id);
+  const tombAge=(uid,path,url)=>{const t=(ctx.tombstones||[]).find(t=>t.uid===uid||(t.path===path&&t.url===url));return t&&t.at?Date.now()-Date.parse(t.at):null;};
+  return Object.fromEntries((conflicts||[]).map(c=>{
+    const id=String(c.id);
+    if(!id.endsWith(':return'))return [id,'remote'];
+    if(c.from==='remote')return [id,'local'];       // 从云端来的重新出现 ＝ 别的设备有意加的，🚫 不是回声
+    const uid=id.slice(0,-':return'.length);
+    const mine=intentional.has(idOfUid[uid]||'');
+    const age=tombAge(uid,c.path,c.url);
+    const old=age===null||age>ECHO_WINDOW_MS;     // 没时间戳的老墓碑也当「隔久了」
+    return [id,(mine||old)?'local':'remote'];
+  }));
+}
 async function syncCloudFirst(){
   const {data,c}=await syncConfiguration();
   if(data.syncVerified!==syncVerification(c))await verifySync(c);
@@ -219,7 +243,10 @@ async function syncCloudFirst(){
     await chrome.storage.session.set({syncPreview:p});
   }else{
     p=await prepareSync({},true);
-    if(p.unresolved){const choices=Object.fromEntries(p.conflicts.map(c=>[c.id,'remote']));p=await prepareSync(choices,true);}
+    if(p.unresolved){
+      const ctx=await chrome.storage.local.get(['intentionalCreates','bookmarkIdentity','syncTombstones']);
+      p=await prepareSync(cloudFirstChoices(p.conflicts,{intentionalCreates:ctx.intentionalCreates,bookmarkIdentity:ctx.bookmarkIdentity,tombstones:ctx.syncTombstones}),true);
+    }
   }
   await applySync(p.token);
   await chrome.storage.local.set({syncAuto:true});return true;

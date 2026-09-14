@@ -1,6 +1,6 @@
 (async()=>{
   const $=id=>document.getElementById(id),{id:windowId}=await chrome.windows.getCurrent();
-  let selection=null, draft=null, loading=false, loadVersion=0, editVersion=0, pending=Promise.resolve(), domainExpanded=false;
+  let selection=null, draft=null, currentId=null, loading=false, loadVersion=0, editVersion=0, pending=Promise.resolve(), domainExpanded=false;
   const ask=(type,extra={})=>BG.ask(type,{windowId,...extra},{ms:15000});
   const error=e=>{$('error').textContent=e.message||String(e);};
   const safeLink=url=>{try{return ['http:','https:','file:','ftp:'].includes(new URL(url).protocol)}catch{return false}};
@@ -8,7 +8,9 @@
     const version=++loadVersion;loading=true;
     try{
       await pending;const data=await ask('EDITOR_LOAD');if(version!==loadVersion)return;
-      $('empty').hidden=!!data;$('editor').hidden=!data;if(!data){selection=null;return;}
+      $('empty').hidden=!!data;if(!data){selection=null;draft=null;currentId=null;$('editor').hidden=true;$('folder-pane').hidden=true;$('detail-nudge').hidden=true;return;}
+      if(data.kind==='folder'){renderFolder(data);return;}
+      $('folder-pane').hidden=true;$('editor').hidden=false;
       if(data.selection?.id!==selection?.id)domainExpanded=false;
       selection=data.selection;draft=data.draft;$('error').textContent='';
       $('heading').textContent=draft.id?'书签详情':'新书签';
@@ -25,7 +27,7 @@
       }));
       $('tags').closest('fieldset').hidden=!data.tags.length;
       $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
-      $('detail-nudge').hidden=!draft.id;
+      currentId=draft.id;$('detail-nudge').hidden=!draft.id;
       for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
       renderDuplicates(data);
@@ -74,6 +76,38 @@
       $('domain-folders').append(more);
     }
   }
+  // 文件夹详情：说明、锁定、改名都在这儿，挪位置用顶上那排
+  function renderFolder(data){
+    const f=data.folder;selection=data.selection;draft=null;currentId=f.id;
+    $('editor').hidden=true;$('folder-pane').hidden=false;$('error').textContent='';
+    $('heading').textContent='文件夹详情';
+    $('fp-title').value=f.title;$('fp-path').textContent=f.path;$('fp-path').title=f.path;
+    $('fp-count').textContent=f.count+' 条书签';$('fp-subs').textContent=f.subfolders?' · '+f.subfolders+' 个子文件夹':'';
+    $('fp-note').value=f.note||'';$('fp-lock').checked=!!f.locked;
+    $('fp-note').disabled=$('fp-lock').disabled=!f.uid;
+    if(!f.uid)$('fp-note').placeholder='这个文件夹还没拿到稳定标识，等一次自动备份之后再写';
+    $('fp-children').replaceChildren(...f.children.map(c=>{
+      const row=document.createElement('button');row.type='button';row.className='fp-child'+(c.url?'':' is-folder');
+      row.textContent=(c.url?'· ':'📁 ')+(c.title||'（未命名）')+(c.url?'':'  '+c.count+' 条');row.title=c.url||'';
+      row.onclick=async()=>{try{await pending;await ask('EDITOR_SELECT',{id:c.id});}catch(e){error(e);}};   // 点子项就跳到它的详情
+      return row;}));
+    if(!f.children.length){const p=document.createElement('p');p.className='field-help';p.textContent='空的。';$('fp-children').append(p);}
+    $('detail-nudge').hidden=false;
+    for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
+  }
+  // 🔴 260914 实撞：原来把 load() 也挂进 pending 链，而 load() 开头就 await pending ⇒ 自己等自己，
+  //    第一次写完之后面板永远不再刷新（锁定、改名、点子项全没反应，错误栏还是空的）。
+  //    照 persist() 的形状：pending 只跟踪「写有没有落地」，重载另起一条。
+  const folderPatch=(patch)=>{
+    if(!currentId)return;
+    const req=ask('EDITOR_FOLDER_UPDATE',{id:currentId,...patch});
+    pending=Promise.all([pending.catch(()=>{}),req]).then(()=>{});
+    req.then(()=>load()).catch(error);
+  };
+  $('fp-title').addEventListener('change',()=>folderPatch({title:$('fp-title').value}));
+  $('fp-title').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('fp-title').blur();}});
+  let noteTimer=null;$('fp-note').addEventListener('input',()=>{clearTimeout(noteTimer);noteTimer=setTimeout(()=>folderPatch({note:$('fp-note').value}),500);});
+  $('fp-lock').addEventListener('change',()=>folderPatch({locked:$('fp-lock').checked}));
   function renderDuplicates(data){
     const entries=data.duplicates||[];
     $('duplicate-summary').textContent=draft.id?'这个完整网址收藏了 '+entries.length+' 次。可保留多份，也可以删除不需要的那一份。':'保存书签后可查看相同网址的其他收藏。';
@@ -97,9 +131,9 @@
   // 🔴 老徐原话：卡片上那个点太小，「会不会误触」。详情页里这一排大按钮是给精确操作用的。
   // 真正挪书签的活交给后台，侧栏只发指令 —— 🚫 别在这儿再写一份移动逻辑。
   $('detail-nudge').addEventListener('click',async(e)=>{
-    const b=e.target.closest('[data-nudge]'); if(!b||!draft?.id)return;
+    const b=e.target.closest('[data-nudge]'); if(!b||!currentId)return;
     b.disabled=true;
-    try{await pending;await ask('EDITOR_NUDGE',{id:draft.id,dir:b.dataset.nudge});await load();}
+    try{await pending;await ask('EDITOR_NUDGE',{id:currentId,dir:b.dataset.nudge});await load();}
     catch(err){error(err);}
     finally{b.disabled=false;}
   });

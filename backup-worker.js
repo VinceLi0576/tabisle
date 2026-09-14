@@ -202,7 +202,9 @@ async function uploadSnapshot(snapshot) {
     await chrome.storage.local.remove('pendingCloudBackup');return name;
   }catch(error){await chrome.storage.local.set({lastBackupError:error.message});throw error;}
 }
-const bookmarkAPI={get:async id=>(await chrome.bookmarks.get(id))[0],children:id=>chrome.bookmarks.getChildren(id),move:(id,d)=>chrome.bookmarks.move(id,d),update:(id,d)=>chrome.bookmarks.update(id,d),create:d=>chrome.bookmarks.create(d),remove:id=>chrome.bookmarks.remove(id),removeTree:id=>chrome.bookmarks.removeTree(id)};
+// 我们自己建的节点记一笔（恢复整棵树时每一条都算）—— 见 store.js 同名逻辑，两边一致
+async function markIntentional(id){try{const {intentionalCreates=[]}=await chrome.storage.local.get('intentionalCreates');const now=Date.now();const keep=intentionalCreates.filter(x=>now-x.at<86400e3);keep.push({id:String(id),at:now});await chrome.storage.local.set({intentionalCreates:keep.slice(-500)});}catch{}}
+const bookmarkAPI={get:async id=>(await chrome.bookmarks.get(id))[0],children:id=>chrome.bookmarks.getChildren(id),move:(id,d)=>chrome.bookmarks.move(id,d),update:(id,d)=>chrome.bookmarks.update(id,d),create:async d=>{const n=await chrome.bookmarks.create(d);await markIntentional(n.id);return n;},remove:id=>chrome.bookmarks.remove(id),removeTree:id=>chrome.bookmarks.removeTree(id)};
 async function backupAction(message) {
   switch(message.type) {
     case 'BACKUP_STATUS': {

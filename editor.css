@@ -93,3 +93,16 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .detail-nudge .dn:disabled{opacity:.35;cursor:default}
 .dn-sep{width:1px;height:18px;background:var(--border);flex:none;margin:0 2px}
 .editor-page #note{min-height:80px;line-height:1.7}
+
+/* ── 文件夹详情页 ── */
+.folder-pane{display:flex;flex-direction:column;flex:1;min-height:0}
+.fp-ico{flex:none;font-size:18px;line-height:1}
+.fp-path{color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:auto}
+.editor-page #fp-title{height:36px;font-size:14px;font-weight:600}
+.fp-stats{display:flex;gap:4px;margin-top:8px;font-size:12px;color:var(--muted)}
+.fp-lock{display:flex;flex-direction:row;align-items:flex-start;gap:8px;font-size:12px;font-weight:500;line-height:1.5}
+.fp-lock input{width:14px;height:14px;margin-top:2px;flex:none;padding:0}
+.editor-page #fp-note{min-height:84px;line-height:1.7}
+.fp-child{display:block;width:100%;text-align:left;padding:7px 9px;margin:2px 0;border:1px solid transparent;border-radius:7px;background:transparent;font-size:12px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-child:hover{background:var(--bg);border-color:var(--border)}
+.fp-child.is-folder{font-weight:600}

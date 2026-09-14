@@ -72,7 +72,12 @@
       // 而且墓碑按「路径＋网址」认，换个新标识重建照样命中 —— 于是「重新收藏同一个网址」
       // 也会被当成旧删除的回声。回声只可能发生在紧挨着的那几轮里，过了就是人的新意图。
       if(n&&!b&&tombstones.some(t=>(t.uid===uid||(t.path===n.path&&t.url===n.url))&&!tombstoneStale(t))){
-        const keep=conflict(uid+':return',path,'可能是旧同步回流，也可能是重新收藏','保留','移除');if(keep==='移除')n=undefined;
+        const keep=conflict(uid+':return',path,'可能是旧同步回流，也可能是重新收藏','保留','移除');
+        // 🔴 记下它是从哪一侧冒出来的：回声只可能出现在「本机有、云端没有」这一侧
+        //   （账号同步塞回来的东西在上传之前就会被本机合并处理掉，到不了云端）；
+        //   「云端有、本机没有」的重新出现一定是别的设备有意加的 —— 自动同步靠这个字段区分。
+        conflicts[conflicts.length-1].from=l?'local':'remote';
+        if(keep==='移除')n=undefined;
       }
       if(n){
         nodes.set(uid,{...n,uid});

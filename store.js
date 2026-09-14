@@ -17,7 +17,15 @@ const ChromeStore = {
   get: async (id) => (await chrome.bookmarks.get(String(id)))[0],
   move: (id, dest) => chrome.bookmarks.move(String(id), dest),
   update: (id, ch) => chrome.bookmarks.update(String(id), ch),
-  create: (props) => chrome.bookmarks.create(props),
+  // 🔴 记下「这是我们自己建的」：恢复、撤销、挪位置、AI 执行、详情页新建都走这儿。
+  //    同步那边靠它分清「用户有意重新加回来」和「账号同步把删掉的东西塞回来的回声」。
+  async create(props) {
+    const n = await chrome.bookmarks.create(props);
+    try { const { intentionalCreates = [] } = await chrome.storage.local.get('intentionalCreates');
+      const now = Date.now(); const keep = intentionalCreates.filter((x) => now - x.at < 86400e3);
+      keep.push({ id: String(n.id), at: now }); await chrome.storage.local.set({ intentionalCreates: keep.slice(-500) }); } catch {}
+    return n;
+  },
   // 🔴 删除要经过后台（它会先留一份删除前的副本）。后台可能正在冷启动、甚至已经停掉，
   //    sendMessage 在那种情况下不会落定 ⇒ 必须自带超时，否则删除会永远悬着且界面没有任何反馈。
   async _removeVia(id, tree) {

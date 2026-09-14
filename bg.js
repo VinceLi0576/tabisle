@@ -22,7 +22,7 @@
   // 🔴 这一批是「会改东西」的消息：超时时它们最可能已经在后台跑着了，重发＝做两遍。
   // 260914 核实官实撞：backup.js 一律 {ms:20000} 且 retry 保持默认 true，
   // 而备份预览在书签多时本来就要跑十几秒 ⇒ 超时重试把恢复/备份/同步又发一遍。
-  const WRITES = /^(BACKUP_(RESTORE|CREATE|POLICY_SAVE|CLEAR_LOCAL|DELETE)|SYNC_(APPLY|NOW)|BOOKMARK_REMOVE|EDITOR_(SAVE|DELETE|DELETE_DUPLICATE|UNDO_DUPLICATE)|WRITE_[A-Z]+)$/;
+  const WRITES = /^(BACKUP_(RESTORE|CREATE|POLICY_SAVE|CLEAR_LOCAL|DELETE)|SYNC_(APPLY|NOW)|BOOKMARK_REMOVE|EDITOR_(SAVE|DELETE|DELETE_DUPLICATE|UNDO_DUPLICATE|NUDGE|FOLDER_UPDATE)|WRITE_[A-Z]+)$/;
   // retry 只对「超时」重试；🚫 对已经明确失败的不重试，避免把一次写操作做两遍
   async function askBg(message, { ms = 8000, retry = true } = {}) {
     try {

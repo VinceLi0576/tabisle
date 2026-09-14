@@ -496,3 +496,51 @@ test('整理标准进完整备份、但不进同步内容（钥匙两样都不�
  p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
  assert.equal(b.local.data.aiStandard,'我这台的标准','同步不该动别人的整理标准');
 });
+
+test('🔴 删过的东西再加回来，自动同步不许再把它删掉（墓碑触发的冲突默认保留本机）',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','X','https://x.test'),link('k','Keep','https://keep.test')]);
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ // a 删掉 X 并同步出去 ⇒ a 有了 X 的新鲜墓碑；b 也跟着删
+ const xa=(await a.api.children('1')).find(n=>n.url==='https://x.test');await a.api.remove(xa.id);
+ await a.call('syncAction',{type:'SYNC_NOW'});await b.call('syncAction',{type:'SYNC_NOW'});
+ assert.equal((await b.api.children('1')).length,1,'b 也删了');
+ assert.ok(a.local.data.syncTombstones.some(t=>t.url==='https://x.test'),'a 记了墓碑');
+ // a 后悔了，把同名同网址的 X 加回来（＝从备份恢复 / 重新收藏），走自动同步
+ const back=await a.api.create({parentId:'1',title:'X',url:'https://x.test'});
+ a.local.data.intentionalCreates=[{id:String(back.id),at:Date.now()}];   // 测试直接调 api，绕过了 store.js 的标记，这里补上
+ await a.call('syncAction',{type:'SYNC_NOW'});
+ assert.ok((await a.api.children('1')).some(n=>n.url==='https://x.test'),'🔴 自动同步不能把刚加回来的 X 再删掉');
+ assert.equal(a.local.data.lastSyncReceipt.uploaded,true,'而且要把它传上去');
+ await b.call('syncAction',{type:'SYNC_NOW'});
+ assert.ok((await b.api.children('1')).some(n=>n.url==='https://x.test'),'另一台同步后也要有');
+});
+test('真正的内容冲突（两边改了同一条）自动同步照旧保留云端，不受上一条影响',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','X','https://x.test')]);
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ const xa=(await a.api.children('1'))[0],xb=(await b.api.children('1'))[0];
+ await b.api.update(xb.id,{title:'云端改的'});await b.call('syncAction',{type:'SYNC_NOW'});
+ await a.api.update(xa.id,{title:'本机改的'});await a.call('syncAction',{type:'SYNC_NOW'});
+ assert.equal((await a.api.children('1'))[0].title,'云端改的','自动同步时内容冲突仍以云端为准');
+});
+
+test('外面来的重新出现：墓碑还新鲜 ⇒ 当回声跟着删；墓碑超过十分钟 ⇒ 当重新收藏保留',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','X','https://x.test'),link('k','Keep','https://keep.test')]);
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ const xa=(await a.api.children('1')).find(n=>n.url==='https://x.test');await a.api.remove(xa.id);
+ await a.call('syncAction',{type:'SYNC_NOW'});await b.call('syncAction',{type:'SYNC_NOW'});
+ // 外面（账号同步）刚塞回来，没有「有意」标记，墓碑几秒钟前的 ⇒ 回声，删
+ await a.api.create({parentId:'1',title:'X',url:'https://x.test'});a.local.data.intentionalCreates=[];
+ await a.call('syncAction',{type:'SYNC_NOW'});
+ assert.ok(!(await a.api.children('1')).some(n=>n.url==='https://x.test'),'新鲜墓碑＋非我们所建 ⇒ 当回声删掉');
+ // 把墓碑时间戳拨到 11 分钟前 ⇒ 再出现就当重新收藏
+ for(const t of a.local.data.syncTombstones)t.at=new Date(Date.now()-11*60e3).toISOString();
+ await a.api.create({parentId:'1',title:'X',url:'https://x.test'});a.local.data.intentionalCreates=[];
+ await a.call('syncAction',{type:'SYNC_NOW'});
+ assert.ok((await a.api.children('1')).some(n=>n.url==='https://x.test'),'墓碑老了 ⇒ 保留');
+});

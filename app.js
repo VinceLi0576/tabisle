@@ -463,6 +463,7 @@ chrome:// ⚙️`;
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed ? '' : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
       `<span class="n">${countUrls(f)}</span>` +
+      (opts.fixed ? '' : `<button class="hd-detail" type="button" data-detail="${f.id}" title="文件夹详情：说明、锁定、挪位置">›</button>`) +
       `<button class="more" type="button" title="更多">⋯</button>`;
     return head;
   }
@@ -515,6 +516,7 @@ chrome:// ⚙️`;
     catch (err) { toast('没挪动：' + (err.message || err)); }
   }
   document.addEventListener('click', (e) => {
+    const hd = e.target.closest('.hd-detail'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
     if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
     const b = e.target.closest('.hd-note-btn'); if (b) { openNoteEditor(b.dataset.note); return; }
@@ -1074,6 +1076,7 @@ chrome:// ⚙️`;
     const items = [
       // 挪位置放最前面 —— 这是最常用的那几下；🚫 已经动不了的方向不列出来
       ...(isBar || bodyOnly ? [] : [...nudgeMenu(id), ...(nudgeMenu(id).length ? [null] : [])]),
+      ...(isBar ? [] : [{ t: '文件夹详情…', f: () => openDetail(id) }, null]),
       { t: '＋ 加书签…', f: () => createIn(id) },
       { t: isBar ? '＋ 新分组…' : '＋ 新建子夹…', f: async () => {
         const r = await dialog({ title: isBar ? '新分组' : `在「${f.title}」里新建子夹`, name: '', showUrl: false, ok: '创建' });

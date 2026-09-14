@@ -518,3 +518,7 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 .side-item.d1{display:flex;padding-left:34px;position:relative}
 .side-item.d1::before{content:"";position:absolute;left:19px;top:0;bottom:0;width:1px;background:var(--border)}
 .side-item.d1:last-child::before{bottom:50%}
+
+/* 文件夹标题栏右侧的详情箭头，跟书签卡片上那个是一家 */
+.hd-detail{flex:none;width:26px;height:24px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--muted);font-size:14px;line-height:1;cursor:pointer}
+.hd-detail:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}

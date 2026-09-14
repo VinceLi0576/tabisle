@@ -5,6 +5,22 @@ async function editorAction(m) {
   if(m.type==='EDITOR_SELECT') {
     await chrome.storage.session.set({[selectionKey]:{id:m.id||null,parentId:m.parentId||null,stamp:Date.now()}});return true;
   }
+  if(m.type==='EDITOR_FOLDER_UPDATE') {
+    const id=String(m.id||'');const node=(await chrome.bookmarks.get(id))[0];
+    if(!node||node.url)throw Error('不是文件夹');
+    if(typeof m.title==='string'&&m.title.trim()&&m.title!==node.title)await chrome.bookmarks.update(id,{title:m.title.trim()});
+    if(m.note!==undefined||m.locked!==undefined){
+      // 🔴 只动这个夹的那几个键，其余原样 —— 跟附属数据合并写同一条纪律，别整包盖
+      const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
+      const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
+      const uid=uidMap[id]?.uid;if(!uid)throw Error('这个文件夹还没拿到稳定标识，先做一次自动备份');
+      if(m.note!==undefined){fresh.folderNotes=fresh.folderNotes||{};const v=String(m.note).trim();if(v)fresh.folderNotes[uid]=v;else delete fresh.folderNotes[uid];}
+      if(m.locked!==undefined){fresh.locks=fresh.locks||{};if(m.locked)fresh.locks[uid]=true;else delete fresh.locks[uid];
+        const g=fresh.groups?.[node.title];if(g&&g.locked&&!m.locked){delete g.locked;if(!Object.keys(g).length)delete fresh.groups[node.title];}}
+      await chrome.storage.local.set({meta:fresh});
+    }
+    return true;
+  }
   if(m.type==='EDITOR_NUDGE') {
     const id=String(m.id||'');
     const node=(await chrome.bookmarks.get(id))[0];
@@ -28,7 +44,7 @@ async function editorAction(m) {
     const parent=(await chrome.bookmarks.get(undo.parentId))[0];
     if(!parent||parent.url)throw Error('原文件夹已不存在，请从保护备份恢复');
     const children=await chrome.bookmarks.getChildren(parent.id);
-    await chrome.bookmarks.create({parentId:parent.id,index:Math.min(undo.index,children.length),title:undo.title,url:undo.url});
+    const made=await chrome.bookmarks.create({parentId:parent.id,index:Math.min(undo.index,children.length),title:undo.title,url:undo.url});if(typeof markIntentional==='function')await markIntentional(made.id);   // 定义在 backup-worker.js，单测只加载本文件时没有它
     await chrome.storage.session.remove(undoKey);return true;
   }
   const stored=await chrome.storage.session.get(selectionKey),selection=m.selection||stored[selectionKey];
@@ -36,7 +52,24 @@ async function editorAction(m) {
   const dk=draftKey(windowId,selection);
   if(m.type==='EDITOR_DISCARD') {await chrome.storage.session.remove(dk);return true;}
   const node=selection.id ? (await chrome.bookmarks.get(selection.id))[0] : null;
-  if(node&&!node.url)throw Error('请选择一条书签');
+  if(node&&!node.url){
+    // 老徐 260914：「点文件夹时也可以显示该文件夹的详情页面……把很多东西嵌入到详情页面」
+    if(m.type!=='EDITOR_LOAD')throw Error('这是文件夹，改名/说明/锁定走 EDITOR_FOLDER_UPDATE');
+    const bar=await bookmarkBar();
+    const {meta={}}=await chrome.storage.local.get('meta');
+    const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
+    const uid=uidMap[String(node.id)]?.uid||null;
+    const kids=await chrome.bookmarks.getChildren(node.id);
+    const count=(n)=>BmCore.countUrls(n);
+    const full=BmCore.findNode(bar,node.id)||node;
+    return {kind:'folder',folder:{id:node.id,title:node.title,path:BmCore.folderPath(bar,node.id),uid,
+      count:count(full),subfolders:(full.children||[]).filter(c=>!c.url).length,
+      children:kids.map(c=>c.url?{id:c.id,title:c.title,url:c.url}:{id:c.id,title:c.title,count:count(BmCore.findNode(bar,c.id)||c)}),
+      note:(uid&&meta.folderNotes?.[uid])||'',
+      locked:!!(uid&&meta.locks?.[uid])||!!meta.groups?.[node.title]?.locked,
+      color:meta.groups?.[node.title]?.color||''},
+      canNudge:BmCore.nudgeable(bar,node.id)};
+  }
   const {meta={items:{},groups:{},tags:[]}}=await chrome.storage.local.get('meta');
   const item=node ? meta.items[BK.key(node.url)]||{} : {};
   const { [dk]: savedDraft }=await chrome.storage.session.get(dk);
