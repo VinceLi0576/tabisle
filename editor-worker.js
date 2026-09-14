@@ -96,7 +96,7 @@ async function editorAction(m) {
     const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
     const lockedNode=(n)=>!!(meta.locks?.[uidMap[String(n.id)]?.uid]||meta.groups?.[n.title]?.locked);
     while(parent){if(lockedNode(parent))throw Error('这份收藏所在文件夹已锁定');if(!parent.parentId)break;parent=(await chrome.bookmarks.get(parent.parentId))[0];}
-    await makeSnapshot('删除重复收藏前');
+    await snapshotBeforeDelete('删除前');   // 跟首页那条删除共用 90 秒窗口，别让连删把「整批之前」挤掉
     const fresh=(await chrome.bookmarks.get(target.id))[0];
     if(fresh.url!==target.url||fresh.parentId!==target.parentId||fresh.dateAdded!==target.dateAdded)throw Error('收藏已变化，请刷新后重试');
     await chrome.bookmarks.remove(target.id);
@@ -127,12 +127,18 @@ async function editorAction(m) {
         let remaining=false;
         const walk=nodes=>{for(const n of nodes){if(n.url && BK.key(n.url)===BK.key(node.url))remaining=true;if(n.children)walk(n.children);}};walk(await chrome.bookmarks.getTree());
         const old=meta.items[BK.key(node.url)]||{};
-        meta.items[BK.key(url)]={...(meta.items[BK.key(url)]||{}),...old};
+        // 🔴 old 后展开会逐键压过目标网址已有的那份 ⇒ 把网址改成另一条书签正在用的地址时，
+        //    对方的显示名和说明被无声盖掉（260914 核实官实测）。已有的优先，只补它没有的字段。
+        meta.items[BK.key(url)]={...old,...(meta.items[BK.key(url)]||{})};
         if(!remaining)delete meta.items[BK.key(node.url)];
         await chrome.storage.local.set({meta});
       }
     } else {
       result=await chrome.bookmarks.create({parentId,title:fields.name.trim()||fields.alias.trim()||new URL(url).hostname,url});
+      // 🔴 没有这一句：删掉一条、十分钟内在侧栏把同一网址加回同一个夹，
+      //    下一轮自动同步会把它当成「账号同步回流」静默删掉（260914 核实官端到端复现）。
+      //    首页新建、恢复、撤销删重复三条路都打了记号，只有这条漏了。
+      if(typeof markIntentional==='function')await markIntentional(result.id);
       // 🔴 这里原来拿着几百毫秒前读到的 meta 整包写回，首页这期间的改动会被抹掉。
       // 现在只动这一条书签的附属数据，其余字段原样保留存储里最新的那份。
       const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
@@ -148,7 +154,7 @@ async function editorAction(m) {
   }
   if(m.type==='EDITOR_DELETE') {
     if(!node)throw Error('没有可删除的书签');
-    await makeSnapshot('删除书签前');await chrome.bookmarks.remove(node.id);
+    await snapshotBeforeDelete('删除前');await chrome.bookmarks.remove(node.id);
     await chrome.storage.session.remove([selectionKey,dk]);return true;
   }
   throw Error('未知编辑操作');

@@ -97,7 +97,10 @@ async function storeSnapshot(snapshot) {
   //    原样写进去、撞配额、整个 set 失败。单份就超标的，宁可一份都不留也别把区写爆。
   if(list.length===1 && BYTES(list)>BACKUP_BYTES_MAX){
     const kept=BYTES(list);
-    await chrome.storage.local.set({backups:[],lastBackupError:`这一份备份 ${(kept/1048576).toFixed(1)} MB，超过本机可用空间，没有保存。请改用坚果云备份，或先清理书签。`});
+    // 🔴 这里曾经写 `backups:[]` —— 旧备份此刻只是从内存里的 list 被 pop 掉了，存储里还好好的；
+    //    写 `[]` 才是真正删掉它们的那一笔，而且是多余的：不写这个键就不会把区撑爆。
+    //    实测（260914 核实官）：4 份共 2 MB 的保险丝，被一份 6 MB 的新快照连坐清零。
+    await chrome.storage.local.set({lastBackupError:`这一份备份 ${(kept/1048576).toFixed(1)} MB，超过本机可用空间，没有保存。已有的历史备份没有动。请改用坚果云备份，或先清理书签。`});
     throw Error('单份备份体积超出本机存储上限，未保存');
   }
   // 🔴 配额打回时连 lastBackupError 都写不进去 ⇒ 自动路径的错误只落在控制台，界面上什么都看不见。
@@ -203,6 +206,21 @@ async function uploadSnapshot(snapshot) {
   }catch(error){await chrome.storage.local.set({lastBackupError:error.message});throw error;}
 }
 // 我们自己建的节点记一笔（恢复整棵树时每一条都算）—— 见 store.js 同名逻辑，两边一致
+const DELETE_SNAPSHOT_WINDOW=90e3;   // 90 秒内的连续删除算同一批，只留整批之前那一份
+// 🔴 这条窗口原来只挡首页那条路；侧栏的「删除这一份 / 删除这条书签」各自无条件拍一张，
+//    而那两个 reason 不在 KEEP 表里、只留 5 份 ⇒ 连着删第 6 次，「整批开始前」那一份就被挤掉了。
+//    三条路现在共用同一个窗口和同一个 reason（260914 核实官实测：第 6 次删除后 08:01 那份消失）。
+async function snapshotBeforeDelete(reason='删除前'){
+  const policy=await chrome.storage.local.get(['backupMode','lastDeleteSnapshotAt']);
+  if(modeOf(policy)==='local')return false;
+  const since=Date.now()-Date.parse(policy.lastDeleteSnapshotAt||0);
+  if(since<DELETE_SNAPSHOT_WINDOW)return false;
+  await makeSnapshot(reason);
+  await chrome.storage.local.set({lastDeleteSnapshotAt:new Date().toISOString()});
+  return true;
+}
+globalThis.snapshotBeforeDelete=snapshotBeforeDelete;
+
 async function markIntentional(id){try{const {intentionalCreates=[]}=await chrome.storage.local.get('intentionalCreates');const now=Date.now();const keep=intentionalCreates.filter(x=>now-x.at<86400e3);keep.push({id:String(id),at:now});await chrome.storage.local.set({intentionalCreates:keep.slice(-500)});}catch{}}
 const bookmarkAPI={get:async id=>(await chrome.bookmarks.get(id))[0],children:id=>chrome.bookmarks.getChildren(id),move:(id,d)=>chrome.bookmarks.move(id,d),update:(id,d)=>chrome.bookmarks.update(id,d),create:async d=>{const n=await chrome.bookmarks.create(d);await markIntentional(n.id);return n;},remove:id=>chrome.bookmarks.remove(id),removeTree:id=>chrome.bookmarks.removeTree(id)};
 async function backupAction(message) {

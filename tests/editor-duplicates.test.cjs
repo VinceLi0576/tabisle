@@ -4,10 +4,10 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 function setup(){
  const nodes=[{id:'0',title:'',children:[]},{id:'1',parentId:'0',title:'收藏夹栏',children:[]},{id:'2',parentId:'1',title:'资料',children:[]},{id:'3',parentId:'2',index:0,title:'A',url:'https://example.com/?a=1#x',dateAdded:3},{id:'4',parentId:'2',index:1,title:'B',url:'https://example.com/?a=1#x',dateAdded:4},{id:'5',parentId:'2',index:2,title:'C',url:'https://example.com/?a=1#y',dateAdded:5}];
- const meta={items:{shared:{desc:'保留'}},groups:{},tags:[]},session={};let backups=0;
+ const meta={items:{shared:{desc:'保留'}},groups:{},tags:[]},session={};let backups=0,lastDeleteAt=0;
  const tree=()=>{const build=n=>({...n,...(!n.url?{children:nodes.filter(c=>c.parentId===n.id).map(build)}:{})});return [build(nodes[0])];};
  const storage={get:async k=>Object.fromEntries((Array.isArray(k)?k:[k]).map(x=>[x,session[x]])),set:async v=>Object.assign(session,v),remove:async k=>{for(const x of Array.isArray(k)?k:[k])delete session[x];}};
- const ctx=vm.createContext({URL,BK:{key:()=> 'shared'},bookmarkBar:async()=>tree()[0].children[0],makeSnapshot:async()=>backups++,chrome:{storage:{session:storage,local:{get:async()=>({meta})}},bookmarks:{get:async id=>{const n=nodes.find(n=>n.id===id);if(!n)throw Error('missing');return [n];},getTree:async()=>tree(),getChildren:async id=>nodes.filter(n=>n.parentId===id),remove:async id=>nodes.splice(nodes.findIndex(n=>n.id===id),1),create:async n=>{const x={...n,id:'new',dateAdded:10};nodes.push(x);return x;}}}});
+ const ctx=vm.createContext({URL,BK:{key:()=> 'shared'},bookmarkBar:async()=>tree()[0].children[0],makeSnapshot:async()=>backups++,snapshotBeforeDelete:async()=>{const n=Date.now();if(n-lastDeleteAt<90e3)return false;lastDeleteAt=n;backups++;return true;},chrome:{storage:{session:storage,local:{get:async()=>({meta})}},bookmarks:{get:async id=>{const n=nodes.find(n=>n.id===id);if(!n)throw Error('missing');return [n];},getTree:async()=>tree(),getChildren:async id=>nodes.filter(n=>n.parentId===id),remove:async id=>nodes.splice(nodes.findIndex(n=>n.id===id),1),create:async n=>{const x={...n,id:'new',dateAdded:10};nodes.push(x);return x;}}}});
  vm.runInContext(fs.readFileSync(require.resolve('../bm-core.js'),'utf8'),ctx);   // 线上是 importScripts 进来的，这里照样真加载
  vm.runInContext(fs.readFileSync(require.resolve('../editor-worker.js'),'utf8'),ctx);
  const call=(type,extra={})=>ctx.editorAction({type,windowId:1,selection:{id:'3'},...extra});

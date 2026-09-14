@@ -66,3 +66,57 @@ test('自己挪进收集箱的不再弹一次「多了一条」，否则撤销�
   assert.match(app, /const inboxQuiet = new Set\(\)/);
   assert.match(app, /!seen\.includes\(n\.id\) && !inboxQuiet\.has\(n\.id\)/);
 });
+
+// ── 核实官（260914）实跑确认的几条，逐条钉死 ──
+
+test('单份备份超标时，🚫 不许把已有的历史备份一起清空', () => {
+  const bw = nocomment(fs.readFileSync(p('backup-worker.js'), 'utf8'));   // 注释里也写着 backups:[]，不去掉会自己骗自己
+  const blk = bw.match(/if\(list\.length===1 && BYTES\(list\)>BACKUP_BYTES_MAX\)\{[\s\S]*?\n  \}/);
+  assert.ok(blk, '找不到单份超标那一段');
+  assert.ok(!/backups:\s*\[\]/.test(blk[0]),
+    '这一行会把存储里所有旧保险丝删掉——实测 4 份共 2MB 的备份被一份 6MB 的新快照连坐清零');
+  assert.match(blk[0], /lastBackupError/, '至少要把原因写出来');
+});
+
+test('删除类快照三条路共用一个 90 秒窗口，否则连删会把「整批之前」挤掉', () => {
+  const bw = nocomment(fs.readFileSync(p('backup-worker.js'), 'utf8'));
+  assert.match(bw, /async function snapshotBeforeDelete/, '没有抽出共用的那一条');
+  assert.match(bw, /globalThis\.snapshotBeforeDelete/, '没有暴露给 editor-worker');
+  const bg = nocomment(fs.readFileSync(p('background.js'), 'utf8'));
+  assert.match(bg, /snapshotBeforeDelete\('删除前'\)/, '首页那条删除没走共用窗口');
+  const ew = nocomment(fs.readFileSync(p('editor-worker.js'), 'utf8'));
+  assert.ok(!/makeSnapshot\('删除/.test(ew), '侧栏还在自己拍删除快照，绕开了窗口');
+  assert.equal((ew.match(/snapshotBeforeDelete\(/g) || []).length, 2, '侧栏两处删除都要走共用那条');
+});
+
+test('侧栏新建书签要打「有意新建」的记号，否则十分钟内加回来会被墓碑再删一次', () => {
+  const ew = nocomment(fs.readFileSync(p('editor-worker.js'), 'utf8'));
+  const save = ew.match(/\} else \{\s*result=await chrome\.bookmarks\.create\([\s\S]*?markIntentional/);
+  assert.ok(save, 'EDITOR_SAVE 的新建分支没有 markIntentional');
+});
+
+test('改网址撞上另一条书签已在用的网址时，🚫 不许盖掉对方的显示名和说明', () => {
+  const ew = nocomment(fs.readFileSync(p('editor-worker.js'), 'utf8'));
+  assert.match(ew, /meta\.items\[BK\.key\(url\)\]=\{\.\.\.old,\.\.\.\(meta\.items\[BK\.key\(url\)\]\|\|\{\}\)\}/,
+    'old 后展开会逐键压过目标网址已有的那份');
+});
+
+test('云端明确拒收时要撤掉「做到一半」的标记，并且标记搁久了能自愈', () => {
+  const sw = nocomment(fs.readFileSync(p('sync-worker.js'), 'utf8'));
+  const notok = sw.match(/if\(!response\.ok\)\{[^}]*\}/);
+  assert.ok(notok && /remove\('syncInProgress'\)/.test(notok[0]),
+    '服务器拒收＝云端没被写过，留着标记会让自动同步永久停摆');
+  assert.match(sw, /STUCK_RECOVER_MS/, '没有卡死自愈');
+  const heal = sw.match(/if\(d\.syncInProgress&&stuckSince[\s\S]*?\n  \}/);
+  assert.ok(heal && /remove\('syncInProgress'\)/.test(heal[0]), '自愈没有清掉标记');
+  assert.ok(!/syncCloudFirst/.test(heal[0]), '🚫 自愈不许走云端优先——那会拿云端抹掉本机改动');
+});
+
+test('新加的偏好必须同时进 DEFAULTS，否则写得进读不回来，每开一个新标签页就重置', () => {
+  const app = nocomment(fs.readFileSync(p('app.js'), 'utf8'));
+  const d = app.match(/const DEFAULTS = \{([\s\S]*?)\};/);
+  assert.ok(d, '找不到 DEFAULTS');
+  for (const k of ['view', 'recentCollapsed', 'filterMode', 'folderCollapsed', 'folderView', 'inboxIndex']) {
+    assert.ok(new RegExp(`\\b${k}\\s*:`).test(d[1]), `DEFAULTS 少了 ${k} ⇒ store.prefs.get 不会把它读回来`);
+  }
+});

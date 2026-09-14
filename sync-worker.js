@@ -173,7 +173,10 @@ async function applySync(token,auto=false){
       const payload={format:'tabisle-sync',version:1,revision:operation,parentRevision:latest.revision||null,updatedAt,updatedBy:{id:String(p.candidate.deviceId||'').slice(0,80),name:String(p.candidate.device||'').slice(0,60)},sha256:await contentHash(shared),snapshot:{...p.candidate,id:operation,createdAt:updatedAt,reason:'同步版本',prefs:{},folderState:{}}};
       const response=latest.etag?await syncRequest(c,'PUT','state.json',JSON.stringify(payload),{'Content-Type':'application/json','If-Match':latest.etag}):await createSyncFile(c,JSON.stringify(payload),operation);
       if(response.status===412){await chrome.storage.local.remove('syncInProgress');throw Error('另一台设备刚刚更新了云端，本次未覆盖，请重新预览');}
-      if(!response.ok)throw Error('云端写入失败，保留未完成标记，请重新预览');
+      // 🔴 服务器明确回了一个非 2xx ＝ 这次请求被它拒了、云端一个字没写 ⇒ 跟 412 一样撤掉标记。
+      //    原来这里保留标记，于是坚果云抖一下 503，自动同步就再也不跑了（260914 核实官实测整条链）。
+      //    真正需要保留标记的是「请求发出去了但不知道结果」——那种情况会从下面的 catch 走。
+      if(!response.ok){await chrome.storage.local.remove('syncInProgress');throw Error('云端写入失败（'+response.status+'），本次没有写进云端，会自动重试');}
     }
     const verified=await readSync(c);
     if(verified.revision!==(changed?operation:latest.revision)||syncContent(verified.snapshot)!==syncContent(p.candidate))throw Error('云端读回校验不一致，自动同步已暂停，请重新预览');
@@ -265,6 +268,7 @@ const transientError = (msg) => TRANSIENT.test(String(msg || ''));
 //   · 只升级不重试 ⇒ 网络抖一下就把自动同步永久关掉（v0.10.18 之前就是这样）
 // 退避 1 → 2 → 4 → 8 → 16 → 30 分钟封顶，累计约一小时还不成，就转成「要你处理」。
 // 真抖动一两次就过去了，人根本不会看见；真故障一小时内一定会摆到台面上。
+const STUCK_RECOVER_MS=10*60e3;   // 「做到一半」的标记搁够这么久还在，就按保守合并自己往下走
 const RETRY_MAX = 6;
 const retryDelay = (n) => Math.min(30, Math.pow(2, Math.max(0, n - 1))) * 60e3;
 async function noteSyncFailure(message){
@@ -290,6 +294,17 @@ async function maybeSync(){
   if(!d.syncAuto&&d.syncError&&transientError(d.syncError)&&d.syncState){
     await chrome.storage.local.set({syncAuto:true,syncErrorTransient:true,syncFailStreak:0,syncRetryAfter:0});
     d.syncAuto=true;
+  }
+  // 🔴 第二种永久停摆：`syncInProgress` 一旦留下就没有任何自动路径清得掉它（全仓只有 412、
+  //    本轮彻底成功、以及「忘记账号」三处会清），而下面这一行见到它就 return ⇒ 上面那套退避重试
+  //    一次都跑不到。用户看到的还是「每次都这样」，只是换了个开关（260914 核实官查出）。
+  //    放行是安全的：applySync 取 base 时 `!data.syncInProgress` 已经把基线置空 ⇒ 走的是
+  //    「首次合并」那套语义，两边的东西都留下，不会拿云端去抹本机。🚫 别在这儿改成走云端优先。
+  const stuckSince=d.syncInProgress?Date.parse(d.syncInProgress.startedAt||0):0;
+  if(d.syncInProgress&&stuckSince&&Date.now()-stuckSince>STUCK_RECOVER_MS&&d.syncState){
+    await chrome.storage.local.remove('syncInProgress');
+    await chrome.storage.local.set({syncErrorTransient:true,syncError:'上次同步没跑完，已按「两边都保留」重新合并'});
+    d.syncInProgress=null;
   }
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
   // 🔴 同步的排期是按 lastSyncAt 算的，而失败时它不更新 ⇒ 没有这一行就会每分钟砸一次云端

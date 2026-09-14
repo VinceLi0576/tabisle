@@ -106,7 +106,9 @@ chrome:// ⚙️`;
   const PALETTE = ['#2f6fdb', '#1f9d55', '#d08700', '#d64545', '#8e44ad', '#0e9aa7', '#e07a2f', '#5c6b7a', '#c2185b', '#3d8b40'];
 
   // ── 本机偏好 ──
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {} };
+  // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
+  //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0 };
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
