@@ -17,6 +17,9 @@ window.addEventListener('bm-ready', () => {
   let proposal = null;       // { summary, changes: [...] }
   let busy = false;
   let usage = { in: 0, out: 0 };
+  // 当前附加的工作范围（左边点的那个文件夹）。存 session ⇒ 首页和侧栏看到同一个，关浏览器就没了
+  let scope = null;          // { id, title, path, count, subfolders, at }
+  const SCOPE_KEY = 'aiScope';
 
   chrome.storage.local.get({ ai: DEFAULT_AI }).then((r) => { ai = { ...DEFAULT_AI, ...(r.ai || {}) }; paintStatus(); });
   const saveAi = () => chrome.storage.local.set({ ai });
@@ -52,28 +55,76 @@ window.addEventListener('bm-ready', () => {
   function folderPath(id) { const b = BM.flat.find((x) => x.parentId === id); if (b) return b.path || '书签栏'; const walk = (n, p) => { if (n.id === id) return p; for (const c of n.children || []) if (!c.url) { const r = walk(c, p ? p + '/' + c.title : c.title); if (r !== null) return r; } return null; }; return walk(BM.bar, '') || '书签栏'; }
 
   const isLocked = (id) => BM.isLocked ? BM.isLocked(String(id)) : false;
+  // 范围内的全部节点 id（含范围根自身与所有子孙）。每次现算，书签树随时在变
+  const inScope = () => {
+    if (!scope) return null;
+    // 范围里那个夹被删了 \u21d2 集合会变成空的，于是「什么都不在范围里」，
+    // 表现成 AI 一句话也办不了却说不清为什么。这里当场发现、当场恢复成全部书签。
+    if (!BM.findNode(String(scope.id))) { setScope(null); return null; }
+    return BmCore.scopeIds(BM.bar, [scope.id]);
+  };
+  const okIn = (set, id) => !set || set.has(String(id));
+  // 🔴 越权 ≠ 失败：给机器可读的 type、给唯一合法出路，🚫 不写「请重试」
+  // （抄 Roo-Code 的形状，它的越权回复也是结构化 JSON 带 suggestion）
+  const outOfScope = (what, extra = {}) => ({
+    type: 'out_of_scope',
+    message: '「' + what + '」不在这次附加的范围里，拿不到也改不了。',
+    scope: scope ? { folder: scope.path, includes_subfolders: true, bookmarks: scope.count } : null,
+    suggestion: '只处理范围内的内容就行。确实需要它，请让用户在左边点那个文件夹把它附加进来——换个工具或换个 id 都拿不到。',
+    ...extra,
+  });
   const RUN = {
     get_overview() {
+      // 🔴 有范围时这里只给「骨架」：范围外的夹只报名字和条数，不报任何书签。
+      // 判据：文件夹结构本来就在左边 UI 上用户自己看得见，真正的泄露面是条目不是骨架。
+      const set = inScope();
       const folders = [];
-      const walk = (n, depth, path) => { for (const c of n.children || []) if (!c.url) { folders.push({ id: c.id, title: c.title, depth, path: path ? path + '/' + c.title : c.title, count: BM.countUrls(c), subfolders: (c.children || []).filter((x) => !x.url).length, ...(isLocked(c.id) ? { locked: true } : {}) }); walk(c, depth + 1, path ? path + '/' + c.title : c.title); } };
+      const walk = (n, depth, path) => { for (const c of n.children || []) if (!c.url) {
+        const p = path ? path + '/' + c.title : c.title;
+        const mine = okIn(set, c.id);
+        folders.push(mine
+          ? { id: c.id, title: c.title, depth, path: p, count: BM.countUrls(c), subfolders: (c.children || []).filter((x) => !x.url).length, ...(isLocked(c.id) ? { locked: true } : {}) }
+          : { title: c.title, depth, path: p, count: BM.countUrls(c), out_of_scope: true });
+        walk(c, depth + 1, p); } };
       walk(BM.bar, 0, '');
-      return { bar_id: BM.bar.id, total_bookmarks: BM.flat.length, locked_note: 'locked:true 的文件夹及其内容用户已锁定，不要对它们提任何改动', folders, tags: BM.tagList().map((t) => ({ id: t.id, glyph: t.glyph, name: t.name, desc: t.desc })), max_tags: BM.MAX_TAGS, loose_in_bar: (BM.bar.children || []).filter((c) => c.url).length };
+      return { bar_id: BM.bar.id, total_bookmarks: BM.flat.length,
+        ...(set ? { scope: { folder: scope.path, bookmarks: scope.count, includes_subfolders: true },
+          scope_note: 'out_of_scope:true 的夹只给了名字和条数，里面的书签拿不到、也不要对它们提改动。没有 id 的就是这类。' } : {}),
+        locked_note: 'locked:true 的文件夹及其内容用户已锁定，不要对它们提任何改动', folders, tags: BM.tagList().map((t) => ({ id: t.id, glyph: t.glyph, name: t.name, desc: t.desc })), max_tags: BM.MAX_TAGS, loose_in_bar: (BM.bar.children || []).filter((c) => c.url).length };
     },
     get_folder({ folder_id }) {
       const f = BM.findNode(String(folder_id)); if (!f || f.url) return { error: '没有这个文件夹' };
+      if (!okIn(inScope(), f.id)) return outOfScope(f.title || String(folder_id));
       const path = folderPath(f.id);
       return { id: f.id, title: f.title, items: (f.children || []).map((c, i) => c.url ? { id: c.id, index: i, title: c.title, alias: BM.itemMeta(c.url).name || '', url: c.url, tags: BM.itemMeta(c.url).tags || [], desc: BM.itemMeta(c.url).desc || '', emoji: BM.itemMeta(c.url).icon || '' } : { id: c.id, index: i, folder: c.title, count: BM.countUrls(c) }) , path };
     },
     search({ query, limit = 50 }) {
       const q = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
-      const hits = BM.flat.filter((b) => { const m = BM.itemMeta(b.url); const hay = `${b.title} ${m.name || ''} ${b.url} ${m.desc || ''} ${b.path}`.toLowerCase(); return q.every((t) => hay.includes(t)); }).slice(0, limit);
-      return { count: hits.length, items: hits.map((b) => compact(b, b.path || '书签栏')) , format: 'id|文件夹路径|标题|备注名|域名|标签|说明' };
+      const set = inScope();
+      const all = BM.flat.filter((b) => { const m = BM.itemMeta(b.url); const hay = `${b.title} ${m.name || ''} ${b.url} ${m.desc || ''} ${b.path}`.toLowerCase(); return q.every((t) => hay.includes(t)); });
+      const mine = set ? all.filter((b) => set.has(String(b.id))) : all;
+      const hits = mine.slice(0, limit);
+      return { count: hits.length, items: hits.map((b) => compact(b, b.path || '书签栏')), format: 'id|文件夹路径|标题|备注名|域名|标签|说明',
+        ...(set ? { scoped_to: scope.path, hidden_outside_scope: all.length - mine.length } : {}) };
     },
     get_all_bookmarks() {
-      return { format: 'id|文件夹路径|标题|备注名|域名|标签|说明', count: BM.flat.length, lines: BM.flat.map((b) => compact(b, b.path || '书签栏')) };
+      const set = inScope();
+      const rows = set ? BM.flat.filter((b) => set.has(String(b.id))) : BM.flat;
+      return { format: 'id|文件夹路径|标题|备注名|域名|标签|说明', count: rows.length, lines: rows.map((b) => compact(b, b.path || '书签栏')),
+        ...(set ? { scoped_to: scope.path, note: '这是附加的那个文件夹（含子夹）里的全部书签，不是全库。' } : {}) };
     },
     propose_changes({ summary, changes }) {
       if (!Array.isArray(changes) || !changes.length) return { error: 'changes 为空' };
+      // 🔴 schema 裁剪挡不住模型硬编 id ⇒ 执行前再做一次运行时校验（Roo-Code 两层里的第二层）
+      const set = inScope();
+      if (set) {
+        // 跨夹移动改的是两个 children 列表 ⇒ 源和目标都得在范围里
+        const bad = changes.filter((c) => (c.id && !set.has(String(c.id)))
+          || (c.parent_id && !String(c.parent_id).startsWith('$') && !set.has(String(c.parent_id))));
+        const offender = (c) => (c.id && !set.has(String(c.id))) ? c.id : c.parent_id;
+        if (bad.length) return outOfScope(bad.map((c) => (OPNAME[c.op] || c.op) + ' ' + offender(c)).slice(0, 5).join('、'),
+          { rejected: bad.length, note: '整批都没有提交。把越界的那几条去掉，再提交一次剩下的。' });
+      }
       proposal = { summary: String(summary || ''), changes };
       renderProposal();
       return { ok: true, shown: changes.length, note: '已展示给用户预览，等用户点「执行」。你现在用一两句话总结即可，不要再调工具。' };
@@ -241,7 +292,14 @@ window.addEventListener('bm-ready', () => {
 做法：先用 get_overview / get_folder / search / get_all_bookmarks 看清楚，再把所有改动一次放进 propose_changes（用户会预览后点执行）。不要凭空猜 id，id 必须来自工具结果。
 locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
 风格：备注名 ≤12 字、说明 ≤20 字、说明写「这是什么／干嘛用」。除非用户明说删，否则不要 delete。移动到新文件夹时先 create_folder 带 ref，再用 $ref。
-书签栏根 id 见 get_overview 的 bar_id。今天 ${new Date().toLocaleDateString('zh-CN')}。`;
+书签栏根 id 见 get_overview 的 bar_id。今天 ${new Date().toLocaleDateString('zh-CN')}。${scopeLine()}`;
+  }
+  // \u{1F534} 声明范围 \u2260 授权范围：这段只是让模型知道，真正拦住越权的是工具里那层运行时校验
+  function scopeLine() {
+    if (!scope) return '';
+    return `\n\n\u3010当前工作范围\u3011用户附加了文件夹「${scope.path}」（含全部子夹，共 ${scope.count} 条）。`
+      + '这次只看它、只改它：读的工具已经按这个范围过滤，提交范围外的 id 会被整批挡回来。'
+      + '需要范围外的东西时，直接说明「这需要用户把某某文件夹也附加进来」，不要自己换工具或换 id 去试。';
   }
   const isReasoning = (m) => /(^|-)k3\b|kimi-k3/.test(m || '');   // k3 系列只接受 temperature=1，干脆不送
   async function callKimi(messages) {
@@ -255,7 +313,10 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   async function send(text) {
     if (busy) return; if (!ai.key) { openSettings(); return; }
     busy = true; $('#ai-send').disabled = true;
-    addMsg('user', text); history.push({ role: 'user', content: text });
+    const stamp = scope ? { path: scope.path, count: scope.count } : null;
+    const bubble = addMsg('user', text);
+    if (stamp) { const tag = document.createElement('em'); tag.className = 'ai-msg-scope'; tag.textContent = `\u{1F4C1} ${stamp.path} · ${stamp.count} 条`; bubble.appendChild(tag); }
+    history.push({ role: 'user', content: stamp ? `${text}\n[只处理文件夹「${stamp.path}」及其子夹]` : text });
     const thinking = addMsg('sys', '思考中…');
     try {
       for (let round = 0; round < 10; round++) {
@@ -328,6 +389,39 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     }
   }
 
+  // ── 工作范围：左边点一个文件夹，右边的对话就只在那一摊里 ──
+  // 存 chrome.storage.session ⇒ 首页和侧栏看到同一个范围，关掉浏览器就没了。
+  function renderScope() {
+    const panel = $('#ai-panel'); if (!panel) return;
+    let card = $('#ai-scope');
+    if (!scope) { if (card) card.remove(); return; }
+    if (!card) { card = document.createElement('div'); card.id = 'ai-scope'; card.className = 'ai-scope'; panel.insertBefore(card, panel.firstChild); }
+    const fresh = BM.bar ? BmCore.scopeStats(BM.bar, scope.id) : null;
+    if (fresh) scope = { ...scope, ...fresh };
+    const sub = scope.subfolders ? `含 ${scope.subfolders} 个子夹 · ` : '';
+    card.innerHTML = `<span class="ai-scope-ico">\u{1F4C1}</span><span class="ai-scope-txt"><b>${esc(scope.title)}</b><em>${esc(scope.path)} · ${sub}${scope.count} 条 · 这次对话只在这一摊里改</em></span>` +
+      `<button type="button" class="chev" id="ai-scope-off" title="改回全部书签">\u00d7</button>`;
+    $('#ai-scope-off').onclick = () => setScope(null);
+  }
+  async function setScope(id) {
+    const stat = id ? BmCore.scopeStats(BM.bar, String(id)) : null;
+    scope = stat ? { ...stat, at: Date.now() } : null;
+    try { await chrome.storage.session.set({ [SCOPE_KEY]: scope }); } catch {}
+    renderScope();
+    if (scope) { showPanel(true); addMsg('sys', `范围已设为「${scope.path}」（${scope.subfolders ? '含 ' + scope.subfolders + ' 个子夹，' : ''}共 ${scope.count} 条）。之后只在这一摊里看和改。`); }
+    else if (BM.bar) addMsg('sys', '范围已取消，恢复成全部书签。');
+  }
+  chrome.storage.session.get(SCOPE_KEY).then((d) => { scope = d?.[SCOPE_KEY] || null; renderScope(); }).catch(() => {});
+  chrome.storage.onChanged.addListener((ch, area) => {
+    if (area !== 'session' || !ch[SCOPE_KEY]) return;
+    scope = ch[SCOPE_KEY].newValue || null; renderScope();      // 另一边（首页/侧栏）改了范围，这边跟上
+  });
+  window.addEventListener('bm-scope', (e) => {
+    const id = e.detail && e.detail.id;
+    // 再点同一个夹 = 取消，不用去找那个小 \u00d7
+    setScope(e.detail?.toggle && scope && String(scope.id) === String(id) ? null : id);
+  });
+
   function showPanel(on = true) { $('#ai-panel').hidden = !on; $('#ai-toggle').textContent = on ? '▴' : '▾'; }
   function addMsg(who, text) {
     showPanel(true);
@@ -369,6 +463,9 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   // 调试口：CDP 里直接灌一批改动走真实的预览/执行/撤销路径（同 app.js 的 window.__store）
   window.__ai = {
     propose(changes, summary) { proposal = { summary: summary || '调试注入', changes }; renderProposal(); },
+    run: RUN,                       // 直接跑工具，用来验范围过滤有没有真生效
+    get scope() { return scope; },
+    setScope,
     get batch() { return lastBatch; },
     undo: () => undoBatch(),
   };

@@ -84,6 +84,49 @@
     return { root: target, total: folders.reduce((s, f) => s + f.count, 0), folders };
   }
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, SLD };
+  // ── AI 的工作范围 ──
+  // 附加一个文件夹之后，哪些节点算「在这一摊里」。
+  // 🔴 含子夹，并且不给开关：用户在左边点的是「这一摊」不是「这一层」。
+  // 依据：Continue 用 path LIKE 'dir%'、Aider 用 rglob("*")，两个互不相干的实现
+  // 独立收敛到同一个默认，都没提供关闭。代价用可见性补（卡片上写含几个子夹、多少条）。
+  function scopeIds(bar, rootIds) {
+    const want = new Set((rootIds || []).map(String));
+    const out = new Set();
+    if (!bar || !want.size) return out;
+    const collect = (n) => { out.add(String(n.id)); for (const c of n.children || []) collect(c); };
+    const walk = (n) => {
+      if (want.has(String(n.id))) { collect(n); return; }
+      for (const c of n.children || []) if (!c.url) walk(c);
+    };
+    walk(bar);
+    return out;
+  }
+  // 从书签栏根一路拼下来的路径，给人看「这是哪个夹」
+  function folderPath(bar, id) {
+    if (!bar) return '';
+    if (String(bar.id) === String(id)) return bar.title || '书签栏';
+    const walk = (n, p) => {
+      for (const c of n.children || []) {
+        if (c.url) continue;
+        const next = p ? p + ' / ' + (c.title || '（未命名）') : (c.title || '（未命名）');
+        if (String(c.id) === String(id)) return next;
+        const hit = walk(c, next);
+        if (hit) return hit;
+      }
+      return '';
+    };
+    return walk(bar, bar.title || '书签栏');
+  }
+  // 卡片上要显示的：这一摊多少条、几个子夹、完整路径
+  function scopeStats(bar, rootId) {
+    const n = findNode(bar, rootId);
+    if (!n || n.url) return null;
+    let subfolders = 0;
+    const walk = (x) => { for (const c of x.children || []) if (!c.url) { subfolders++; walk(c); } };
+    walk(n);
+    return { id: String(n.id), title: n.title || '（未命名）', path: folderPath(bar, rootId), count: countUrls(n), subfolders };
+  }
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

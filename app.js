@@ -646,7 +646,14 @@ chrome:// ⚙️`;
   $('#side-list').addEventListener('click', (e) => {
     const it = e.target.closest('.side-item'); if (!it) return;
     revealFolder(it.dataset.id);
+    // 左边点一个夹，右边 AI 就只在这一摊里干活；再点同一个取消。
+    // \u{1F534} 只是「选中」，一个字都还没发出去 —— 发送时才把范围盖在那条消息上。
+    window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: it.dataset.id, toggle: true } }));
   });
+  // 范围存在 session 里，首页和侧栏共用一份 ⇒ 哪边改了两边都跟上
+  function paintScope(id) { $$('.side-item').forEach((s) => s.classList.toggle('scoped', !!id && s.dataset.id === String(id))); }
+  chrome.storage.session.get('aiScope').then((d) => paintScope(d?.aiScope?.id)).catch(() => {});
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === 'session' && ch.aiScope) paintScope(ch.aiScope.newValue?.id); });
   $('#side-list').addEventListener('contextmenu', (e) => {
     const it = e.target.closest('.side-item'); if (!it) return;
     const box = document.getElementById('sec-' + it.dataset.id); if (!box) return;
