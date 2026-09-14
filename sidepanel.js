@@ -102,7 +102,7 @@
   const folderPatch=(patch)=>{
     if(!currentId)return;
     const req=ask('EDITOR_FOLDER_UPDATE',{id:currentId,...patch});
-    pending=Promise.all([pending.catch(()=>{}),req]).then(()=>{});
+    pending=Promise.all([pending.catch(()=>{}),req.catch(()=>{})]).then(()=>{});
     req.then(()=>load()).catch(error);
   };
   $('fp-title').addEventListener('change',()=>folderPatch({title:$('fp-title').value}));
@@ -166,10 +166,24 @@
     // Send every patch immediately; Chrome's native X can destroy this page at any time.
     // The worker serializes writes, so no unsent edits remain in a page-local queue.
     const version=++editVersion, request=ask('EDITOR_DRAFT',{selection:sel,patch});
-    pending=Promise.all([pending.catch(()=>{}),request]).then(()=>{});
-    pending.then(()=>{if(version===editVersion){updateStatus();$('promote').disabled=!draft.fields.alias;}}).catch(error);
+    // 🔴 pending 以前会停在 rejected 上再也不复位 ⇒ load() 第一句 await pending 直接抛，
+    // 侧栏从此一直显示空状态，点哪条书签都打不开，只能关掉重开。现在失败也让它落回已完成。
+    pending=Promise.all([pending.catch(()=>{}),request.catch(()=>{})]).then(()=>{});
+    request.then(()=>{if(version===editVersion){updateStatus();$('promote').disabled=!draft.fields.alias;}}).catch(error);
   }
-  for(const id of ['alias','name','url','desc','note','icon'])$(id).addEventListener('input',()=>persist({[id]:$(id).value}));
+  // 🔴 原来逐字 persist：每个字符一次 EDITOR_DRAFT → 后台写 meta → 首页 storage.onChanged → 整页重绘。
+  // 首页 865 条重绘一次要一秒多，而侧栏和首页同源、多半在同一个渲染进程 ⇒ 打字被自己卡住。
+  // 文字框按停手 400ms 落一次；离开输入框立刻落，🚫 别让「最后一笔」留在计时器里。
+  const typeTimers={};
+  const persistSoon=(id,ms=400)=>{clearTimeout(typeTimers[id]);typeTimers[id]=setTimeout(()=>{delete typeTimers[id];persist({[id]:$(id).value});},ms);};
+  const flushField=(id)=>{if(typeTimers[id]){clearTimeout(typeTimers[id]);delete typeTimers[id];persist({[id]:$(id).value});}};
+  for(const id of ['alias','name','url','desc','note','icon']){
+    $(id).addEventListener('input',()=>persistSoon(id));
+    $(id).addEventListener('blur',()=>flushField(id));
+  }
+  const flushAll=()=>{for(const id of Object.keys(typeTimers))flushField(id);};
+  addEventListener('pagehide',flushAll);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushAll();});
 
   // ── 自动填：不靠 AI。① 从打开的标签页选一条；② 按网址去读网页的标题和它自带的一句话简介 ──
   const ORIGINS={origins:['https://*/*']};
@@ -233,12 +247,12 @@
   },0);});
   $('parentId').addEventListener('change',()=>persist({parentId:$('parentId').value}));
   $('tags').addEventListener('change',()=>persist({tags:[...$('tags').querySelectorAll('input:checked')].map(e=>e.value)}));
-  $('editor').addEventListener('submit',async e=>{e.preventDefault();$('save').disabled=true;try{await pending;await ask('EDITOR_SAVE',{selection});await load();}catch(e){error(e);updateStatus();}});
+  $('editor').addEventListener('submit',async e=>{e.preventDefault();flushAll();$('save').disabled=true;try{await pending;await ask('EDITOR_SAVE',{selection});await load();}catch(e){error(e);updateStatus();}});
   $('discard').onclick=async()=>{try{await pending;await ask('EDITOR_DISCARD',{selection});await load();}catch(e){error(e);}};
   $('promote').onclick=()=>{$('name').value=$('alias').value;persist({name:$('alias').value});};
   $('use-title').onclick=()=>{$('alias').value='';persist({alias:''});};   // 老徐：显示名的意思其实是去改带过来的书签名 —— 反方向也得有
   $('delete').onclick=async()=>{if(!confirm('删除这条书签？删除前会自动保存完整备份。'))return;try{await pending;await ask('EDITOR_DELETE',{selection});await load();}catch(e){error(e);}};
-  $('close').onclick=$('close-footer').onclick=async()=>{try{await pending;await chrome.sidePanel.close({windowId});}catch(e){error(e);}};
+  $('close').onclick=$('close-footer').onclick=async()=>{flushAll();try{await pending;await chrome.sidePanel.close({windowId});}catch(e){error(e);}};
   $('favicon').onerror=()=>{$('favicon').hidden=true;$('favicon-fallback').hidden=false;};
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();$('editor').requestSubmit();}if(e.key==='Escape')$('close').click();});
   chrome.storage.onChanged.addListener((changes,area)=>{if(area==='session'&&changes['editorSelection:'+windowId])load();});

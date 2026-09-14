@@ -53,7 +53,18 @@ const ChromeStore = {
     const x = c.getContext('2d'); x.drawImage(img, 0, 0, 16, 16);
     return c.toDataURL();
   },
+  // 🔴 每次 render 都对 713 个图标各建一张 canvas 比对，实测 3.11ms × 713 ＝ 2.2 秒主线程
+  // （260914 实测：一次 render 之后 3 秒里主线程被占 1413ms，最长连续卡 1354ms）。
+  // 同一个 src 的答案在一次会话里不会变 ⇒ 按 src 记住，第二次起是一次 Map 查表。
+  _iconCache: new Map(),
   isDefaultIcon(img) {
+    const src = img.src;
+    if (src && this._iconCache.has(src)) return this._iconCache.get(src);
+    const p = this._isDefaultIconUncached(img);
+    if (src) this._iconCache.set(src, p);
+    return p;
+  },
+  _isDefaultIconUncached(img) {
     if (!this._refSig) {
       this._refSig = new Promise((res) => {
         const i = new Image();

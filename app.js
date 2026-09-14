@@ -1124,16 +1124,36 @@ chrome:// ⚙️`;
   }
   async function moveTo(id, parentId) {
     const n = findNode(id); if (!n) return;
+    // 🔴 锁定原来只挡得住 AI 和 ▲▼⇤⇥；菜单「归入」和拖动两条最常用的路一声不吭就放行了
+    if (isLocked(parentId)) { toast(`「${findNode(parentId)?.title || '目标文件夹'}」锁着，先解锁再挪`); return; }
+    if (isLocked(n.parentId)) { toast(`「${findNode(n.parentId)?.title || '原文件夹'}」锁着，先解锁再挪`); return; }
     const from = { parentId: n.parentId, index: n.index };
     try { await store.move(id, { parentId }); }
     catch (e) { toast('没挪动：' + e.message); return; }
     const dest = findNode(parentId);
-    toast(`「${label(n)}」已归入「${dest?.title || '收集箱'}」`, { t: '撤销', f: () => store.move(id, from).catch((e) => toast('撤销失败：' + e.message)) });
+    // 挪回根目录会让收集箱多一条 ⇒ noticeInbox 0.3 秒后吐一条新提示，把撤销按钮顶没了。
+    // 自己挪进去的不用再提醒一遍，记下来让它跳过。
+    if (parentId === bar.id) inboxQuiet.add(id);
+    toast(`「${label(n)}」已${parentId === bar.id ? '放回收集箱' : '归入「' + (dest?.title || '') + '」'}`, { t: '撤销', f: () => undoMove(id, from) });
   }
-  // 收集箱多了新东西（多半是在别的页面点了星号）：每条只提醒一次，这台浏览器自己记
+  // 撤销一次移动。🔴 别直接拿当时那个 index 硬塞：这几秒里源文件夹被动过的话，
+  // 同一个下标已经不是同一个位置了。复核一下，对不上就放回那个夹的末尾并说明。
+  async function undoMove(id, from) {
+    if (!from) return;
+    try {
+      const kids = await store.children(from.parentId);
+      const exact = from.index <= kids.length;
+      await store.move(id, exact ? { parentId: from.parentId, index: from.index } : { parentId: from.parentId });
+      if (from.parentId === bar.id) inboxQuiet.add(id);
+      if (!exact) toast('已放回原来那个文件夹，位置按最后一格算（这中间它被动过）');
+    } catch (e) { toast('撤销失败：' + (e.message || e)); }
+  }
+  // 收集箱多了新东西（多半是在别的页面点了星号）：每条只提醒一次，这台浏览器自己记。
+  // inboxQuiet 是「我自己刚挪进去的」，不用再提醒一遍（提醒会把撤销按钮顶掉）
+  const inboxQuiet = new Set();
   function noticeInbox(loose) {
     let seen = []; try { seen = JSON.parse(localStorage.getItem('inboxSeen') || '[]'); } catch {}
-    const fresh = loose.filter((n) => !seen.includes(n.id));
+    const fresh = loose.filter((n) => !seen.includes(n.id) && !inboxQuiet.has(n.id));
     try { localStorage.setItem('inboxSeen', JSON.stringify(loose.map((n) => n.id))); } catch {}
     if (!fresh.length || (seen.length === 0 && loose.length > 3)) return;   // 第一次装上、根目录本来就一堆：别一上来就吼
     const first = label(fresh[0]);
@@ -1524,6 +1544,7 @@ chrome:// ⚙️`;
     if (!drag || !target) return;
     e.preventDefault();
     const tg = target; const d = drag;
+    const dn = findNode(d.id); const from = dn ? { parentId: dn.parentId, index: dn.index } : null;
     clearMark();
     try {
       const kids = await store.children(tg.parentId);
@@ -1534,7 +1555,13 @@ chrome:// ⚙️`;
       } else {
         index = kids.length;
       }
+      if (isLocked(tg.parentId)) { toast(`「${findNode(tg.parentId)?.title || '目标文件夹'}」锁着，先解锁再挪`); return; }
+      if (isLocked(from.parentId)) { toast(`「${findNode(from.parentId)?.title || '原文件夹'}」锁着，先解锁再挪`); return; }
       await store.move(d.id, { parentId: tg.parentId, index });
+      if (tg.parentId === bar.id) inboxQuiet.add(d.id);
+      // 拖动才是整理时的主力动作，原来成功后一声不响、手滑了没有回头路
+      const moved = findNode(d.id);
+      toast(`「${moved ? label(moved) : '已移动'}」挪到「${findNode(tg.parentId)?.title || '收集箱'}」`, { t: '撤销', f: () => undoMove(d.id, from) });
     } catch (err) {
       toast('移动失败：' + (err.message || err));
     }

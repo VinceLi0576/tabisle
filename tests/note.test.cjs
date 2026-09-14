@@ -22,5 +22,7 @@ test('改一个字就落盘的那条路也要认 note（不然要等用户点保
 });
 test('侧栏确实在监听 note 输入（两边得对得上）', () => {
   const panel = fs.readFileSync(require('node:path').join(__dirname, '..', 'sidepanel.js'), 'utf8');
-  assert.match(panel, /for\(const id of \[[^\]]*'note'[^\]]*\]\)\$\(id\)\.addEventListener\('input'/);
+  const m = panel.match(/for\(const id of \[([^\]]*)\]\)\{\s*\$\(id\)\.addEventListener\('input'/);
+  assert.ok(m, '侧栏没有在监听这几个字段的输入');
+  assert.ok(m[1].includes("'note'"), '侧栏没监听 note');
 });

@@ -1,7 +1,7 @@
 const BK=BookmarkCore;
 // 🔴 aiStandard / aiTasks 放这儿是有意的：prefs 会进完整备份（写了的整理标准不会丢），
 // 但同步时被清成 {}（不会传给别的设备，也不会跟别人的标准打架）。钥匙不在这儿，它一样都不进。
-const PREF_KEYS=['view','recentCollapsed','filterMode','aiStandard','aiTasks'];
+const PREF_KEYS=['view','recentCollapsed','filterMode','folderView','inboxIndex','aiStandard','aiTasks'];
 const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
 const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
 const intervalOf=data=>[1,3,24,168,720].includes(data.backupIntervalHours)?data.backupIntervalHours:[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays*24:1;
