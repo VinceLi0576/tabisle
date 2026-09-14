@@ -116,6 +116,8 @@ chrome:// ⚙️`;
   if (!prefs.folderView || typeof prefs.folderView !== 'object' || Array.isArray(prefs.folderView)) prefs.folderView = {};
   for (const [k, v] of Object.entries(prefs.folderView)) if (!['card', 'detail', 'list'].includes(v)) delete prefs.folderView[k];
   const viewFor = (id) => prefs.folderView[id] || prefs.view;
+  // 收集箱排在第几个组：老徐 260914「放到哪个地方我自己知道就行」。只是显示位置，这台浏览器自己记，🚫 不动书签树
+  if (!Number.isInteger(prefs.inboxIndex) || prefs.inboxIndex < 0) prefs.inboxIndex = 0;
   const viewName = (v) => ({ card: '紧凑', detail: '详细', list: '列表' })[v] || '紧凑';
   function applyPrefs() {
     for (const el of $$('.card, #recent')) el.dataset.view = viewFor(el.dataset.id || '__recent');
@@ -474,7 +476,9 @@ chrome:// ⚙️`;
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
-      (opts.fixed ? '' : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
+      (opts.fixed
+        ? `<span class="hd-nudge inbox-nudge">${[['up','▲','收集箱上移一格'],['down','▼','收集箱下移一格'],['top','⇱','复位：回到最顶上']].map(([d,g,t])=>`<button type="button" class="nudge" data-inbox="${d}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`
+        : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
       (cls === 'head' ? `<button class="hd-view" type="button" data-viewof="${f.id}" title="这一组怎么显示：点一下在紧凑 / 详细之间切；顶栏那组是管全部的">${viewName(viewFor(f.id))}</button>` : '') +
       `<span class="n">${countUrls(f)}</span>` +
       (opts.fixed ? '' : `<button class="hd-detail" type="button" data-detail="${f.id}" title="文件夹详情：说明、锁定、挪位置">›</button>`) +
@@ -550,6 +554,19 @@ chrome:// ⚙️`;
     return sub;
   }
 
+  function inboxCard(loose) {
+    const c = cardEl({ id: bar.id, title: '收集箱', children: loose, dateAdded: bar.dateAdded }, { fixed: true });
+    c.classList.add('inbox');
+    return c;
+  }
+  async function moveInbox(dir) {
+    const total = (bar.children || []).filter((k) => !k.url).length;
+    const cur = Math.min(prefs.inboxIndex, total);
+    const next = dir === 'top' ? 0 : dir === 'up' ? Math.max(0, cur - 1) : Math.min(total, cur + 1);
+    if (next === cur) { toast(dir === 'down' ? '收集箱已经在最底下' : '收集箱已经在最顶上'); return; }
+    prefs.inboxIndex = next; savePrefs(); render();
+    document.querySelector('.card.inbox')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
   function cardEl(f, opts = {}) {
     const card = document.createElement('div');
     card.className = 'card'; card.id = 'sec-' + f.id;
@@ -687,10 +704,15 @@ chrome:// ⚙️`;
     groups.innerHTML = '';
     const kids = deprecatedLast(bar.children || []);
     const loose = kids.filter((k) => k.url), folders = kids.filter((k) => !k.url);
-    folders.filter(f => !isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
-    // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失
-    if (loose.length) { const c = cardEl({ id: bar.id, title: '收集箱', children: loose, dateAdded: bar.dateAdded }, { fixed: true }); c.classList.add('inbox'); groups.prepend(c); }
-    folders.filter(f => isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
+    const ordered = [...folders.filter(f => !isDeprecated(f)), ...folders.filter(f => isDeprecated(f))];
+    // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失。
+    // 它排第几由 prefs.inboxIndex 定（默认最顶上），头上的 ▲▼⇱ 只改这个数
+    prefs.inboxIndex = Math.min(prefs.inboxIndex, ordered.length);
+    ordered.forEach((f, i) => {
+      if (loose.length && i === prefs.inboxIndex) groups.appendChild(inboxCard(loose));
+      groups.appendChild(cardEl(f));
+    });
+    if (loose.length && prefs.inboxIndex >= ordered.length) groups.appendChild(inboxCard(loose));
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
     domHl = '';
@@ -738,9 +760,10 @@ chrome:// ⚙️`;
       list.appendChild(d);
       if (depth < 1 && sideOpen.has(f.id)) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
     };
-    if (looseId) { add({ id: bar.id, title: '收集箱', children: loose }, 0, bar.id); list.lastElementChild.classList.add('inbox'); }
-    for (const f of folders.filter(f => !isDeprecated(f))) add(f, 0, bar.id);
-    for (const f of folders.filter(f => isDeprecated(f))) add(f, 0, bar.id);
+    const addInbox = () => { add({ id: bar.id, title: '收集箱', children: loose }, 0, bar.id); list.lastElementChild.classList.add('inbox'); };
+    const orderedSide = [...folders.filter(f => !isDeprecated(f)), ...folders.filter(f => isDeprecated(f))];
+    orderedSide.forEach((f, i) => { if (looseId && i === prefs.inboxIndex) addInbox(); add(f, 0, bar.id); });
+    if (looseId && prefs.inboxIndex >= orderedSide.length) addInbox();
     if (sideObserver) sideObserver.disconnect();
     const visible = new Set();
     sideObserver = new IntersectionObserver((entries) => {
@@ -1039,6 +1062,8 @@ chrome:// ⚙️`;
   main.addEventListener('click', async (e) => {
     if (dragJustHappened) { dragJustHappened = false; return; }
     const box = e.target.closest('.card, .sub');
+    const ib = e.target.closest('[data-inbox]');
+    if (ib) { e.preventDefault(); e.stopPropagation(); await moveInbox(ib.dataset.inbox); return; }
     const hv = e.target.closest('.hd-view');
     if (hv) {
       e.preventDefault(); e.stopPropagation();

@@ -559,3 +559,6 @@ dialog .palette span.on { border-color: var(--text); }
 .hd-view{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--muted-2);font-size:10px;cursor:pointer;white-space:nowrap}
 .hd-view:hover{border-color:var(--accent);color:var(--accent)}
 .recent-head .hd-view{margin-left:6px}
+
+/* 收集箱头上的 ▲▼⇱ 一直露着（老徐 260914 要的三颗按钮） */
+.inbox-nudge{opacity:1}
