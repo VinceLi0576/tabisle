@@ -154,6 +154,9 @@ async function applySync(token,auto=false){
   }
   // Recheck after potentially slow backup requests, before any shared state is written.
   if(await fingerprint(await captureSnapshot())!==p.fingerprint)throw Error('备份期间本机数据发生变化，请重新预览同步');
+  const busy=await WriteLease.heldByOther('sync');
+  if(busy)throw Error(`${WriteLease.NAME[busy.owner]||busy.owner}正在改书签，请等它结束或撤销后再同步`);
+  const lease=(await WriteLease.acquire('sync')).lease;
   const operation=crypto.randomUUID();await chrome.storage.local.set({syncInProgress:{operation,endpoint:p.endpoint,startedAt:new Date().toISOString()},syncAuto:false});
   try{
     if(changed){
@@ -193,7 +196,7 @@ async function applySync(token,auto=false){
     const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
     await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
-  }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;}
+  }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
 }
 async function syncCloudFirst(){
   const {data,c}=await syncConfiguration();
@@ -213,6 +216,8 @@ async function syncCloudFirst(){
   await chrome.storage.local.set({syncAuto:true});return true;
 }
 async function maybeSync(){
+  // 🔴 有人正在成批改书签（AI 整理／恢复）就不要插进去：两边同时写，守卫只会把对方当外来改动，双双中止
+  if(await WriteLease.heldByOther('sync'))return;
   const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncInProgress','backupMode','webdav']);
   if(!d.syncAuto||d.syncInProgress||modeOf(d)!=='webdav'||!d.webdav?.enabled||Date.now()-nativeLastChange<3000)return;
   const schedule=await automationStatus();if(schedule.sync.state!=='waiting'||Date.now()<schedule.sync.nextAt)return;

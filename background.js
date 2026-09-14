@@ -1,5 +1,6 @@
-importScripts('bookmark-core.js', 'backup-worker.js', 'sync-core.js', 'sync-worker.js', 'editor-worker.js', 'automation-worker.js');
+importScripts('write-lease.js', 'bookmark-core.js', 'backup-worker.js', 'sync-core.js', 'sync-worker.js', 'editor-worker.js', 'automation-worker.js');
 
+const DELETE_SNAPSHOT_WINDOW = 90e3;   // 90 秒内的连续删除算同一批，只留第一份副本
 let taskTail = Promise.resolve();
 function queueTask(fn) { const task = taskTail.then(fn).finally(() => typeof refreshAutomationAlarm==='function' ? refreshAutomationAlarm().catch(console.error) : undefined); taskTail = task.catch(() => {}); return task; }
 // A failed archival upload must not prevent sync from checking its own safeguards.
@@ -19,10 +20,21 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type.startsWith('SYNC_')) return syncAction(message);
     if (message.type.startsWith('BACKUP_')) return backupAction(message);
     if (message.type === 'BOOKMARK_REMOVE') {
-      const policy=await chrome.storage.local.get('backupMode');
-      if(modeOf(policy)!=='local')await makeSnapshot('删除前');
+      const policy=await chrome.storage.local.get(['backupMode','lastDeleteSnapshotAt']);
+      // 🔴 连着删一批时只留一份「删除前」副本：要的是整批之前那个状态，
+      //    每条都拍既慢（一份 800 多条的完整快照）又没有意义，第 2 份起记的都是删了一半的样子。
+      const since=Date.now()-Date.parse(policy.lastDeleteSnapshotAt||0);
+      if(modeOf(policy)!=='local'&&!(since<DELETE_SNAPSHOT_WINDOW)){
+        await makeSnapshot('删除前');
+        await chrome.storage.local.set({lastDeleteSnapshotAt:new Date().toISOString()});
+      }
       return message.tree ? chrome.bookmarks.removeTree(message.id) : chrome.bookmarks.remove(message.id);
     }
+    if (message.type === 'IDENTITY_MAP') return ensureIdentity();
+    if (message.type === 'WRITE_ACQUIRE') return WriteLease.acquire(message.owner || 'ai', message.ms);
+    if (message.type === 'WRITE_RENEW') return WriteLease.renew(message.id, message.ms);
+    if (message.type === 'WRITE_RELEASE') return WriteLease.release(message.id);
+    if (message.type === 'WRITE_STATUS') return WriteLease.read();
     if (message.type === 'ICON_FETCH') return remoteIcon(message.host);
     if (message.type === 'APP_READY') { await ensureBackupAlarm(); return runScheduledTasks(); }
     throw Error('未知操作');

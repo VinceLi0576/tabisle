@@ -129,6 +129,10 @@ window.addEventListener('bm-ready', () => {
   async function undoBatch() {
     if (!lastBatch || busy) return;
     busy = true; const btn = $('#ai-undo'); if (btn) btn.disabled = true;
+    try { await withWriteLease('撤销', () => runUndo()); }
+    catch (e) { busy = false; if (btn) btn.disabled = false; addMsg('sys', '没能撤销：' + (e.message || e)); BM.toast(e.message || String(e)); return; }
+  }
+  async function runUndo() {
     const store = BM.store;
     const api = {
       find: (id) => BM.findNode(String(id)),
@@ -159,10 +163,28 @@ window.addEventListener('bm-ready', () => {
     return node;
   }
 
+  // 成批改书签前先向后台申请写租约：同一时刻只让一方改，避免和持续同步互相打断
+  async function withWriteLease(what, fn) {
+    let lease = null;
+    try {
+      const r = await BG.askBg({ type: 'WRITE_ACQUIRE', owner: 'ai' }, { ms: 10000 });
+      if (!r?.ok) throw Error(r?.error || '无法申请写入权限');
+      if (!r.data?.ok) { const o = r.data || {}; throw Error(`${({ sync: '同步', restore: '恢复' })[o.owner] || o.owner || '别的任务'}正在改书签，请稍后再${what}`); }
+      lease = r.data.lease;
+      return await fn();
+    } finally {
+      if (lease) await BG.askBg({ type: 'WRITE_RELEASE', id: lease.id }, { ms: 8000, retry: false }).catch(() => {});
+    }
+  }
+
   async function applyProposal() {
     if (!proposal) return;
     const picked = $$('#ai-proposal input[type=checkbox]').filter((c) => c.checked).map((c) => proposal.changes[Number(c.dataset.i)]);
     if (!picked.length) return;
+    try { await withWriteLease('执行', () => runPicked(picked)); }
+    catch (e) { addMsg('sys', '没能执行：' + (e.message || e)); BM.toast(e.message || String(e)); }
+  }
+  async function runPicked(picked) {
     const refs = {}; let done = 0, fail = 0; const errs = []; const journal = [];
     const R = (v) => (typeof v === 'string' && v.startsWith('$')) ? (refs[v.slice(1)] || refs[v] || v) : v;
     const store = BM.store; const barId = BM.bar.id;

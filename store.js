@@ -18,8 +18,15 @@ const ChromeStore = {
   move: (id, dest) => chrome.bookmarks.move(String(id), dest),
   update: (id, ch) => chrome.bookmarks.update(String(id), ch),
   create: (props) => chrome.bookmarks.create(props),
-  remove: async (id) => { const r = await chrome.runtime.sendMessage({ type: 'BOOKMARK_REMOVE', id: String(id) }); if (!r?.ok) throw Error(r?.error || '删除失败'); },
-  removeTree: async (id) => { const r = await chrome.runtime.sendMessage({ type: 'BOOKMARK_REMOVE', id: String(id), tree: true }); if (!r?.ok) throw Error(r?.error || '删除失败'); },
+  // 🔴 删除要经过后台（它会先留一份删除前的副本）。后台可能正在冷启动、甚至已经停掉，
+  //    sendMessage 在那种情况下不会落定 ⇒ 必须自带超时，否则删除会永远悬着且界面没有任何反馈。
+  async _removeVia(id, tree) {
+    // 删除要经过后台（它会先留一份删除前的副本）。超时与失效提示统一由 BG 处理。
+    const r = await BG.askBg({ type: 'BOOKMARK_REMOVE', id: String(id), ...(tree ? { tree: true } : {}) }, { ms: 25000 });
+    if (!r?.ok) throw Error(r?.error || '删除失败');
+  },
+  remove(id) { return this._removeVia(id, false); },
+  removeTree(id) { return this._removeVia(id, true); },
   onChange(cb) {
     for (const ev of ['onCreated', 'onChanged', 'onMoved', 'onRemoved', 'onChildrenReordered', 'onImportEnded']) {
       chrome.bookmarks[ev]?.addListener(cb);

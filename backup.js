@@ -6,10 +6,10 @@
   const ask=async(type,extra={})=>{
     try {
       if(!globalThis.chrome?.runtime?.id)throw Error('Extension context invalidated');
-      const r=await chrome.runtime.sendMessage({type,...extra});
-      if(!r?.ok)throw Error(r?.error||'后台没有响应');return r.data;
+      return await BG.ask(type,extra,{ms:20000});
     }catch(error){
-      if(/context invalidated|receiving end does not exist|could not establish connection|message port closed|no sw/i.test(error.message||'')){
+      if(error.background){$('reconnect-page').hidden=false;throw error;}
+      if(error.reload||/context invalidated|receiving end does not exist|could not establish connection|message port closed|no sw/i.test(error.message||'')){
         $('reconnect-page').hidden=false;
         if(!current){$('credential-state').textContent='暂时无法读取连接信息，不代表账号或密码已删除。';$('password-state').textContent='重新加载页面后核对已保存状态。';}
         throw Error(staleMessage);

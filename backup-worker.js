@@ -65,6 +65,22 @@ async function storeSnapshot(snapshot) {
   await chrome.storage.local.set({backups:list,lastBackupAt:snapshot.createdAt,lastBackupError:''});
   return snapshot;
 }
+// 只刷新「chrome id → 稳定身份 uid」的映射，不产生备份版本。
+// 页面拿它来把锁、范围这类东西挂在不随改名变化的身份上。
+async function ensureIdentity(){
+  const bar=await bookmarkBar();
+  const {bookmarkIdentity}=await chrome.storage.local.get('bookmarkIdentity');
+  const identity=bookmarkIdentity||{},next={},map={};
+  const walk=(n)=>{
+    const rec=identity[n.id];
+    const uid=rec&&rec.dateAdded===n.dateAdded?rec.uid:crypto.randomUUID();
+    next[n.id]={uid,dateAdded:n.dateAdded};map[n.id]=uid;
+    for(const c of n.children||[])walk(c);
+  };
+  for(const c of bar.children||[])walk(c);
+  if(BK.stableStringify(identity)!==BK.stableStringify(next))await chrome.storage.local.set({bookmarkIdentity:next});
+  return map;
+}
 async function makeSnapshot(reason='手动备份') { return storeSnapshot(await captureSnapshot(reason)); }
 async function ensureBackupAlarm() {
   if((await chrome.alarms.get('daily-bookmark-backup'))?.periodInMinutes!==5)await chrome.alarms.create('daily-bookmark-backup',{periodInMinutes:5});
@@ -72,6 +88,7 @@ async function ensureBackupAlarm() {
 async function maybeBackup() {
   const data=await chrome.storage.local.get(['lastBackupAt','restoreInProgress','syncInProgress','backupAuto','backupMode','backupIntervalDays','backupIntervalHours','webdav','pendingCloudBackup','backups']);
   if(data.restoreInProgress||data.syncInProgress||modeOf(data)==='local')return;
+  if(await WriteLease.heldByOther('backup'))return;   // 有人正在成批改书签，等它结束再拍，🚫 别把半成品存成版本
   try {
     const schedule=await automationStatus();
     const due=schedule.backup.state==='waiting'&&Date.now()>=schedule.backup.nextAt;
@@ -181,6 +198,8 @@ async function backupAction(message) {
       return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged,folderStateChanged:desired.folderState!=null&&BK.stableStringify(current.folderState)!==BK.stableStringify(desired.folderState)};
     }
     case 'BACKUP_RESTORE': {
+      const busy=await WriteLease.heldByOther('restore');
+      if(busy)throw Error(`${WriteLease.NAME[busy.owner]||busy.owner}正在改书签，请等它结束后再恢复`);
       const {restorePreview:p}=await chrome.storage.session.get('restorePreview');if(!p||p.token!==message.token)throw Error('请重新预览要恢复的备份');
       const current=await captureSnapshot('恢复前自动保护');if(await fingerprint(current)!==p.fingerprint)throw Error('书签或附属数据已变化，请重新预览后恢复');
       await storeSnapshot(current);await chrome.storage.local.set({syncAuto:false,restoreInProgress:{backupId:current.id,startedAt:new Date().toISOString()}});

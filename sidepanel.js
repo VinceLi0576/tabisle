@@ -1,7 +1,7 @@
 (async()=>{
   const $=id=>document.getElementById(id),{id:windowId}=await chrome.windows.getCurrent();
   let selection=null, draft=null, loading=false, loadVersion=0, editVersion=0, pending=Promise.resolve();
-  const ask=async(type,extra={})=>{const r=await chrome.runtime.sendMessage({type,windowId,...extra});if(!r?.ok)throw Error(r?.error||'后台没有响应');return r.data;};
+  const ask=(type,extra={})=>BG.ask(type,{windowId,...extra},{ms:15000});
   const error=e=>{$('error').textContent=e.message||String(e);};
   const safeLink=url=>{try{return ['http:','https:','file:','ftp:'].includes(new URL(url).protocol)}catch{return false}};
   async function load(){

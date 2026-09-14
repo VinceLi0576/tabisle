@@ -172,12 +172,51 @@ chrome:// ⚙️`;
     saveMeta();
   }
   const groupColor = (title) => (meta.groups[title] || {}).color || '';
-  // 锁定：按文件夹名记在 meta.groups；锁了的夹（含子夹）AI 只看不动，页面上拖进拖出也挡
+  // ── 锁定：锁在文件夹的稳定身份（uid）上，不再认名字 ──
+  // 🔴 原先按文件夹名记（meta.groups[title].locked）有三个后果：同名夹互相串；
+  //    改名就等于换了把锁（先改名再动手就绕过去了）；节点自身没有锁记录，全靠当前父链判断。
+  //    现在锁记在 meta.locks[uid]，改名不影响；旧的按名锁继续认，并在能唯一对上时自动迁过来。
+  let uidById = {};                       // chrome id → 稳定身份 uid，由后台维护
+  const uidOf = (id) => uidById[String(id)] || null;
   const folderLockedByTitle = (title) => !!(meta.groups[title] || {}).locked;
+  function folderLocked(n) {
+    if (!n || n.url) return false;
+    const uid = uidOf(n.id);
+    if (uid && meta.locks && meta.locks[uid]) return true;
+    return folderLockedByTitle(n.title);   // 兼容还没迁过来的旧锁
+  }
   function isLocked(id) {
     let hit = false;
-    const walk = (n, chain) => { if (hit) return; const c2 = n.url ? chain : chain || folderLockedByTitle(n.title); if (n.id === id) { hit = c2; return; } for (const c of n.children || []) walk(c, c2); };
+    const walk = (n, chain) => { if (hit) return; const c2 = n.url ? chain : chain || folderLocked(n); if (n.id === id) { hit = c2; return; } for (const c of n.children || []) walk(c, c2); };
     walk(bar, false); return hit;
+  }
+  function setFolderLock(n, on) {
+    const uid = uidOf(n.id);
+    meta.locks = meta.locks || {};
+    if (uid) { if (on) meta.locks[uid] = true; else delete meta.locks[uid]; }
+    // 同时清掉这个名字上的旧锁，避免「解锁了还锁着」
+    const g = meta.groups[n.title];
+    if (g && g.locked) { delete g.locked; if (!Object.keys(g).length) delete meta.groups[n.title]; }
+    if (!uid && on) { meta.groups[n.title] = { ...(meta.groups[n.title] || {}), locked: true }; toast('这个文件夹还没拿到稳定标识，先按名字锁住；下次自动备份后会自动改成按标识锁'); }
+    saveMeta(); render();
+  }
+  // 旧的按名锁：名字在书签栏里唯一对应一个文件夹时，自动迁到 uid 上；同名多个就保持原样，🚫 别乱猜
+  function migrateLocks() {
+    const named = Object.entries(meta.groups).filter(([, g]) => g && g.locked).map(([t]) => t);
+    if (!named.length) return;
+    const byTitle = {};
+    const walk = (n) => { for (const c of n.children || []) { if (!c.url) { (byTitle[c.title] = byTitle[c.title] || []).push(c); walk(c); } } };
+    walk(bar);
+    let moved = 0;
+    for (const title of named) {
+      const hits = byTitle[title] || [];
+      if (hits.length !== 1) continue;              // 同名多个或已不存在：保持按名锁
+      const uid = uidOf(hits[0].id); if (!uid) continue;
+      meta.locks = meta.locks || {}; meta.locks[uid] = true;
+      const g = meta.groups[title]; delete g.locked; if (!Object.keys(g).length) delete meta.groups[title];
+      moved++;
+    }
+    if (moved) saveMeta();
   }
 
   // ── 筛选状态（不持久）──
@@ -205,6 +244,10 @@ chrome:// ⚙️`;
   }
   async function refresh() {
     bar = await store.bar();
+    if (store.kind === 'chrome') {
+      try { const r = await BG.askBg({ type: 'IDENTITY_MAP' }, { ms: 10000, retry: false }); if (r?.ok && r.data) { uidById = r.data; migrateLocks(); } }
+      catch { /* 后台没起来：这次先用旧的按名锁，🚫 别因此卡住整页 */ }
+    }
     buildFlat();
     render();
     if ($('#search').value.trim()) renderSearch();
@@ -421,7 +464,7 @@ chrome:// ⚙️`;
     head.innerHTML =
       (opts.fixed ? '' : levelMark(opts.level || 1) + `<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
       (opts.fixed ? '' : `<span class="grip" draggable="true" title="拖动排序">⋮⋮</span>`) +
-      `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLockedByTitle(f.title) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
+      `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
       (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
@@ -605,7 +648,7 @@ chrome:// ⚙️`;
       markLevel(d, depth + 1);
       const color = groupColor(f.title); if (color) d.style.setProperty('--gc', color);
       d.classList.toggle('inbox-folder', isInbox(f));
-      d.innerHTML = levelMark(depth + 1) + `<span class="nm">${esc(f.title || '（未命名）')}${folderLockedByTitle(f.title) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
+      d.innerHTML = levelMark(depth + 1) + `<span class="nm">${esc(f.title || '（未命名）')}${folderLocked(f) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
       if (isDeprecated(f)) d.querySelector('.nm').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
       d.title = f.title; d.dataset.name = (f.title || '').toLowerCase();
       list.appendChild(d);
@@ -958,7 +1001,7 @@ chrome:// ⚙️`;
         } },
         { t: '改名', f: () => inlineRename(box.querySelector('.title')) },
         { t: '颜色…', f: () => { const r = box.querySelector('.swatch').getBoundingClientRect(); openMenu(colorMenu(box), r.left, r.bottom + 4); } },
-        { t: folderLockedByTitle(f.title) ? '🔓 解除锁定' : '🔒 锁定（AI 只看不动）', f: () => { const g = meta.groups[f.title] || {}; if (g.locked) delete g.locked; else g.locked = true; if (Object.keys(g).length) meta.groups[f.title] = g; else delete meta.groups[f.title]; saveMeta(); render(); } },
+        { t: folderLocked(f) ? '🔓 解除锁定' : '🔒 锁定（AI 只看不动）', f: () => setFolderLock(f, !folderLocked(f)) },
         { t: '全部在新标签打开', f: () => { (f.children || []).filter((c) => c.url).forEach((c) => window.open(c.url, '_blank')); } },
         { t: '按域名排序（写回书签栏）', f: async () => {
           const kids = await store.children(id);
@@ -1040,7 +1083,7 @@ chrome:// ⚙️`;
     detailTransition = true;
     // 不在 open 前 await，保持箭头点击的用户手势。
     const opening = chrome.sidePanel.open({ windowId: currentWindowId });
-    const selecting = chrome.runtime.sendMessage({ type: 'EDITOR_SELECT', windowId: currentWindowId, id, parentId });
+    const selecting = BG.askBg({ type: 'EDITOR_SELECT', windowId: currentWindowId, id, parentId }, { ms: 10000 });
     detailSelection = { id, parentId }; selectedId = id; detailPanelOpen = true;
     paintDetailState();
     Promise.all([opening, selecting]).then(([, r]) => {
@@ -1298,10 +1341,7 @@ chrome:// ⚙️`;
     parseEmojiRules, setEmojiRules(txt) { meta.emojiRules = txt; emojiRules = parseEmojiRules(txt); saveMeta(); },
   };
   // 后台可能正在冷启动甚至没起来：超时也要有结论，🚫 别让状态条静默消失
-  const askBg=(type,ms=6000)=>Promise.race([
-    chrome.runtime.sendMessage({type}),
-    new Promise((_,rej)=>setTimeout(()=>rej(Error('后台无响应')),ms)),
-  ]);
+  const askBg=(type,ms=6000)=>BG.askBg({type},{ms,retry:false});
   const hhmm=(v)=>{const d=new Date(v||Date.now());return isNaN(d)?'':d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});};
   let pillBusy=false,pillFailed=false;
   function setPill(state,text,title){
@@ -1373,7 +1413,7 @@ chrome:// ⚙️`;
   }
   if (store.kind === 'chrome') {
     // 🚫 别把状态条挂在 APP_READY 的 finally 上：后台睡死时它永不落定，状态条会一直停在隐藏态
-    chrome.runtime.sendMessage({ type: 'APP_READY' }).catch(() => {});
+    BG.askBg({ type: 'APP_READY' }, { ms: 10000, retry: false }).catch(() => {});
     updateSyncPill();
     let pillTimer=null;
     chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&['lastSyncAt','syncError','syncAuto','syncInProgress','syncState'].some(k=>k in changes)){clearTimeout(pillTimer);pillTimer=setTimeout(updateSyncPill,250);}});
