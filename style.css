@@ -146,10 +146,14 @@ html[data-view="list"] .body .tile .strip { width: 18px; border-left: 0; backgro
 .legend-clear { margin-left: auto; border: 0; background: transparent; color: var(--accent); cursor: pointer; padding: 0; font-size: 12px; }
 
 /* 最近访问 */
-.recent { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
-.recent-head { display: flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer; user-select: none; min-height: 34px; }
-.recent-head .title { font-weight: 600; font-size: 12.5px; color: var(--muted); }
-.recent-body { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 6px 10px; padding: 0 12px 12px; }
+/* 最近访问：跟收集箱同一套框（老徐 260914「一模一样，用收集箱这种框架比较好看」） */
+.recent { border: 1.5px dashed var(--accent); border-radius: 10px; padding: 8px 10px 10px; background: color-mix(in srgb, var(--accent) 4%, var(--card)); }
+.recent-head { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; margin-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); cursor: pointer; user-select: none; }
+.recent-head .swatch { --gc: var(--accent); cursor: pointer; }
+.recent-head .title { font-weight: 650; font-size: 15px; color: var(--accent); white-space: nowrap; }
+.recent-head .n { margin-left: auto; }
+.recent.collapsed .recent-head { margin-bottom: 0; border-bottom: 0; }
+.recent-body { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 6px 10px; padding: 0 2px 2px; }
 .recent.collapsed .recent-body { display: none; }
 .recent.collapsed .chev svg { transform: rotate(-90deg); }
 .recent .pill { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); min-width: 0; }

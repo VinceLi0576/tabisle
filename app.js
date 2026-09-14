@@ -879,6 +879,7 @@ chrome:// ⚙️`;
     if (request !== recentRender) return;
     const box = $('#recent-body'); box.innerHTML = '';
     $('#recent').hidden = !!search.value.trim() || !items.length;
+    $('#recent-count').textContent = items.length;
     for (const it of items) {
       const a = document.createElement('a'); a.className = 'pill'; a.href = it.url; a.target = '_blank'; a.title = `${it.title}\n${it.url}`;
       a.appendChild(copyLogo(it));
