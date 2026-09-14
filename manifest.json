@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "书签首页",
-  "version": "0.10.16",
+  "version": "0.10.17",
   "description": "新标签页＝书签栏摊开来排版：侧栏文件夹树、分段卡片网格、自定义标签组、拖动排序、即时搜索。书签本身只读写浏览器自己的，不存第二份。",
   "permissions": [
     "bookmarks",

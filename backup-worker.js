@@ -59,12 +59,34 @@ async function fingerprint(snapshot) {
   const bytes=new TextEncoder().encode(JSON.stringify({children:data.children,meta:data.meta,prefs:data.prefs,folderState:data.folderState}));
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
 }
+// storage.local 整个区上限 10 MB（清单没申请 unlimitedStorage），而这个区里不止住着备份：
+// meta、bookmarkIdentity、syncState、各种草稿都在同一个 10 MB 里。
+// 🔴 260914 核实官量出来：原来用 JSON.stringify().length 数的是 UTF-16 码元，
+//    中文书签的真实 UTF-8 字节是它的 1.37 倍（极端全中文 1.71 倍）⇒ 6e6「字符」
+//    实际放行 7.8～9.8 MB，几乎把整个区吃光，而且撞上限时没有任何处理。
+// 改成按真实字节算，并且给别的键留出余量。
+const BYTES=(v)=>new TextEncoder().encode(typeof v==='string'?v:JSON.stringify(v)).length;
+const BACKUP_BYTES_MAX=5.5*1024*1024;      // 10 MB 的区，备份最多占这么多，其余留给 meta 等
 async function storeSnapshot(snapshot) {
   const {backups=[]}=await chrome.storage.local.get('backups');
   let list=[portable(snapshot),...backups.filter(b=>b.id!==snapshot.id)].slice(0,20);
   // Keep storage bounded. Do not silently discard the safety snapshot we just made.
-  while(list.length>1 && JSON.stringify(list).length>6e6)list.pop();
-  await chrome.storage.local.set({backups:list,lastBackupAt:snapshot.createdAt,lastBackupError:''});
+  while(list.length>1 && BYTES(list)>BACKUP_BYTES_MAX)list.pop();
+  // 🔴 原来这里是 `list.length>1`，意思是「只剩一份就不再裁」⇒ 单份本身超标时闸门完全失效，
+  //    原样写进去、撞配额、整个 set 失败。单份就超标的，宁可一份都不留也别把区写爆。
+  if(list.length===1 && BYTES(list)>BACKUP_BYTES_MAX){
+    const kept=BYTES(list);
+    await chrome.storage.local.set({backups:[],lastBackupError:`这一份备份 ${(kept/1048576).toFixed(1)} MB，超过本机可用空间，没有保存。请改用坚果云备份，或先清理书签。`});
+    throw Error('单份备份体积超出本机存储上限，未保存');
+  }
+  // 🔴 配额打回时连 lastBackupError 都写不进去 ⇒ 自动路径的错误只落在控制台，界面上什么都看不见。
+  //    先试着只写一条精简的错误（它一定写得下），再把失败抛给调用方。
+  try{
+    await chrome.storage.local.set({backups:list,lastBackupAt:snapshot.createdAt,lastBackupError:''});
+  }catch(e){
+    try{await chrome.storage.local.set({backups:backups.slice(0,Math.max(0,backups.length-1)),lastBackupError:'本机存储写不下了，这次备份没有保存：'+(e.message||e)});}catch{}
+    throw Error('本机存储写不下了，这次备份没有保存。请到备份页清理旧版本，或改用坚果云备份。原因：'+(e.message||e));
+  }
   return snapshot;
 }
 // 只刷新「chrome id → 稳定身份 uid」的映射，不产生备份版本。

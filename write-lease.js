@@ -20,10 +20,17 @@
     const lease = { owner, id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
                     until: Date.now() + Math.min(ms, MAX_MS), at: new Date().toISOString() };
     await chrome.storage.local.set({ [KEY]: lease });
-    // chrome.storage 没有「比较后再写」这种原子操作 ⇒ 读和写之间理论上有缝。
-    // 真正挡住并发的其实是 background.js 那条 queueTask 串行链：所有写书签的入口
-    // （消息、闹钟、自动任务）都排在同一条链上，不会交错。这里再回读一次是纵深防御 ——
-    // 万一以后有人绕开那条链直接调它，至少不会两边都以为自己独占。
+    // 🔴 chrome.storage 没有「比较后再写」这种原子操作，读和写之间有缝，这里关不上。
+    // 下面这次回读**不是兜底**：只要对方的 set 发生在我的回读之后，两边照样都返回 ok
+    //（260914 核实官用受控交错跑出来过）。它只把窗口缩小，别当它是保证。
+    //
+    // 今天不出事，靠的是一个事实，不是靠这段代码：
+    //   三个 acquire 调用点（background 的 WRITE_ACQUIRE、sync-worker、backup-worker）
+    //   都只能从 background.js 那条 queueTask 串行链里到达，而且没有任何页面加载本文件。
+    // ⚠️ 那条链串的是「申锁／释锁这两条消息」，🚫 不是「写书签」本身 ——
+    //    app.js 和 ai.js 的 create/move/update 是在页面里直接打 chrome.bookmarks 的，
+    //    只有 remove 走消息。这把锁存在的全部意义，正是覆盖中间那段链覆盖不到的时间。
+    // ⇒ 谁要是以后从页面里直接调本文件，这个「事实」就没了，而代码挡不住。
     const back = await read();
     if (!back || back.id !== lease.id) return { ok: false, owner: back ? back.owner : owner, until: back ? back.until : 0 };
     return { ok: true, lease };

@@ -7,6 +7,10 @@
   const DEAD = /context invalidated|receiving end does not exist|could not establish connection|message port closed|no sw/i;
   const NO_PAGE = '页面与后台的连接已失效（多半是扩展刚更新过）。刷新本页即可，已保存的数据不受影响。';
   const NO_BG = '后台没有响应，这次操作没有执行。请打开扩展管理页，把「书签首页」停用再启用，然后重试。';
+  // 🔴 超时时后台很可能还在跑（书签多的时候，比对本来就要十几秒）。
+  // 原来一律说「这次操作没有执行，请把插件停用再启用」—— 两句都可能是错的，
+  // 而「停用再启用」还会真的把正在跑的那次杀掉。
+  const SLOW = '后台还在处理这一步，暂时没有回应。书签很多时这一步本来就慢，请稍等片刻再看结果，🚫 不要重复点击，也不要停用插件（那会打断正在进行的操作）。';
 
   function once(message, ms) {
     return Promise.race([
@@ -15,6 +19,10 @@
     ]);
   }
 
+  // 🔴 这一批是「会改东西」的消息：超时时它们最可能已经在后台跑着了，重发＝做两遍。
+  // 260914 核实官实撞：backup.js 一律 {ms:20000} 且 retry 保持默认 true，
+  // 而备份预览在书签多时本来就要跑十几秒 ⇒ 超时重试把恢复/备份/同步又发一遍。
+  const WRITES = /^(BACKUP_(RESTORE|CREATE|POLICY_SAVE|CLEAR_LOCAL|DELETE)|SYNC_(APPLY|NOW)|BOOKMARK_REMOVE|EDITOR_(SAVE|DELETE|DELETE_DUPLICATE|UNDO_DUPLICATE)|WRITE_[A-Z]+)$/;
   // retry 只对「超时」重试；🚫 对已经明确失败的不重试，避免把一次写操作做两遍
   async function askBg(message, { ms = 8000, retry = true } = {}) {
     try {
@@ -22,6 +30,8 @@
     } catch (e) {
       if (DEAD.test(e.message || '')) throw Object.assign(Error(NO_PAGE), { reload: true });
       if (!e.timeout) throw e;
+      // 超时 ≠ 没执行。改东西的消息一律不重发，并且把话说准：不能再说「这次操作没有执行」
+      if (WRITES.test(message && message.type)) throw Object.assign(Error(SLOW), { background: true, slow: true });
       if (!retry) throw Object.assign(Error(NO_BG), { background: true });
       try {
         return await once(message, ms);

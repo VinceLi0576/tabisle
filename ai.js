@@ -242,6 +242,7 @@ window.addEventListener('bm-ready', () => {
   }
 
   // 成批改书签前先向后台申请写租约：同一时刻只让一方改，避免和持续同步互相打断
+  let renewTimer = null, releaseOnUnload = null;
   async function withWriteLease(what, fn) {
     let lease = null;
     try {
@@ -249,8 +250,20 @@ window.addEventListener('bm-ready', () => {
       if (!r?.ok) throw Error(r?.error || '无法申请写入权限');
       if (!r.data?.ok) { const o = r.data || {}; throw Error(`${({ sync: '同步', restore: '恢复' })[o.owner] || o.owner || '别的任务'}正在改书签，请稍后再${what}`); }
       lease = r.data.lease;
+      // 🔴 260914 核实官发现：租约有 5 分钟硬上限，而全库没有一处发 WRITE_RENEW ⇒
+      // 批次一跑满 5 分钟，锁就自己失效了，下一次闹钟（周期也正好 5 分钟）读到「没人持锁」
+      // 直接开工 —— 而这边还在写。租约到期放行不是竞态，是必然，所以必须续。
+      renewTimer = setInterval(() => {
+        BG.askBg({ type: 'WRITE_RENEW', id: lease.id }, { ms: 8000, retry: false }).catch(() => {});
+      }, 60e3);
+      // 🔴 页面在批次中途被关掉时，下面的 finally 跟着页面一起死，释放消息永远发不出去，
+      // 锁要挂到自然过期（最长 5 分钟内同步和备份全停）。pagehide 是关页面时还能发出去的那一下。
+      releaseOnUnload = () => { try { chrome.runtime.sendMessage({ type: 'WRITE_RELEASE', id: lease.id }); } catch {} };
+      addEventListener('pagehide', releaseOnUnload);
       return await fn();
     } finally {
+      clearInterval(renewTimer); renewTimer = null;
+      if (releaseOnUnload) { removeEventListener('pagehide', releaseOnUnload); releaseOnUnload = null; }
       if (lease) await BG.askBg({ type: 'WRITE_RELEASE', id: lease.id }, { ms: 8000, retry: false }).catch(() => {});
     }
   }
