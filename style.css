@@ -492,3 +492,29 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 #sync-pill[data-state="busy"]{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
 #sync-pill[data-state="busy"]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;animation:pill-pulse 1s ease-in-out infinite}
 @keyframes pill-pulse{0%,100%{opacity:.25}50%{opacity:1}}
+
+/* ── 上移 / 下移 / 升降一层：一次一格，比拖拽准 ── */
+/* 书签卡片右边那条竖带分三格：平时只露详情箭头，鼠标过去才浮出上下移 */
+.tile .strip3{position:absolute;right:0;top:0;bottom:0;width:22px;display:flex;flex-direction:column;border-left:1px solid var(--border);background:color-mix(in srgb,var(--gc,var(--muted-2)) 8%,transparent);overflow:hidden}
+.tile .strip3 .strip{position:static;width:auto;flex:1;border-left:0;background:transparent}
+.tile .strip3 .nudge{flex:0 0 0;height:0;padding:0;border:0;background:transparent;color:var(--muted-2);font-size:8px;line-height:1;cursor:pointer;overflow:hidden;transition:flex-basis .12s,height .12s}
+.tile:hover .strip3 .nudge,.tile .strip3 .nudge:focus-visible{flex:0 0 26%;height:auto}
+.tile .strip3 .nudge:hover{background:var(--accent-bg);color:var(--accent)}
+/* 文件夹标题栏上那一组 */
+.hd-nudge{display:inline-flex;gap:2px;flex:none;opacity:0;transition:opacity .12s}
+.head:hover .hd-nudge,.sub-head:hover .hd-nudge,.hd-nudge:focus-within{opacity:1}
+.hd-nudge .nudge{width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:5px;background:var(--card);color:var(--muted-2);font-size:9px;line-height:1;cursor:pointer}
+.hd-nudge .nudge:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+/* 键盘走到了也要看得见 */
+.nudge:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ── 左栏：点三角才展开，展开的部分往右缩进一层 ── */
+.side-fold{flex:none;width:18px;height:18px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;display:grid;place-items:center;transition:transform .12s,color .12s}
+.side-fold.ph{visibility:hidden;cursor:default}
+.side-fold:hover{color:var(--accent);background:var(--accent-bg)}
+.side-fold.on{transform:rotate(90deg);color:var(--accent)}
+.side-item{gap:6px}
+/* 🔴 子级要一眼看出是「下一层」：缩进更深，再拉一条竖线把它们串起来 */
+.side-item.d1{display:flex;padding-left:34px;position:relative}
+.side-item.d1::before{content:"";position:absolute;left:19px;top:0;bottom:0;width:1px;background:var(--border)}
+.side-item.d1:last-child::before{bottom:50%}

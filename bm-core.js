@@ -135,6 +135,52 @@
     return (uid && meta && meta.folderNotes && meta.folderNotes[uid]) || '';
   };
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, SLD };
+  // ── 上移 / 下移 / 升一层 / 降一层 ──
+  // 只算「该落到哪儿」，🚫 不碰书签。拖拽在长列表里对不准，这几个动作是一次一格，精确。
+  // 语义照大纲编辑器那套：
+  //   up   同级往前一格          down 同级往后一格
+  //   out  移出去，变成父夹的同级（紧跟在父夹后面）
+  //   in   收进紧挨着的前一个文件夹里（放末尾）—— 前面没有夹就动不了
+  function nudgeTarget(bar, id, dir) {
+    if (!bar) return null;
+    const me = String(id);
+    // 找到它自己、它爹、以及它在爹里排第几
+    let parent = null, index = -1;
+    const walk = (n) => {
+      const kids = n.children || [];
+      const at = kids.findIndex((c) => String(c.id) === me);
+      if (at >= 0) { parent = n; index = at; return true; }
+      return kids.some((c) => !c.url && walk(c));
+    };
+    walk(bar);
+    if (!parent) return null;
+    const sibs = parent.children || [];
+    if (dir === 'up') return index <= 0 ? null : { parentId: String(parent.id), index: index - 1 };
+    if (dir === 'down') return index >= sibs.length - 1 ? null : { parentId: String(parent.id), index: index + 2 };
+    if (dir === 'in') {
+      // 只认紧挨着的前一个，而且它得是文件夹
+      const prev = sibs[index - 1];
+      if (!prev || prev.url) return null;
+      return { parentId: String(prev.id), index: (prev.children || []).length };
+    }
+    if (dir === 'out') {
+      if (String(parent.id) === String(bar.id)) return null;      // 已经在最外层
+      let grand = null, at = -1;
+      const up = (n) => {
+        const kids = n.children || [];
+        const i = kids.findIndex((c) => String(c.id) === String(parent.id));
+        if (i >= 0) { grand = n; at = i; return true; }
+        return kids.some((c) => !c.url && up(c));
+      };
+      up(bar);
+      if (!grand) return null;
+      return { parentId: String(grand.id), index: at + 1 };
+    }
+    return null;
+  }
+  // 这四个方向里，现在哪些是能动的（拿来置灰按钮）
+  const nudgeable = (bar, id) => Object.fromEntries(['up', 'down', 'in', 'out'].map((d) => [d, !!nudgeTarget(bar, id, d)]));
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

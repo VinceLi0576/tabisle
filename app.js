@@ -361,7 +361,7 @@ chrome:// ⚙️`;
     txt.appendChild(desc);
     const u = document.createElement('span'); u.className = 'url'; u.textContent = n.url; txt.appendChild(u);
     a.appendChild(txt);
-    a.appendChild(detailArrow(n.id));
+    a.appendChild(strip3(n.id));
     if (selectedId === n.id) a.classList.add('selected');
     return a;
   }
@@ -455,6 +455,7 @@ chrome:// ⚙️`;
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
       (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
+      (opts.fixed ? '' : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
       `<span class="n">${countUrls(f)}</span>` +
       `<button class="more" type="button" title="更多">⋯</button>`;
     return head;
@@ -490,7 +491,26 @@ chrome:// ⚙️`;
       window.dispatchEvent(new CustomEvent('bm-ask', { detail: { text: `看一眼「${node.title}」这个文件夹里都是些什么，用一两句话写清楚它该放哪类内容、哪类不该放，然后用 propose_changes 的 folder_note 提交给我确认。` } }));
     };
   }
+  // 挪一格：算好落点再动手，动不了就说清楚为什么，🚫 别默默没反应
+  // 四个方向做成菜单项：动不了的直接不列，🚫 别让人点了才发现没反应
+  function nudgeMenu(id) {
+    const can = BmCore.nudgeable(bar, String(id));
+    const label = { up: '↑ 上移一格', down: '↓ 下移一格', out: '⇤ 移出当前文件夹（升一层）', in: '⇥ 收进上面那个文件夹（降一层）' };
+    return ['up', 'down', 'out', 'in'].filter((d) => can[d]).map((d) => ({ t: label[d], f: () => nudge(id, d) }));
+  }
+  async function nudge(id, dir) {
+    const node = findNode(String(id));
+    if (!node) { toast('这一条已经不在了，刷新一下'); return; }
+    if (isLocked(id)) { toast('这一条在锁定的文件夹里，先解锁再挪'); return; }
+    const to = BmCore.nudgeTarget(bar, String(id), dir);
+    if (!to) { toast({ up: '已经是第一个了', down: '已经是最后一个了', out: '已经在最外层了', in: '上面紧挨着的不是文件夹，没法收进去' }[dir]); return; }
+    if (isLocked(to.parentId)) { toast('目标文件夹已锁定'); return; }
+    try { await store.move(String(id), to); await refresh(); revealFolder(dir === 'in' ? to.parentId : String(id)); }
+    catch (err) { toast('没挪动：' + (err.message || err)); }
+  }
   document.addEventListener('click', (e) => {
+    const nb = e.target.closest('.nudge');
+    if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
     const b = e.target.closest('.hd-note-btn'); if (b) { openNoteEditor(b.dataset.note); return; }
     const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
@@ -660,6 +680,8 @@ chrome:// ⚙️`;
 
   // ── 侧边栏：只列前两级；更深层滚动时高亮所属的二级 ──
   let sideObserver = null;
+  // 左栏哪几个一级夹是展开的。只活在这一页里 —— 它是导航状态，不是内容，刷新后全收起正好清爽
+  const sideOpen = new Set();
   function renderSide(folders, looseId) {
     const list = $('#side-list'); list.innerHTML = '';
     const add = (f, depth, parentId) => {
@@ -669,11 +691,16 @@ chrome:// ⚙️`;
       markLevel(d, depth + 1);
       const color = groupColor(f.title); if (color) d.style.setProperty('--gc', color);
       d.classList.toggle('inbox-folder', isInbox(f));
-      d.innerHTML = levelMark(depth + 1) + `<span class="nm">${esc(f.title || '（未命名）')}${folderLocked(f) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
+      const kids = (f.children || []).filter((c) => !c.url).length;
+      // 🔴 原来靠「滚到哪个夹就自动展开哪个」，那个夹子夹一多，左栏突然拉长、位置还跟着跳。
+      // 改成自己点开：有子夹的才给三角，点三角只管展开收起，点名字照旧跳过去。
+      d.innerHTML = levelMark(depth + 1)
+        + (depth === 0 && kids ? `<button type="button" class="side-fold${sideOpen.has(f.id) ? ' on' : ''}" data-fold="${f.id}" title="展开 / 收起子文件夹" aria-expanded="${sideOpen.has(f.id)}">▸</button>` : '<span class="side-fold ph"></span>')
+        + `<span class="nm">${esc(f.title || '（未命名）')}${folderLocked(f) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
       if (isDeprecated(f)) d.querySelector('.nm').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
       d.title = f.title; d.dataset.name = (f.title || '').toLowerCase();
       list.appendChild(d);
-      if (depth < 1) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
+      if (depth < 1 && sideOpen.has(f.id)) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
     };
     for (const f of folders.filter(f => !isDeprecated(f))) add(f, 0, bar.id);
     if (looseId) add({ id: bar.id, title: '未分组', children: [] }, 0, bar.id);
@@ -689,15 +716,20 @@ chrome:// ⚙️`;
       while (Number(navSection.dataset.level) > 2) navSection = navSection.parentElement.closest('.card, .sub');
       const id = navSection.dataset.id;
       const topCard = el.closest('.card'); const topId = topCard ? topCard.dataset.id : id;
-      $$('.side-item').forEach((s) => {
-        s.classList.toggle('active', s.dataset.id === id);
-        if (s.classList.contains('d1')) s.classList.toggle('show', s.dataset.parent === topId);
-      });
+      $$('.side-item').forEach((s) => s.classList.toggle('active', s.dataset.id === id));
       const act = $('.side-item.active'); if (act) act.scrollIntoView({ block: 'nearest' });
     }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
     $$('.card, .sub').forEach((el) => sideObserver.observe(el));
   }
   $('#side-list').addEventListener('click', (e) => {
+    const fold = e.target.closest('.side-fold[data-fold]');
+    if (fold) {
+      e.stopPropagation();
+      const id = fold.dataset.fold;
+      if (sideOpen.has(id)) sideOpen.delete(id); else sideOpen.add(id);
+      render();
+      return;                                   // 🚫 点三角不跳转，只管展开收起
+    }
     const it = e.target.closest('.side-item'); if (!it) return;
     revealFolder(it.dataset.id);
     // 左边点一个夹，右边 AI 就只在这一摊里干活；再点同一个取消。
@@ -1012,6 +1044,9 @@ chrome:// ⚙️`;
       ...tagList().map((t) => ({ t: `${tags.includes(t.id) ? '☑' : '☐'} 标记「${t.glyph}」${t.name}`, f: toggleTag(t.id) })),
       null,
       { t: '详情 / 编辑', f: () => openDetail(id) },
+      null,
+      ...nudgeMenu(id),
+      null,
       ...(m.name ? [{ t: `用备注名替换书签名（书签栏也会变成「${m.name}」）`, f: async () => { await store.update(id, { title: m.name }); setItemMeta(n.url, { name: '' }); render(); } }] : []),
       { t: '删除', danger: true, f: () => deleteUrl(id) },
     ];
@@ -1031,6 +1066,8 @@ chrome:// ⚙️`;
     const id = box.dataset.id; const f = findNode(id); if (!f) return [];
     const isBar = box.dataset.kind === 'bar';
     const items = [
+      // 挪位置放最前面 —— 这是最常用的那几下；🚫 已经动不了的方向不列出来
+      ...(isBar || bodyOnly ? [] : [...nudgeMenu(id), ...(nudgeMenu(id).length ? [null] : [])]),
       { t: '＋ 加书签…', f: () => createIn(id) },
       { t: isBar ? '＋ 新分组…' : '＋ 新建子夹…', f: async () => {
         const r = await dialog({ title: isBar ? '新分组' : `在「${f.title}」里新建子夹`, name: '', showUrl: false, ok: '创建' });
@@ -1104,6 +1141,20 @@ chrome:// ⚙️`;
   }
 
   // 同一窗口共享原生侧栏状态；箭头切换开关，菜单始终打开详情。
+  // 一次挪一格，比拖拽准。🔴 拖拽在长列表里要边拖边滚，落点全靠手稳。
+  function nudgeBtn(id, dir) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'nudge nudge-' + dir; b.dataset.nudge = dir; b.dataset.id = id;
+    b.title = { up: '上移一格', down: '下移一格', out: '移出当前文件夹（升一层）', in: '收进上面那个文件夹（降一层）' }[dir];
+    b.setAttribute('aria-label', b.title);
+    b.textContent = { up: '▲', down: '▼', out: '⇤', in: '⇥' }[dir];
+    return b;
+  }
+  function strip3(id) {
+    const box = document.createElement('span'); box.className = 'strip3';
+    box.append(nudgeBtn(id, 'up'), detailArrow(id), nudgeBtn(id, 'down'));
+    return box;
+  }
   function detailArrow(id) {
     const button = document.createElement('button');
     button.type = 'button'; button.className = 'strip';
