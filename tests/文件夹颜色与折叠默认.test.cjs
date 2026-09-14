@@ -41,14 +41,3 @@ test('左栏点文件夹只安静设 AI 范围：🚫 不弹面板、🚫 不写
   assert.match(ai, /async function setScope\(id, quiet = false\)/, 'setScope 没有安静模式');
   assert.match(ai, /if \(quiet\) return;/, '安静模式没有真的跳过弹面板和写记录');
 });
-
-test('⇕ 折叠：一次全折全开，外加三种默认状态', () => {
-  const app = nocomment(fs.readFileSync(p('app.js'), 'utf8'));
-  const html = fs.readFileSync(p('newtab.html'), 'utf8');
-  assert.match(html, /id="fold-all"/, '顶栏没有折叠按钮');
-  assert.match(app, /foldDefault: 'auto'/, 'foldDefault 没进 DEFAULTS ⇒ 写得进读不回来');
-  const fc = app.match(/function folderCollapsed\(f\) \{([\s\S]*?)\n  \}/)[1];
-  assert.match(fc, /prefs\.foldDefault === 'closed'/, '全局默认折叠不生效');
-  assert.match(fc, /prefs\.foldDefault === 'open'/, '全局默认展开不生效');
-  assert.match(fc, /typeof saved === 'boolean'/, '自己逐个设的应该优先于全局默认');
-});

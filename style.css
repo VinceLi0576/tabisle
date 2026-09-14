@@ -658,3 +658,12 @@ dialog .palette span.on { border-color: var(--text); }
 .note-card-btn.note-blank:hover { color: var(--accent); }
 /* 展开时说明整条不出现（编辑时 openNoteEditor 会把它打开） */
 .folder-note[hidden] { display: none; }
+
+/* 折叠这一排：钉在标签那一行的最右边（老徐 260914「放在右边比较方便」）。
+   🔴 工具条原来是一行写死 44px 不换行，塞进这一排之后按钮里的字被挤成两行 ⇒ 改成可换行、高度跟着内容。 */
+.toolbar{height:auto!important;min-height:44px;flex-wrap:wrap;row-gap:6px;padding-top:6px;padding-bottom:6px}
+.toolbar button,.toolbar .tb-label,.toolbar .seg button{white-space:nowrap}
+.fold-bar{display:flex;align-items:center;gap:6px;margin-left:auto;flex:none}
+.fold-bar .tb-label{margin:0}
+.fold-bar .fold-act{height:26px;padding:0 10px;border:1px solid var(--border);border-radius:13px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap}
+.fold-bar .fold-act:hover{border-color:var(--accent);color:var(--accent)}

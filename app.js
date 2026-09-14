@@ -1069,26 +1069,28 @@ chrome:// ⚙️`;
     prefs[seg.dataset.key] = b.dataset.val;
     if (seg.dataset.key === 'view') prefs.folderView = {};   // 顶栏选的是「全部」，各夹自己的选择让路
     applyPrefs(); savePrefs();
+    // 换默认折叠状态要重画一次才看得出来；单独设过的夹仍然优先，要它们也跟着走得点「回到默认」
+    if (seg.dataset.key === 'foldDefault') { render(); toast(Object.keys(prefs.folderCollapsed).length ? '默认改好了。单独设过的夹还按自己的来，点「回到默认」让它们也跟着走' : '默认改好了'); }
   }));
-  // ⇕ 折叠：一次全折/全开，外加「以后新开的夹默认怎么样」
-  $('#fold-all').addEventListener('click', (e) => {
-    const all = () => [...$$('#groups > .card'), ...$$('#groups .sub')];
-    const setAll = async (collapsed) => {
-      for (const s of all()) { const f = s.dataset.id === bar.id ? bar : findNode(s.dataset.id); if (f) prefs.folderCollapsed[foldKey(f)] = collapsed; }
-      prefs.recentCollapsed = collapsed;
-      try { await store.prefs.set({ folderCollapsed: prefs.folderCollapsed }); await savePrefs(); } catch { toast('折叠状态没存下来'); }
-      applyPrefs(); render();
-    };
-    const mark = (v) => (prefs.foldDefault === v ? '● ' : '○ ');
-    const useDefault = (v) => { prefs.foldDefault = v; prefs.folderCollapsed = {}; savePrefs(); store.prefs.set({ folderCollapsed: {} }); applyPrefs(); render(); toast(v === 'closed' ? '以后一律默认折叠' : v === 'open' ? '以后一律默认展开' : '回到每个夹自己记的状态'); };
-    openMenu([
-      { t: '全部折叠', f: () => setAll(true) },
-      { t: '全部展开', f: () => setAll(false) },
-      null,
-      { t: mark('auto') + '默认：我自己逐个设', f: () => useDefault('auto') },
-      { t: mark('closed') + '默认：一律折叠', f: () => useDefault('closed') },
-      { t: mark('open') + '默认：一律展开', f: () => useDefault('open') },
-    ], e.clientX, e.clientY);
+  // 折叠这一排：三颗动作按钮 ＋ 一个默认状态（老徐 260914 要放在标签那一行的最右边）
+  const foldAll = async (collapsed) => {
+    for (const s of [...$$('#groups > .card'), ...$$('#groups .sub')]) {
+      const f = s.dataset.id === bar.id ? bar : findNode(s.dataset.id);
+      if (f) prefs.folderCollapsed[foldKey(f)] = collapsed;
+    }
+    prefs.recentCollapsed = collapsed;
+    try { await store.prefs.set({ folderCollapsed: prefs.folderCollapsed }); await savePrefs(); }
+    catch { toast('折叠状态没存下来'); }
+    applyPrefs(); render();
+  };
+  $('#fold-close').addEventListener('click', () => foldAll(true));
+  $('#fold-open').addEventListener('click', () => foldAll(false));
+  $('#fold-reset').addEventListener('click', async () => {
+    // 「回到默认」＝ 把逐个设过的那些忘掉，交给上面选的默认
+    prefs.folderCollapsed = {};
+    try { await store.prefs.set({ folderCollapsed: {} }); } catch { toast('没能清掉逐个设过的状态'); }
+    applyPrefs(); render();
+    toast(prefs.foldDefault === 'closed' ? '都回到默认：折叠' : prefs.foldDefault === 'open' ? '都回到默认：展开' : '都回到默认：按每个夹原本的规矩');
   });
   $('#new-group').addEventListener('click', async () => {
     const r = await dialog({ title: '新分组', name: '', showUrl: false, ok: '创建' });

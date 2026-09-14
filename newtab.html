@@ -45,7 +45,6 @@
 
 <div class="toolbar" id="toolbar">
   <div class="seg" data-key="view" title="显示方式：紧凑两行 · 详细多露书签名/详细说明/最近打开 · 列表"><button data-val="card">紧凑</button><button data-val="detail">详细</button><button data-val="list">列表</button></div>
-  <button class="ghost" id="fold-all" type="button" title="全部折叠 / 全部展开 / 新夹默认怎么开">⇕ 折叠</button>
   <button class="btn" id="new-group">＋ 新分组</button>
   <button class="btn ghost" id="organize-btn" title="把所有文件夹排成一棵缩进的树，上下拖动改顺序和归属">整理文件夹</button>
   <button class="btn ghost" id="more-btn" title="更多">⋯</button>
@@ -54,6 +53,13 @@
   <div class="intro-tags tb-tags" id="intro-tags"></div>
   <span class="seg mini-seg" id="filter-mode" title="选了多个标签时：都要有 / 有一个就行"><button data-val="and" class="on">且</button><button data-val="or">或</button></span>
   <button class="legend-clear" id="filter-clear" hidden>清除筛选</button>
+  <div class="fold-bar" id="fold-bar">
+    <span class="tb-label">默认</span>
+    <div class="seg mini-seg" data-key="foldDefault" title="没单独设过的文件夹，打开页面时按这个来"><button data-val="auto">自定</button><button data-val="closed">折叠</button><button data-val="open">展开</button></div>
+    <button class="ghost fold-act" id="fold-close" type="button" title="这一次全部折起来">全部折叠</button>
+    <button class="ghost fold-act" id="fold-open" type="button" title="这一次全部展开">全部展开</button>
+    <button class="ghost fold-act" id="fold-reset" type="button" title="清掉逐个设过的状态，回到上面选的默认">回到默认</button>
+  </div>
 </div>
 <div class="layout">
 <nav id="side" class="side"><div id="side-list"></div></nav>
