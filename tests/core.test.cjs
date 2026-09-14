@@ -443,3 +443,32 @@ test('Edge native alias round-trips the shared URL without echo uploads',async()
  const [n]=await b.api.children('1');await b.api.update(n.id,{url:'https://changed.test'});
  await b.call('syncAction',{type:'SYNC_NOW'});assert.equal(b.local.data.lastSyncReceipt.uploaded,true);
 });
+
+test('「这台只接收不上传」：本机改动不会传上去，反而被云端盖掉',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','X','https://x.test')]);await b.api.seed([link('x','X','https://x.test')]);
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ // b 勾上「只接收」，然后各自改各自的
+ b.local.data.syncFollowOnly=true;
+ await a.api.create({parentId:'1',title:'A 新加的',url:'https://a.test'});
+ await b.api.create({parentId:'1',title:'B 新加的',url:'https://b.test'});
+ p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ const puts=()=>server.requests.filter(r=>r.method==='PUT'&&r.url.endsWith('/sync/state.json')).length;
+ const before=puts();
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});
+ assert.equal(p.followOnly,true);
+ assert.equal(p.cloudChanges.length,0,'只接收的那台不该有任何要写上去的东西');
+ await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ assert.equal(puts(),before,'🔴 只接收的那台一次云端写入都不能发');
+ const titles=(await b.api.children('1')).map(n=>n.title).sort().join('|');
+ assert.equal(titles,'A 新加的|X','它本机那条被云端盖掉了，这正是「只接收」的意思');
+ assert.equal(b.local.data.lastSyncReceipt.followOnly,true);
+ // 关掉开关之后要能恢复正常上传
+ b.local.data.syncFollowOnly=false;
+ await b.api.create({parentId:'1',title:'B 再加',url:'https://b2.test'});
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});
+ assert.ok(!p.followOnly,'关掉开关之后不该再是只接收');
+ await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ assert.equal(puts(),before+1,'关掉之后又能正常上传');
+});

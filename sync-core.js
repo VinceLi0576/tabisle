@@ -2,6 +2,8 @@
 (function(root){
   const BK=root.BookmarkCore||(typeof require==='function'?require('./bookmark-core.js'):null);
   const equal=(a,b)=>BK.stableStringify(a)===BK.stableStringify(b);
+  // 后来才加进 meta 的键。老版本浏览器写云端时不会带它们 —— 见 merge 里的 newerKey
+  const NEW_META_KEYS=['locks','folderNotes'];
   const clone=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
   const flat=s=>BK.flatten(s?.children||[]);
   const content=n=>n?{title:n.title,url:n.url,parent:n.parent}:undefined;
@@ -91,15 +93,28 @@
       return conflict('meta:'+path,path,'附属字段',l,r);
     }
     const tagMap=s=>Object.fromEntries((s?.meta.tags||[]).map(t=>[t.id,t]));
+    // 🔴 「那一份里根本没有这个键」≠「用户把它清空了」。
+    // 前者说明写它的那台浏览器还不认识这个键（旧版本）；把它当成一次删除，
+    // 就是拿旧版的无知去覆盖新版的数据 —— 悄悄丢，而且三方合并下次会把删除传播开，救不回来。
+    // 后者是键在、值为空，那才是真实意图。JSON 正好保住这个区别：缺失的键根本不会被写进云端文件。
+    // ⇒ 不认识这个键的一端，一律按「跟基线一样、没动过」对待，让认识它的那端说了算。
+    // 判据能成立不靠对方配合 —— 这很要紧，因为闸门装不进已经发出去的旧版本。
+    const hasKey=(s,k)=>!!s&&!!s.meta&&Object.prototype.hasOwnProperty.call(s.meta,k);
+    const laggards=[base,remote].filter(s=>s&&NEW_META_KEYS.some(k=>!hasKey(s,k))).length;
+    function newerKey(k,label){
+      const b=hasKey(base,k)?base.meta[k]:undefined;
+      const l=hasKey(local,k)?local.meta[k]:(b===undefined?{}:clone(b));
+      const r=hasKey(remote,k)?remote.meta[k]:(b===undefined?clone(l):clone(b));
+      return object(b,l,r,label)||{};
+    }
     const meta={items:object(base?.meta.items,local.meta.items,remote?.meta.items||{},'备注')||{},groups:object(base?.meta.groups,local.meta.groups,remote?.meta.groups||{},'分组')||{},tags:Object.values(object(base?tagMap(base):undefined,tagMap(local),tagMap(remote),'标签')||{}),
-      // 🔴 锁定按节点身份记在 meta.locks，必须一起合并；漏了它每同步一次锁就全没了
-      locks:object(base?.meta.locks,local.meta.locks||{},remote?.meta.locks||{},'锁定')||{},
-      // 🔴 同上：文件夹说明也按 uid 记在 meta 里，漏一个键就等于每同步一次全丢一次
-      folderNotes:object(base?.meta.folderNotes,local.meta.folderNotes||{},remote?.meta.folderNotes||{},'文件夹说明')||{}};
+      // 🔴 这两个键是后来才加的：还没升级的那台浏览器写云端时根本不会带上它们。
+      // 用 newerKey 而不是 object，就是为了把「它不认识」和「用户清空了」分开。
+      locks:newerKey('locks','锁定'),folderNotes:newerKey('folderNotes','文件夹说明')};
     const snapshot={...clone(local),children:order(''),meta};
     // Display and folding preferences stay per-device during sync; full backups still migrate them.
     BK.validate(snapshot);
-    return {snapshot,local,conflicts,unresolved:conflicts.filter(c=>!c.choice).length,tombstones:[...tombstones,...[...B.values()].filter(n=>!nodes.has(n.uid)).map(n=>({uid:n.uid,path:n.path,url:n.url}))].slice(-1000)};
+    return {snapshot,local,conflicts,laggards,unresolved:conflicts.filter(c=>!c.choice).length,tombstones:[...tombstones,...[...B.values()].filter(n=>!nodes.has(n.uid)).map(n=>({uid:n.uid,path:n.path,url:n.url}))].slice(-1000)};
   }
   root.SyncCore={merge,align,equal};if(typeof module!=='undefined')module.exports=root.SyncCore;
 })(globalThis);

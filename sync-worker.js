@@ -103,7 +103,7 @@ function syncContent(s){
   return JSON.stringify(sort({children:walk(s.children),meta:s.meta}));
 }
 async function syncConfiguration(){
-  const data=await chrome.storage.local.get(['backupMode','webdav','syncVerified','syncState','syncInProgress','syncAuto','syncTombstones','restoreInProgress']);
+  const data=await chrome.storage.local.get(['backupMode','webdav','syncVerified','syncState','syncInProgress','syncAuto','syncTombstones','restoreInProgress','syncFollowOnly']);
   if(modeOf(data)!=='webdav'||!data.webdav?.enabled)throw Error('请先连接坚果云并启用 WebDAV 方案');
   if(data.restoreInProgress)throw Error('请先处理未完成的恢复，再进行同步');
   return {data,c:await davConfig()};
@@ -130,15 +130,21 @@ async function prepareSync(choices={},verify=false){
   if(revision!==nativeRevision)throw Error('浏览器正在更新书签，请稍后重新预览');
   const base=!data.syncInProgress&&data.syncState?.endpoint===syncEndpoint(c)?data.syncState.base:null;
   const tombstones=data.syncState?.endpoint===syncEndpoint(c)?data.syncTombstones||[]:[];
-  const merged=SC.merge(base,current,remote.snapshot,choices,tombstones),candidate=portable(merged.snapshot);
+  const merged=SC.merge(base,current,remote.snapshot,choices,tombstones);
+  // 「只跟随」＝这台只接收，永不上传。候选直接取云端那份，本机的改动不参与，
+  // 也就没有冲突可言（云端永远赢）。🔴 它是本机偏好，🚫 不进同步内容，免得传染给别的设备。
+  const followOnly=!!data.syncFollowOnly&&!!remote.snapshot;
+  const candidate=portable(followOnly?remote.snapshot:merged.snapshot);
+  if(followOnly){merged.conflicts=[];merged.unresolved=0;}
   const localPlan=BK.plan(merged.local,candidate),remotePlan=remote.snapshot?BK.plan(remote.snapshot,candidate):{changes:BK.flatten(candidate.children).map(n=>({op:'新增',path:n.path})),metaChanged:true};
   const deletions=localPlan.changes.filter(c=>c.op==='删除').length+remotePlan.changes.filter(c=>c.op==='删除').length;
   const size=BK.flatten(current.children).length+BK.flatten(remote.snapshot?.children||[]).length;
   const plan={token:crypto.randomUUID(),fingerprint:await fingerprint(current),endpoint:syncEndpoint(c),remote,candidate,conflicts:merged.conflicts,unresolved:merged.unresolved,tombstones:merged.tombstones,first:!base,recovery:!!data.syncInProgress,
-    localChanges:localPlan.changes,cloudChanges:remotePlan.changes,metaChanged:localPlan.metaChanged||remotePlan.metaChanged,largeDeletion:deletions>0&&deletions/Math.max(1,size)>.2};
+    localChanges:localPlan.changes,cloudChanges:followOnly?[]:remotePlan.changes,metaChanged:localPlan.metaChanged||remotePlan.metaChanged,largeDeletion:deletions>0&&deletions/Math.max(1,size)>.2,
+    followOnly,laggards:merged.laggards||0};
   await chrome.storage.session.set({syncPreview:plan});return plan;
 }
-function syncView(p){return {token:p.token,first:p.first,recovery:p.recovery,conflicts:p.conflicts,unresolved:p.unresolved,localChanges:p.localChanges,cloudChanges:p.cloudChanges,metaChanged:p.metaChanged,largeDeletion:p.largeDeletion};}
+function syncView(p){return {token:p.token,first:p.first,recovery:p.recovery,followOnly:p.followOnly,laggards:p.laggards,conflicts:p.conflicts,unresolved:p.unresolved,localChanges:p.localChanges,cloudChanges:p.cloudChanges,metaChanged:p.metaChanged,largeDeletion:p.largeDeletion};}
 async function applySync(token,auto=false){
   const {syncPreview:p}=await chrome.storage.session.get('syncPreview');if(!p||p.token!==token)throw Error('请重新预览同步');
   if(p.unresolved)throw Error('请先选择冲突处理方式，再更新预览');
@@ -146,7 +152,7 @@ async function applySync(token,auto=false){
   const {data,c}=await syncConfiguration();if(syncEndpoint(c)!==p.endpoint)throw Error('连接已变化，请重新预览');
   const current=await captureSnapshot('同步前自动保护');if(await fingerprint(current)!==p.fingerprint)throw Error('本机数据已变化，请重新预览同步');
   const latest=await readSync(c);if(latest.etag!==p.remote.etag||latest.revision!==p.remote.revision)throw Error('云端已被另一台设备更新，请重新预览同步');
-  const changed=syncContent(p.candidate)!==syncContent(latest.snapshot),localChanged=p.localChanges.length||BK.plan(current,p.candidate).metaChanged;
+  const changed=!p.followOnly&&syncContent(p.candidate)!==syncContent(latest.snapshot),localChanged=p.localChanges.length||BK.plan(current,p.candidate).metaChanged;
   if(changed||localChanged)await storeSnapshot(current);
   if(changed&&latest.snapshot){
     const protection={...latest.snapshot,id:crypto.randomUUID(),createdAt:new Date().toISOString(),reason:'同步前云端保护'};
@@ -193,7 +199,7 @@ async function applySync(token,auto=false){
     const finalRemote=await readSync(c);check();
     if(syncContent(await captureSnapshot())!==syncContent(applied))throw Error('核验期间本机内容变化，请重新预览合并');
     if(finalRemote.revision!==verified.revision||syncContent(finalRemote.snapshot)!==syncContent(applied))throw Error('本机应用后云端已有变化，自动同步已暂停，请重新预览');
-    const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint};
+    const receipt={verifiedAt:new Date().toISOString(),revision:finalRemote.revision,sha256:await contentHash(syncContent(applied)),count:BK.flatten(applied.children).filter(n=>n.url).length,uploaded:!!changed,localApplied:!!localChanged,localChanges:p.localChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),cloudChanges:p.cloudChanges.reduce((r,c)=>(r[c.op]=(r[c.op]||0)+1,r),{}),endpoint:p.endpoint,followOnly:!!p.followOnly,laggards:p.laggards||0};
     await chrome.storage.local.set({syncInProgress:null,lastSyncReceipt:receipt,syncState:{endpoint:p.endpoint,base:portable(applied),etag:finalRemote.etag,revision:finalRemote.revision,parentRevision:finalRemote.parentRevision,updatedAt:finalRemote.updatedAt,updatedBy:finalRemote.updatedBy,sha256:finalRemote.sha256},syncTombstones:p.tombstones,lastSyncAt:new Date().toISOString(),syncError:'',syncAuto:auto||!!data.syncAuto});
     await chrome.storage.session.remove('syncPreview');return true;
   }catch(error){await chrome.storage.local.set({syncError:error.message,syncAuto:false});if(syncGuard?.diagnostic)await chrome.storage.session.set({syncDiagnostic:syncGuard.diagnostic});throw error;}finally{syncGuard=null;await WriteLease.release(lease?.id);}
@@ -232,7 +238,7 @@ async function maybeSync(){
 }
 async function syncAction(message){
   switch(message.type){
-    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
+    case 'SYNC_STATUS':{const d=await chrome.storage.local.get(['syncAuto','lastSyncAt','syncError','syncInProgress','syncState','webdav','syncCheck','syncVerified','lastSyncReceipt','syncFollowOnly']);const {endpoint,...check}=d.syncCheck||{};const {endpoint:receiptEndpoint,...receipt}=d.lastSyncReceipt||{};return {receipt:receiptEndpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?receipt:null,check:endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)?check:null,verified:d.syncVerified===syncVerification(d.webdav||DAV_DEFAULT),auto:!!d.syncAuto,followOnly:!!d.syncFollowOnly,lastSyncAt:d.lastSyncAt,error:d.syncError,inProgress:!!d.syncInProgress,initialized:!!d.syncState&&d.syncState.endpoint===syncEndpoint(d.webdav||DAV_DEFAULT)};}
     case 'SYNC_NOW':return syncCloudFirst();
     case 'SYNC_PREVIEW':return syncView(await prepareSync(message.choices||{},true));
     case 'SYNC_APPLY':return applySync(message.token);
@@ -241,6 +247,9 @@ async function syncAction(message){
       if(message.enabled){const {data,c}=await syncConfiguration();if(data.syncInProgress||data.syncState?.endpoint!==syncEndpoint(c)||data.syncVerified!==syncVerification(c))throw Error('请先完成一次同步');}
       await chrome.storage.local.set({syncAuto:!!message.enabled,syncError:''});return true;
     }
+    case 'SYNC_FOLLOW_ONLY':
+      // 这台只接收、不上传。🔴 只存本机，🚫 不进同步内容 —— 否则一开就传染给所有设备
+      await chrome.storage.local.set({syncFollowOnly:!!message.enabled});return true;
     default:throw Error('未知同步操作');
   }
 }

@@ -30,6 +30,7 @@
     $('restore').disabled=blocked||!token||!$('sync-paused').checked;
     $('sync-apply').disabled=blocked||!syncToken||syncUnresolved>0;
     $('sync-auto').disabled=blocked||!syncLoaded||!syncReady;
+    $('sync-follow-only').disabled=blocked||!syncLoaded||!syncReady;
     $('sync-preview').disabled=blocked||!current?.webdav.enabled;
     $('auto').disabled=busy||selected()==='local';$('interval').disabled=busy||selected()==='local';
     $('forget').disabled=blocked||!current?.webdav.hasPassword;
@@ -82,7 +83,7 @@
     let sync=null,latest=null;
     try{
       sync=await ask('SYNC_STATUS');syncLoaded=true;
-      syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;
+      syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;$('sync-follow-only').checked=!!sync.followOnly;
     }catch(error){
       syncLoaded=false;syncReady=false;
       $('sync-status').textContent='同步状态暂时读不到：'+(error.message||String(error))+'\n已保存的账号、方案和本机备份不受影响。';
@@ -176,6 +177,7 @@
   $('sync-cancel').onclick=()=>{$('sync-review').hidden=true;syncToken=null;availability();};
   $('sync-apply').onclick=()=>run(async()=>{if(!syncToken)throw Error('请先更新预览');await ask('SYNC_APPLY',{token:syncToken});syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='两端已完成同步。可开启每分钟自动跟随最新版；出现冲突时会暂停，等待你确认。';});
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
+  $('sync-follow-only').onchange=()=>run(async()=>{try{await ask('SYNC_FOLLOW_ONLY',{enabled:$('sync-follow-only').checked});}finally{await refresh();}});
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
   $('recovery-history').onclick=()=>{setTab(false);window.BackupPage?.reveal('backup-history',false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};
