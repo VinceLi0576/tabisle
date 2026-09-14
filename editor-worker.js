@@ -1,3 +1,4 @@
+const FOLDER_COLORS=[{c:'#2f6fdb',n:'蓝'},{c:'#1f9d55',n:'绿'},{c:'#d08700',n:'黄'},{c:'#d64545',n:'红'},{c:'#8e44ad',n:'紫'},{c:'#0e9aa7',n:'青'},{c:'#e07a2f',n:'橙'},{c:'#5c6b7a',n:'灰'}];
 function draftKey(windowId,selection) { return 'editorDraft:'+windowId+':'+(selection.id||'new:'+selection.parentId); }
 async function editorAction(m) {
   const windowId=Number(m.windowId);if(!Number.isInteger(windowId))throw Error('找不到当前窗口');
@@ -9,7 +10,7 @@ async function editorAction(m) {
     const id=String(m.id||'');const node=(await chrome.bookmarks.get(id))[0];
     if(!node||node.url)throw Error('不是文件夹');
     if(typeof m.title==='string'&&m.title.trim()&&m.title!==node.title)await chrome.bookmarks.update(id,{title:m.title.trim()});
-    if(m.note!==undefined||m.locked!==undefined){
+    if(m.note!==undefined||m.locked!==undefined||m.color!==undefined){
       // 🔴 只动这个夹的那几个键，其余原样 —— 跟附属数据合并写同一条纪律，别整包盖
       const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
       const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
@@ -17,6 +18,16 @@ async function editorAction(m) {
       if(m.note!==undefined){fresh.folderNotes=fresh.folderNotes||{};const v=String(m.note).trim();if(v)fresh.folderNotes[uid]=v;else delete fresh.folderNotes[uid];}
       if(m.locked!==undefined){fresh.locks=fresh.locks||{};if(m.locked)fresh.locks[uid]=true;else delete fresh.locks[uid];
         const g=fresh.groups?.[node.title];if(g&&g.locked&&!m.locked){delete g.locked;if(!Object.keys(g).length)delete fresh.groups[node.title];}}
+      if(m.color!==undefined){
+        // 颜色仍按夹名存（meta.groups[title].color）—— 首页读的就是这个键。
+        // ⚠️ 按名字存 ⇒ 在别处改名会丢色、同名夹会串色；跟锁和说明一样搬到 uid 是后话，老徐还没拍。
+        const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
+        const ok=FOLDER_COLORS.some(x=>x.c===m.color);
+        const g={...(fresh.groups?.[name]||{})};
+        if(m.color&&ok)g.color=m.color;else delete g.color;
+        fresh.groups=fresh.groups||{};
+        if(Object.keys(g).length)fresh.groups[name]=g;else delete fresh.groups[name];
+      }
       await chrome.storage.local.set({meta:fresh});
     }
     return true;
@@ -66,6 +77,8 @@ async function editorAction(m) {
       count:count(full),subfolders:(full.children||[]).filter(c=>!c.url).length,
       children:kids.map(c=>c.url?{id:c.id,title:c.title,url:c.url}:{id:c.id,title:c.title,count:count(BmCore.findNode(bar,c.id)||c)}),
       note:(uid&&meta.folderNotes?.[uid])||'',
+      color:meta.groups?.[node.title]?.color||'',
+      colors:FOLDER_COLORS,
       locked:!!(uid&&meta.locks?.[uid])||!!meta.groups?.[node.title]?.locked,
       color:meta.groups?.[node.title]?.color||''},
       canNudge:BmCore.nudgeable(bar,node.id)};

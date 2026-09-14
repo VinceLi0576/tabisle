@@ -85,6 +85,13 @@
     $('fp-title').value=f.title;$('fp-path').textContent=f.path;$('fp-path').title=f.path;
     $('fp-count').textContent=f.count+' 条书签';$('fp-subs').textContent=f.subfolders?' · '+f.subfolders+' 个子文件夹':'';
     $('fp-note').value=f.note||'';$('fp-lock').checked=!!f.locked;
+    // 颜色：8 个固定色 ＋ 一个「不上色」。老徐 260914：改颜色走这儿，首页那根细色条太难点
+    $('fp-colors').replaceChildren(...[...(f.colors||[]),{c:'',n:'不上色'}].map(o=>{
+      const b=document.createElement('button');b.type='button';b.className='fp-color'+(String(f.color||'')===o.c?' on':'')+(o.c?'':' none');
+      if(o.c)b.style.setProperty('--fc',o.c);
+      b.title=o.n;b.setAttribute('aria-label',o.n);
+      b.onclick=()=>{[...$('fp-colors').children].forEach(x=>x.classList.toggle('on',x===b));folderPatch({color:o.c});};
+      return b;}));
     $('fp-note').disabled=$('fp-lock').disabled=!f.uid;
     if(!f.uid)$('fp-note').placeholder='这个文件夹还没拿到稳定标识，等一次自动备份之后再写';
     $('fp-children').replaceChildren(...f.children.map(c=>{

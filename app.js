@@ -103,12 +103,17 @@ chrome:// ⚙️`;
   const parseEmojiRules = (txt) => String(txt || '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const m = l.match(/^(\S+)\s+(\S+)$/); return m ? { k: m[1].toLowerCase(), e: m[2] } : null; }).filter(Boolean);
   const segLen = (s) => { try { return [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(s)].length; } catch { return s.length; } };
   const isEmoji = (s) => !!s && !/^https?:|^data:|^chrome/.test(s) && segLen(s.trim()) <= 2 && /\p{Extended_Pictographic}/u.test(s);
-  const PALETTE = ['#2f6fdb', '#1f9d55', '#d08700', '#d64545', '#8e44ad', '#0e9aa7', '#e07a2f', '#5c6b7a', '#c2185b', '#3d8b40'];
+  // 文件夹颜色：8 个带名字的固定色（老徐 260914）。🔴 改颜色走详情侧栏，🚫 不再点那根细色条 —— 太难点。
+  const FOLDER_COLORS = [
+    { c: '#2f6fdb', n: '蓝' }, { c: '#1f9d55', n: '绿' }, { c: '#d08700', n: '黄' }, { c: '#d64545', n: '红' },
+    { c: '#8e44ad', n: '紫' }, { c: '#0e9aa7', n: '青' }, { c: '#e07a2f', n: '橙' }, { c: '#5c6b7a', n: '灰' },
+  ];
+  const PALETTE = FOLDER_COLORS.map((x) => x.c);   // 标签那边还按这个挑默认色
 
   // ── 本机偏好 ──
   // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
   //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, foldDefault: 'auto' };
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
@@ -424,7 +429,11 @@ chrome:// ⚙️`;
   }
   function folderCollapsed(f) {
     const saved = prefs.folderCollapsed[foldKey(f)];
-    return typeof saved === 'boolean' ? saved : defaultCollapsed(f);
+    if (typeof saved === 'boolean') return saved;
+    // 老徐 260914：「一种是我自己逐个设，一种是全局默认全折或全开」⇒ 没单独设过的按全局默认走
+    if (prefs.foldDefault === 'closed') return true;
+    if (prefs.foldDefault === 'open') return false;
+    return defaultCollapsed(f);
   }
   function levelMark(level) {
     return `<span class="level-mark" aria-hidden="true" style="--level-count:${level}">${'<i></i>'.repeat(level)}</span>`;
@@ -489,7 +498,7 @@ chrome:// ⚙️`;
     head.innerHTML =
       levelMark(opts.level || 1) + (`<button class="folder-toggle" type="button" aria-controls="folder-body-${f.id}" aria-expanded="true"><svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`) +
       (opts.fixed ? '' : `<span class="grip" draggable="true" title="拖动排序">⋮⋮</span>`) +
-      `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
+      `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 颜色在右边「›」详情里选'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       `<span class="level-label">${opts.level || 1}级</span>` +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
 
@@ -562,7 +571,7 @@ chrome:// ⚙️`;
     box.querySelector('.fn-cancel').onclick = () => render();
     if (box.querySelector('.fn-ai')) box.querySelector('.fn-ai').onclick = () => {
       // 把范围设成这个夹，再让 AI 照着里面的东西写 —— 它只看得到这一摊，不会拿别处的内容凑
-      window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: String(id) } }));
+      window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: String(id), quiet: false } }));
       window.dispatchEvent(new CustomEvent('bm-ask', { detail: { text: `看一眼「${node.title}」这个文件夹里都是些什么，用一两句话写清楚它该放哪类内容、哪类不该放，然后用 propose_changes 的 folder_note 提交给我确认。` } }));
     };
   }
@@ -844,7 +853,7 @@ chrome:// ⚙️`;
     revealFolder(it.dataset.id);
     // 左边点一个夹，右边 AI 就只在这一摊里干活；再点同一个取消。
     // \u{1F534} 只是「选中」，一个字都还没发出去 —— 发送时才把范围盖在那条消息上。
-    window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: it.dataset.id, toggle: true } }));
+    window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: it.dataset.id, toggle: true, quiet: true } }));
   });
   // 范围存在 session 里，首页和侧栏共用一份 ⇒ 哪边改了两边都跟上
   function paintScope(id) { $$('.side-item').forEach((s) => s.classList.toggle('scoped', !!id && s.dataset.id === String(id))); }
@@ -1039,6 +1048,26 @@ chrome:// ⚙️`;
     if (seg.dataset.key === 'view') prefs.folderView = {};   // 顶栏选的是「全部」，各夹自己的选择让路
     applyPrefs(); savePrefs();
   }));
+  // ⇕ 折叠：一次全折/全开，外加「以后新开的夹默认怎么样」
+  $('#fold-all').addEventListener('click', (e) => {
+    const all = () => [...$$('#groups > .card'), ...$$('#groups .sub')];
+    const setAll = async (collapsed) => {
+      for (const s of all()) { const f = s.dataset.id === bar.id ? bar : findNode(s.dataset.id); if (f) prefs.folderCollapsed[foldKey(f)] = collapsed; }
+      prefs.recentCollapsed = collapsed;
+      try { await store.prefs.set({ folderCollapsed: prefs.folderCollapsed }); await savePrefs(); } catch { toast('折叠状态没存下来'); }
+      applyPrefs(); render();
+    };
+    const mark = (v) => (prefs.foldDefault === v ? '● ' : '○ ');
+    const useDefault = (v) => { prefs.foldDefault = v; prefs.folderCollapsed = {}; savePrefs(); store.prefs.set({ folderCollapsed: {} }); applyPrefs(); render(); toast(v === 'closed' ? '以后一律默认折叠' : v === 'open' ? '以后一律默认展开' : '回到每个夹自己记的状态'); };
+    openMenu([
+      { t: '全部折叠', f: () => setAll(true) },
+      { t: '全部展开', f: () => setAll(false) },
+      null,
+      { t: mark('auto') + '默认：我自己逐个设', f: () => useDefault('auto') },
+      { t: mark('closed') + '默认：一律折叠', f: () => useDefault('closed') },
+      { t: mark('open') + '默认：一律展开', f: () => useDefault('open') },
+    ], e.clientX, e.clientY);
+  });
   $('#new-group').addEventListener('click', async () => {
     const r = await dialog({ title: '新分组', name: '', showUrl: false, ok: '创建' });
     if (r && r.name.trim()) await store.create({ parentId: bar.id, title: r.name.trim() });
@@ -1140,7 +1169,7 @@ chrome:// ⚙️`;
       applyFilters(); return;
     }
     if (e.target.closest('.subchip')) { revealFolder(e.target.closest('.subchip').dataset.goto); return; }
-    if (e.target.closest('.swatch')) { openMenu(colorMenu(box), e.clientX, e.clientY); return; }
+
     if (e.target.closest('.hd-name')) { if (box.dataset.kind !== 'bar') inlineRename(box.querySelector('.title')); return; }
     const more = e.target.closest('.more');
     if (more) { e.preventDefault(); openMenu(folderMenu(box), e.clientX, e.clientY); return; }
@@ -1154,7 +1183,7 @@ chrome:// ⚙️`;
   main.addEventListener('contextmenu', (e) => {
     const tile = e.target.closest('.tile:not(.add)');
     if (tile) { e.preventDefault(); openMenu(urlMenu(tile.dataset.id), e.clientX, e.clientY); return; }
-    if (e.target.closest('.swatch')) { e.preventDefault(); openMenu(colorMenu(e.target.closest('.card, .sub')), e.clientX, e.clientY); return; }
+
     const head = e.target.closest('.head, .sub-head');
     if (head) { e.preventDefault(); openMenu(folderMenu(head.parentElement), e.clientX, e.clientY); return; }
     const body = e.target.closest('.body');

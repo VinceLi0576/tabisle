@@ -119,3 +119,11 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .tab-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-bottom:1px solid var(--border);background:transparent;text-align:left;cursor:pointer}
 .tab-item:last-child{border-bottom:0}.tab-item:hover{background:var(--well)}
 .tab-item img{width:16px;height:16px;flex:none}.tab-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.tab-host{flex:none;font-size:11px;color:var(--muted)}
+/* 文件夹颜色：8 个固定色 ＋ 不上色 */
+.fp-colors{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 14px}
+.fp-color{width:26px;height:26px;padding:0;border:2px solid transparent;border-radius:8px;background:var(--fc);cursor:pointer}
+.fp-color:hover{transform:scale(1.08)}
+.fp-color.on{border-color:var(--text);box-shadow:0 0 0 2px var(--card) inset}
+.fp-color.none{background:var(--card);border:1px dashed var(--border-2);position:relative}
+.fp-color.none::after{content:"";position:absolute;left:4px;right:4px;top:11px;height:1.5px;background:var(--muted-2);transform:rotate(-45deg)}
+.fp-color.none.on{border:2px solid var(--text)}

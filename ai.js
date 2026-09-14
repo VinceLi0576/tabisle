@@ -465,11 +465,14 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
       `<button type="button" class="chev" id="ai-scope-off" title="改回全部书签">×</button>`;
     $('#ai-scope-off').onclick = () => setScope(null);
   }
-  async function setScope(id) {
+  // quiet＝从左栏点过来的：安静地设上就行。老徐 260914：「我点左边的时候，不要给我弹出来这些东西，
+  // 展现出来让我看得见就好了」⇒ 范围有没有设上，看左栏那个「AI 范围」小标和面板顶上那条。
+  async function setScope(id, quiet = false) {
     const stat = id ? BmCore.scopeStats(BM.bar, String(id)) : null;
     scope = stat ? { ...stat, at: Date.now() } : null;
     try { await chrome.storage.session.set({ [SCOPE_KEY]: scope }); } catch {}
     renderScope();
+    if (quiet) return;
     if (scope) { showPanel(true); addMsg('sys', `范围已设为「${scope.path}」（${scope.subfolders ? '含 ' + scope.subfolders + ' 个子夹，' : ''}共 ${scope.count} 条）。之后只在这一摊里看和改。`); }
     else if (BM.bar) addMsg('sys', '范围已取消，恢复成全部书签。');
   }
@@ -488,7 +491,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   window.addEventListener('bm-scope', (e) => {
     const id = e.detail && e.detail.id;
     // 再点同一个夹 = 取消，不用去找那个小 ×
-    setScope(e.detail?.toggle && scope && String(scope.id) === String(id) ? null : id);
+    setScope(e.detail?.toggle && scope && String(scope.id) === String(id) ? null : id, e.detail?.quiet !== false);
   });
 
   function showPanel(on = true) { $('#ai-panel').hidden = !on; $('#ai-toggle').textContent = on ? '▴' : '▾'; }
