@@ -55,13 +55,15 @@ test('没写说明的夹不出这个框，写了的点一下就能改', () => {
   assert.match(app, /closest\('\.hd-note-btn, \.note-card-btn'\)/, '点说明框打不开编辑器');
 });
 
-test('收集箱有一句写死的「这是什么」，折叠展开都在；最近访问不写说明', () => {
+test('收集箱和最近访问各有一句写死的「这是什么」，折叠展开都在', () => {
   assert.match(app, /noteCardEl\(f, opts\.fixed \? '收集箱：/, '收集箱没有自己的说明框');
-  assert.match(css, /\.note-card\.fixed \{ display: -webkit-box; \}/, '收集箱那句展开后会消失');
+  assert.match(css, /\.note-card\.fixed \{ display: -webkit-box; \}/, '写死的那句展开后会消失');
   assert.ok(!/inbox-hint/.test(app), '标题行上那句灰字还在');
   const html = fs.readFileSync(p('newtab.html'), 'utf8');
-  assert.ok(!/recent-note/.test(html), '最近访问不该有说明框（老徐：下面也不用写说明）');
+  assert.match(html, /id="recent-note"[^>]*>最近访问：/, '最近访问没有说明框');
   assert.ok(!/inbox-hint/.test(html), '最近访问标题行上那句灰字还在');
+  assert.match(html, /<span class="title">最近访问<\/span><span class="hd-toggle">/,
+    '最近访问标题后面少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
 });
 
 test('最近访问最多 8 条', () => {

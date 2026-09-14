@@ -584,6 +584,9 @@ dialog .palette span.on { border-color: var(--text); }
 .is-collapsed > .head .hd-view,
 .is-collapsed > .head .hd-detail,
 .is-collapsed > .head .more { order: 3; }
+/* 右边这排按钮别顶到虚线上（老徐 260914：「都顶到那条线外面去了」）*/
+.card[data-kind="folder"] > .head, .card.inbox > .head, .recent-head { padding-right: 14px; }
+.card.inbox > .head .hd-nudge { margin-right: 4px; }
 
 /* ── 说明小框：标题栏底下自己一条，🔴 只在折叠时出现（老徐 260914 选的「只折叠时留着」）──
    展开之后标题栏下面直接就是书签，🚫 别让长说明把版面撑散。 */
@@ -595,7 +598,7 @@ dialog .palette span.on { border-color: var(--text); }
   margin: 2px 2px 4px; padding: 7px 11px;
   border: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, var(--border));
   border-radius: 8px; background: var(--card);
-  color: var(--muted); font-size: 12px; line-height: 1.65;
+  color: var(--muted); font-size: 13px; line-height: 1.7;
 }
 
 .card.inbox > .note-card { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); background: color-mix(in srgb, var(--accent) 3%, var(--card)); }
