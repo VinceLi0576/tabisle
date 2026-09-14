@@ -29,7 +29,7 @@
       $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
       currentId=draft.id;$('detail-nudge').hidden=!draft.id;
       for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
-      $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
+      $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('use-title').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
       renderDuplicates(data);
       renderDomain(data);
       updateStatus();
@@ -149,6 +149,9 @@
     const f=draft.fields;let domain='尚未填写网址';
     try{const url=new URL(f.url);domain=url.hostname||url.protocol;}catch{if(f.url)domain='请检查网址';}
     $('preview-name').textContent=f.alias||f.name||'新书签';$('preview-name').title=$('preview-name').textContent;
+    // 顶上那条摘要跟详细版卡片是同一张脸：显示名 · 一句话说明 · 所在夹
+    $('ds-name').textContent=f.alias||f.name||'新书签';$('ds-desc').textContent=f.desc||'';$('ds-desc').hidden=!f.desc;
+    $('ds-path').textContent=$('parentId').selectedOptions[0]?.textContent||'';
     $('preview-domain').textContent=domain;$('preview-domain').title=f.url;
     const allowed=safeLink(f.url);$('open-link').hidden=!allowed;$('open-link').href=allowed?f.url:'#';
     const src=chrome.runtime.getURL('/_favicon/')+'?pageUrl='+encodeURIComponent(f.url)+'&size=32';
@@ -171,6 +174,7 @@
   $('editor').addEventListener('submit',async e=>{e.preventDefault();$('save').disabled=true;try{await pending;await ask('EDITOR_SAVE',{selection});await load();}catch(e){error(e);updateStatus();}});
   $('discard').onclick=async()=>{try{await pending;await ask('EDITOR_DISCARD',{selection});await load();}catch(e){error(e);}};
   $('promote').onclick=()=>{$('name').value=$('alias').value;persist({name:$('alias').value});};
+  $('use-title').onclick=()=>{$('alias').value='';persist({alias:''});};   // 老徐：显示名的意思其实是去改带过来的书签名 —— 反方向也得有
   $('delete').onclick=async()=>{if(!confirm('删除这条书签？删除前会自动保存完整备份。'))return;try{await pending;await ask('EDITOR_DELETE',{selection});await load();}catch(e){error(e);}};
   $('close').onclick=$('close-footer').onclick=async()=>{try{await pending;await chrome.sidePanel.close({windowId});}catch(e){error(e);}};
   $('favicon').onerror=()=>{$('favicon').hidden=true;$('favicon-fallback').hidden=false;};

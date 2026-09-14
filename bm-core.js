@@ -226,6 +226,19 @@
     return out;
   }
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, mergeMetaWrite, SLD };
+  // 「最近打开」用人话说：判断一条书签要不要留，最直接的依据就是它。
+  // 🔴 数据不来自 dateLastUsed —— Chrome 只在从它自己的书签栏点开时才记那个字段，
+  //    从我们首页点开一律是 0（863 条实测全 0）。来自浏览历史的最后访问时间，对所有打开方式都算。
+  function sinceLabel(ms, now = Date.now()) {
+    if (!ms || ms <= 0) return '没打开过';
+    const d = Math.floor((now - ms) / 86400e3);
+    if (d <= 0) return '今天打开过';
+    if (d === 1) return '昨天打开过';
+    if (d < 30) return d + ' 天前打开过';
+    if (d < 365) return Math.floor(d / 30) + ' 个月前打开过';
+    return Math.floor(d / 365) + ' 年前打开过';
+  }
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, mergeMetaWrite, sinceLabel, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

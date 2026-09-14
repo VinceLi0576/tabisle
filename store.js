@@ -95,6 +95,17 @@ const ChromeStore = {
       chrome.runtime.sendMessage({ type: 'ICON_FETCH', host: h }).then(r => r?.ok ? r.data : null).catch(() => null));
     return this._iconCache.get(h);
   },
+  // 全部网址的最后访问时间，一次查完（863 条书签逐条查要 863 次，太慢）。
+  // 🔴 别用 dateLastUsed：Chrome 只在从它自己的书签栏点开时才记，从我们首页点开一律是 0。
+  _visitsAt: 0, _visits: null,
+  async lastVisits() {
+    if (!chrome.history) return new Map();
+    if (this._visits && Date.now() - this._visitsAt < 60e3) return this._visits;   // 一分钟内复用
+    const items = await chrome.history.search({ text: '', maxResults: 100000, startTime: 0 });
+    const m = new Map(); const K = (u) => (globalThis.BmCore ? BmCore.key(u) : u);
+    for (const it of items) { if (!/^https?:/.test(it.url || '')) continue; const k = K(it.url), t = it.lastVisitTime || 0; if (t > (m.get(k) || 0)) m.set(k, t); }
+    this._visits = m; this._visitsAt = Date.now(); return m;
+  },
   async recent(n = 18) {
     if (!chrome.history) return [];
     const self = chrome.runtime.getURL('');
@@ -196,6 +207,7 @@ function makeMockStore(raw) {
       async set(m) { try { localStorage.setItem('meta', JSON.stringify(m)); } catch {} },
     },
     async recent() { return []; },
+    async lastVisits() { return new Map(); },
     async remoteIcon() { return null; },
     prefs: {
       async get(defaults) {

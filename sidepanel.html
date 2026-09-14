@@ -53,6 +53,7 @@
   </section>
   <form id="editor" hidden>
     <div class="editor-scroll">
+      <div id="detail-summary" class="detail-summary" aria-label="这条是什么"><strong id="ds-name"></strong><span id="ds-desc"></span><em id="ds-path"></em></div>
       <section class="edit-section bookmark-fields" aria-label="网址与书签名">
         <div class="url-heading">
           <div class="preview-icon"><img id="favicon" alt=""><span id="favicon-fallback" hidden>↗</span></div>
@@ -98,7 +99,7 @@
         <label for="icon">换个图标</label>
         <input id="icon" placeholder="🐙 或图片网址" spellcheck="false">
         <p class="field-help">首页那个小方块默认用网站自己的图标；填一个 emoji（例 🐙）或一张图片的网址就能换掉它，留空恢复默认。</p>
-        <div class="more-actions"><button type="button" id="promote">用备注名作为书签名</button><button type="button" id="delete" class="danger">删除书签</button></div>
+        <div class="more-actions"><button type="button" id="promote">用备注名作为书签名</button><button type="button" id="use-title">不要显示名了，就用书签名</button><button type="button" id="delete" class="danger">删除书签</button></div>
       </details>
     </div>
     <footer class="editor-actions">

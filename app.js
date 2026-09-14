@@ -111,7 +111,7 @@ chrome:// ⚙️`;
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
   if (!prefs.folderCollapsed || typeof prefs.folderCollapsed !== 'object' || Array.isArray(prefs.folderCollapsed)) prefs.folderCollapsed = {};
-  if (prefs.view !== 'list') prefs.view = 'card';
+  if (!['list', 'detail'].includes(prefs.view)) prefs.view = 'card';   // card＝紧凑 · detail＝详细 · list＝列表
   function applyPrefs() {
     const h = document.documentElement;
     h.dataset.view = prefs.view;
@@ -359,12 +359,18 @@ chrome:// ⚙️`;
     const name = document.createElement('span'); name.className = 'name'; name.textContent = label(n); line1.appendChild(name);
     line1.appendChild(tagChips(m.tags));
     txt.appendChild(line1);
-    if (m.name) { const o = document.createElement('span'); o.className = 'orig'; o.textContent = rawLabel(n); line1.appendChild(o); }
+    // 老徐 260914 拍：详细版多露三样 —— 书签名原样（有显示名时才露，灰字）· 详细说明前两行 · 最近打开
+    if (m.name) { const o = document.createElement('span'); o.className = 'orig'; o.textContent = rawLabel(n); o.title = '网页带过来的原名'; txt.appendChild(o); }
     const desc = document.createElement('span'); desc.className = 'desc';
     if (m.desc) { desc.textContent = m.desc; desc.classList.add('said'); }
     else { const d = domainParts(n.url); desc.innerHTML = (d.pre ? `<span class="pre">${esc(d.pre)}</span><span class="sep">·</span>` : '') + `<span class="dom">${esc(d.root)}</span>`; }
     desc.title = m.desc ? m.desc : n.url;
     txt.appendChild(desc);
+    if (m.note) { const nt = document.createElement('span'); nt.className = 'note'; nt.textContent = m.note; nt.title = m.note; txt.appendChild(nt); }
+    const foot = document.createElement('span'); foot.className = 'foot';
+    const dp = domainParts(n.url);
+    foot.innerHTML = `<span class="fdom">${esc((dp.pre ? dp.pre + '.' : '') + dp.root)}</span><span class="since" data-k="${esc(key(n.url))}">…</span>`;
+    txt.appendChild(foot);
     const u = document.createElement('span'); u.className = 'url'; u.textContent = n.url; txt.appendChild(u);
     a.appendChild(txt);
     a.appendChild(strip3(n.id));
@@ -684,8 +690,19 @@ chrome:// ⚙️`;
     renderSide(folders, loose.length ? bar.id : null);
     if (search.value.trim()) renderSearch();
     renderRecent();
+    paintSince(); refreshLastVisits();
   }
 
+  // ── 最近打开：数据异步来，先渲染卡片，来了再往 .since 里填字，🚫 不让渲染等它 ──
+  let lastVisits = new Map();
+  function paintSince() {
+    $$('.tile .since').forEach((el) => { el.textContent = BmCore.sinceLabel(lastVisits.get(el.dataset.k) || 0); el.classList.toggle('never', !lastVisits.get(el.dataset.k)); });
+  }
+  let visitsBusy = false;
+  async function refreshLastVisits() {
+    if (visitsBusy) return; visitsBusy = true;
+    try { lastVisits = await store.lastVisits(); paintSince(); } catch { /* 没历史权限或没历史就空着 */ } finally { visitsBusy = false; }
+  }
   // ── 侧边栏：只列前两级；更深层滚动时高亮所属的二级 ──
   let sideObserver = null;
   // 左栏哪几个一级夹是展开的。只活在这一页里 —— 它是导航状态，不是内容，刷新后全收起正好清爽
