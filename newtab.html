@@ -17,7 +17,10 @@
     <input id="search" type="search" placeholder="搜书签" title="按 / 直接跳到这里" autocomplete="off" spellcheck="false">
   </div>
   <div class="bar-actions">
-    <button type="button" class="btn bar-ai" id="ai-side" title="在右侧栏打开 AI">✦ AI</button>
+    <span class="ai-duo">
+      <button type="button" class="btn ai-duo-set" id="ai-setup-btn" title="AI 整理标准：写规矩、编常用任务、填钥匙">⚙</button>
+      <button type="button" class="btn ai-duo-go" id="ai-side" title="在右侧栏打开 AI 对话">✦ AI</button>
+    </span>
     <button class="btn ghost" id="backup-btn">备份与恢复</button>
     <button class="sync-pill" id="sync-pill" type="button" hidden>检查云端</button>
   </div>
@@ -30,11 +33,7 @@
   </div>
   <div class="ai-panel" id="ai-panel" hidden>
     <div class="ai-panel-head"><span id="ai-status"></span><span style="flex:1"></span><button class="chev" id="ai-clear" type="button" title="清空对话">⌫</button><button class="chev" id="ai-close" type="button" title="收起">×</button></div>
-    <div class="ai-quick" id="ai-quick">
-      <button type="button" data-q="看一下我的书签整体情况，哪些文件夹太杂、哪些重复">体检</button>
-      <button type="button" data-q="给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览">补说明打标签</button>
-      <button type="button" data-q="把「未分组」里散着的书签归到合适的文件夹">归置未分组</button>
-    </div>
+    <div class="ai-quick" id="ai-quick"></div>
     <div class="ai-log" id="ai-log"></div>
     <div class="ai-proposal" id="ai-proposal" hidden></div>
   </div>

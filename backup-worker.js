@@ -1,5 +1,7 @@
 const BK=BookmarkCore;
-const PREF_KEYS=['view','recentCollapsed','filterMode'];
+// 🔴 aiStandard / aiTasks 放这儿是有意的：prefs 会进完整备份（写了的整理标准不会丢），
+// 但同步时被清成 {}（不会传给别的设备，也不会跟别人的标准打架）。钥匙不在这儿，它一样都不进。
+const PREF_KEYS=['view','recentCollapsed','filterMode','aiStandard','aiTasks'];
 const DAV_DEFAULT={enabled:false,url:'https://dav.jianguoyun.com/dav/TabIsle/backups/',username:'',password:''};
 const modeOf=data=>['webdav','browser','local'].includes(data.backupMode)?data.backupMode:'webdav';
 const intervalOf=data=>[1,3,24,168,720].includes(data.backupIntervalHours)?data.backupIntervalHours:[1,7,30].includes(data.backupIntervalDays)?data.backupIntervalDays*24:1;
@@ -208,7 +210,7 @@ async function backupAction(message) {
         const identity={};for(const [uid,n]of live)identity[n.id]={uid,dateAdded:n.dateAdded};
         const folderCollapsed={};
         for(const [uid,folded]of Object.entries(p.snapshot.folderState||{})){const n=live.get(uid);if(n&&typeof folded==='boolean')folderCollapsed[`${n.id}:${n.dateAdded||0}`]=folded;}
-        const prefs={view:'card',recentCollapsed:false,filterMode:'and',...Object.fromEntries(PREF_KEYS.filter(k=>p.snapshot.prefs[k]!==undefined).map(k=>[k,p.snapshot.prefs[k]]))};
+        const prefs={view:'card',recentCollapsed:false,filterMode:'and',aiStandard:'',aiTasks:null,...Object.fromEntries(PREF_KEYS.filter(k=>p.snapshot.prefs[k]!==undefined).map(k=>[k,p.snapshot.prefs[k]]))};
         await chrome.storage.local.set({meta:p.snapshot.meta,bookmarkIdentity:identity,...prefs,...(p.snapshot.folderState?{folderCollapsed}:{})});
         await chrome.storage.session.remove('restorePreview');
         // Drafts reference pre-restore IDs; clear them to avoid writing into restored records.

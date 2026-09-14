@@ -1,0 +1,108 @@
+// AI 整理标准页。这里写的东西侧栏 AI 每次都会带上，🚫 不在这儿碰书签。
+// 标准和任务存 prefs ⇒ 进完整备份（不会丢），但不进同步内容（不污染别的设备）。
+// 钥匙单独存 chrome.storage.local.ai，🔴 既不进备份也不进同步。
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const PROVIDERS = {
+    moonshot: { base: 'https://api.moonshot.cn/v1', models: [['kimi-k2.6', 'kimi-k2.6 · 便宜够用，整理几十条约几分钱'], ['kimi-k3', 'kimi-k3 · 最强，贵约 4 倍']], note: '按量付费；kimi-k2.6 日常整理够用，kimi-k3 给难活。' },
+    kimicode: { base: 'https://api.kimi.com/coding/v1', models: [['k3', 'k3 · 最强（Moderato 及以上会员）'], ['k3-256k', 'k3-256k · 同上，256K 上下文'], ['kimi-for-coding', 'kimi-for-coding · 所有会员可用']], note: '走 Kimi Code 会员额度，不另计费。⚠️ 官方文档写它是给编程工具用的，在这里用属于灰色地带，额度异常时优先换回开放平台。' },
+  };
+  const DEFAULT_AI = { key: '', provider: 'kimicode', base: PROVIDERS.kimicode.base, model: 'k3', temperature: 0.3 };
+  const DEFAULT_TASKS = [
+    { id: 't1', name: '体检', prompt: '看一下我的书签整体情况，哪些文件夹太杂、哪些重复' },
+    { id: 't2', name: '补说明打标签', prompt: '给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览' },
+    { id: 't3', name: '归置未分组', prompt: '把「未分组」里散着的书签归到合适的文件夹' },
+  ];
+  const EXAMPLE = ['· 标签只用已经定义好的那几个，拿不准就不打，不要自己造新标签',
+    '· 备注名 ≤ 6 个字，说明一句话写清「这是什么、什么时候会用」',
+    '· 同一个网站的多个页面，优先并到同一个文件夹，别散在各处',
+    '· 文件夹有「说明」的，按说明归类；夹里现有内容跟说明对不上，先说出来再动',
+    '· 一年没打开过又没有说明的，提出来问我要不要标废弃，不要直接删',
+    '· 拿不准的一律不动，列出来问我'].join('\n');
+
+  let ai = { ...DEFAULT_AI }, tasks = [], dirty = { standard: false, tasks: false };
+  const say = (m) => { $('status').textContent = m; clearTimeout(say._t); say._t = setTimeout(() => { $('status').textContent = ''; }, 4000); };
+  const oops = (e) => { $('error').textContent = e?.message || String(e); };
+
+  async function load() {
+    const d = await chrome.storage.local.get({ ai: DEFAULT_AI, aiStandard: '', aiTasks: null });
+    ai = { ...DEFAULT_AI, ...(d.ai || {}) };
+    $('standard').value = d.aiStandard || '';
+    tasks = Array.isArray(d.aiTasks) && d.aiTasks.length ? d.aiTasks : DEFAULT_TASKS.map((t) => ({ ...t }));
+    renderTasks(); fillModels(ai.provider, ai.model);
+    $('ai-provider').value = ai.provider; $('ai-key').value = ai.key; $('ai-temp').value = ai.temperature;
+    paintOverview();
+  }
+  function paintOverview() {
+    const n = $('standard').value.trim().length;
+    $('ov-standard').textContent = n ? n + ' 字' : '还没写';
+    $('standard-count').textContent = n ? n + ' 字' : '';
+    $('ov-tasks').textContent = tasks.length + ' 个';
+    $('ov-kimi').textContent = ai.key ? ai.model : '还没填钥匙';
+  }
+
+  // ── 常用任务 ──
+  function renderTasks() {
+    $('task-list').replaceChildren(...tasks.map((t, i) => {
+      const row = document.createElement('div'); row.className = 'task-row';
+      row.innerHTML = `<div class="task-head"><input class="task-name" value="${esc(t.name)}" placeholder="按钮上的字，2～6 个字" maxlength="12">` +
+        `<button type="button" class="task-up" title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>` +
+        `<button type="button" class="task-down" title="下移" ${i === tasks.length - 1 ? 'disabled' : ''}>↓</button>` +
+        `<button type="button" class="task-del danger" title="删掉这个任务">删掉</button></div>` +
+        `<textarea class="task-prompt" rows="3" placeholder="点这个按钮时，对 AI 说的话">${esc(t.prompt)}</textarea>`;
+      row.querySelector('.task-name').oninput = (e) => { tasks[i].name = e.target.value; dirty.tasks = true; };
+      row.querySelector('.task-prompt').oninput = (e) => { tasks[i].prompt = e.target.value; dirty.tasks = true; };
+      row.querySelector('.task-del').onclick = () => { tasks.splice(i, 1); dirty.tasks = true; renderTasks(); paintOverview(); };
+      row.querySelector('.task-up').onclick = () => { [tasks[i - 1], tasks[i]] = [tasks[i], tasks[i - 1]]; dirty.tasks = true; renderTasks(); };
+      row.querySelector('.task-down').onclick = () => { [tasks[i + 1], tasks[i]] = [tasks[i], tasks[i + 1]]; dirty.tasks = true; renderTasks(); };
+      return row;
+    }));
+    if (!tasks.length) $('task-list').innerHTML = '<p class="muted">一个任务都没有，右侧栏那排按钮会是空的。</p>';
+  }
+  $('task-add').onclick = () => { tasks.push({ id: 't' + Date.now().toString(36), name: '新任务', prompt: '' }); dirty.tasks = true; renderTasks(); paintOverview(); };
+  $('tasks-reset').onclick = () => { if (!confirm('把常用任务恢复成默认那三个？现在写的会丢掉。')) return; tasks = DEFAULT_TASKS.map((t) => ({ ...t })); dirty.tasks = true; renderTasks(); paintOverview(); };
+  $('tasks-save').onclick = async () => {
+    const clean = tasks.map((t) => ({ id: t.id, name: String(t.name || '').trim().slice(0, 12), prompt: String(t.prompt || '').trim() })).filter((t) => t.name && t.prompt);
+    if (clean.length !== tasks.length) say('名字或内容空着的没有保存');
+    try { await chrome.storage.local.set({ aiTasks: clean }); tasks = clean; dirty.tasks = false; renderTasks(); paintOverview(); say('常用任务已保存，侧栏里那排按钮跟着变'); } catch (e) { oops(e); }
+  };
+
+  // ── 整理标准 ──
+  $('standard').oninput = () => { dirty.standard = true; paintOverview(); };
+  $('standard-example').onclick = () => {
+    if ($('standard').value.trim() && !confirm('用示例覆盖现在写的内容？')) return;
+    $('standard').value = EXAMPLE; dirty.standard = true; paintOverview();
+  };
+  $('standard-save').onclick = async () => {
+    try { await chrome.storage.local.set({ aiStandard: $('standard').value.trim().slice(0, 4000) }); dirty.standard = false; say('整理标准已保存，下一次对话就照它办'); paintOverview(); } catch (e) { oops(e); }
+  };
+
+  // ── 接口 ──
+  function fillModels(provider, current) {
+    const p = PROVIDERS[provider] || PROVIDERS.moonshot;
+    $('ai-model').innerHTML = p.models.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    $('ai-model').value = p.models.some(([v]) => v === current) ? current : p.models[0][0];
+    $('ai-model-note').textContent = p.note;
+    const r = /(^|-)k3\b|kimi-k3/.test($('ai-model').value);
+    $('ai-temp').disabled = r; $('ai-temp').title = r ? 'k3 系列不让调温度，固定为 1' : '0 最稳、1 最放飞；整理书签用 0.2～0.4';
+  }
+  $('ai-provider').onchange = () => fillModels($('ai-provider').value, '');
+  $('ai-model').onchange = () => fillModels($('ai-provider').value, $('ai-model').value);
+  const readForm = (temp) => { const provider = $('ai-provider').value; return { key: $('ai-key').value.trim(), provider, base: PROVIDERS[provider].base, model: $('ai-model').value, temperature: temp ?? (Number($('ai-temp').value) || 0.3) }; };
+  $('ai-save').onclick = async () => { try { ai = readForm(); await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
+  $('ai-test').onclick = async () => {
+    const out = $('ai-test-out'); out.textContent = '测试中…';
+    const c = readForm(0);
+    try {
+      const r = await fetch(`${c.base.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.key}` },
+        body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: '回复两个字：可以' }], max_tokens: 256, ...(/(^|-)k3\b|kimi-k3/.test(c.model) ? {} : { temperature: 0 }) }) });
+      const j = await r.json();
+      out.textContent = r.ok ? `✅ 通了（${j.model || c.model}）` : `❌ ${r.status} ${j.error?.message || ''}`;
+    } catch (e) { out.textContent = '❌ ' + (e.message || e); }
+  };
+
+  window.addEventListener('beforeunload', (e) => { if (dirty.standard || dirty.tasks) { e.preventDefault(); e.returnValue = ''; } });
+  try { $('app-version').textContent = 'v' + chrome.runtime.getManifest().version; } catch {}
+  await load().catch(oops);
+})();

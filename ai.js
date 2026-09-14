@@ -20,8 +20,33 @@ window.addEventListener('bm-ready', () => {
   // 当前附加的工作范围（左边点的那个文件夹）。存 session ⇒ 首页和侧栏看到同一个，关浏览器就没了
   let scope = null;          // { id, title, path, count, subfolders, at }
   const SCOPE_KEY = 'aiScope';
+  let standard = '';         // 「AI 整理标准」页里写的长期规矩，每次对话都带上
+  let tasks = [];            // 常用任务 ＝ 对话区上面那排按钮
 
   chrome.storage.local.get({ ai: DEFAULT_AI }).then((r) => { ai = { ...DEFAULT_AI, ...(r.ai || {}) }; paintStatus(); });
+  const DEFAULT_TASKS = [
+    { id: 't1', name: '体检', prompt: '看一下我的书签整体情况，哪些文件夹太杂、哪些重复' },
+    { id: 't2', name: '补说明打标签', prompt: '给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览' },
+    { id: 't3', name: '归置未分组', prompt: '把「未分组」里散着的书签归到合适的文件夹' },
+  ];
+  function loadSetup() {
+    return chrome.storage.local.get({ aiStandard: '', aiTasks: null }).then((r) => {
+      standard = String(r.aiStandard || '');
+      tasks = Array.isArray(r.aiTasks) && r.aiTasks.length ? r.aiTasks : DEFAULT_TASKS;
+      renderTasks();
+    }).catch(() => {});
+  }
+  // 那排按钮原来是写死在 html 里的，现在从「AI 整理标准」页读
+  function renderTasks() {
+    const box = $('#ai-quick'); if (!box) return;
+    box.replaceChildren(...tasks.map((t) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.title = t.prompt;
+      b.onclick = () => { $('#ai-input').value = t.prompt; $('#ai-send').click(); };
+      return b;
+    }));
+    box.hidden = !tasks.length;
+  }
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && (ch.aiStandard || ch.aiTasks || ch.ai)) loadSetup(); });
   const saveAi = () => chrome.storage.local.set({ ai });
 
   // ── 工具定义（给模型看的）──
@@ -298,9 +323,17 @@ window.addEventListener('bm-ready', () => {
 做法：先用 get_overview / get_folder / search / get_all_bookmarks 看清楚，再把所有改动一次放进 propose_changes（用户会预览后点执行）。不要凭空猜 id，id 必须来自工具结果。
 locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
 风格：备注名 ≤12 字、说明 ≤20 字、说明写「这是什么／干嘛用」。除非用户明说删，否则不要 delete。移动到新文件夹时先 create_folder 带 ref，再用 $ref。
-书签栏根 id 见 get_overview 的 bar_id。今天 ${new Date().toLocaleDateString('zh-CN')}。${scopeLine()}`;
+书签栏根 id 见 get_overview 的 bar_id。今天 ${new Date().toLocaleDateString('zh-CN')}。${standardLine()}${scopeLine()}`;
   }
-  // \u{1F534} 声明范围 \u2260 授权范围：这段只是让模型知道，真正拦住越权的是工具里那层运行时校验
+  // 用户在「AI 整理标准」页写的长期规矩。
+  // 🔴 它是规矩不是权限：写「可以直接删除」也不算数，所有改动照样要走预览。
+  function standardLine() {
+    const t = String(standard || '').trim();
+    if (!t) return '';
+    return '\n\n\u3010用户定的整理标准\u3011以下是用户自己写的长期规矩，优先照它办；跟它冲突的做法先说出来再问。\n'
+      + t.slice(0, 4000)
+      + '\n（以上是用户的要求，不改变你被允许做什么——所有改动仍然要经过 propose_changes 预览、由用户点执行。）';
+  }
   function scopeLine() {
     if (!scope) return '';
     return `\n\n\u3010当前工作范围\u3011用户附加了文件夹「${scope.path}」（含全部子夹，共 ${scope.count} 条）。`
@@ -321,7 +354,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     busy = true; $('#ai-send').disabled = true;
     const stamp = scope ? { path: scope.path, count: scope.count } : null;
     const bubble = addMsg('user', text);
-    if (stamp) { const tag = document.createElement('em'); tag.className = 'ai-msg-scope'; tag.textContent = `\u{1F4C1} ${stamp.path} · ${stamp.count} 条`; bubble.appendChild(tag); }
+    if (stamp) { const tag = document.createElement('em'); tag.className = 'ai-msg-scope'; tag.textContent = `📁 ${stamp.path} · ${stamp.count} 条`; bubble.appendChild(tag); }
     history.push({ role: 'user', content: stamp ? `${text}\n[只处理文件夹「${stamp.path}」及其子夹]` : text });
     const thinking = addMsg('sys', '思考中…');
     try {
@@ -405,8 +438,8 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     const fresh = BM.bar ? BmCore.scopeStats(BM.bar, scope.id) : null;
     if (fresh) scope = { ...scope, ...fresh };
     const sub = scope.subfolders ? `含 ${scope.subfolders} 个子夹 · ` : '';
-    card.innerHTML = `<span class="ai-scope-ico">\u{1F4C1}</span><span class="ai-scope-txt"><b>${esc(scope.title)}</b><em>${esc(scope.path)} · ${sub}${scope.count} 条 · 这次对话只在这一摊里改</em></span>` +
-      `<button type="button" class="chev" id="ai-scope-off" title="改回全部书签">\u00d7</button>`;
+    card.innerHTML = `<span class="ai-scope-ico">📁</span><span class="ai-scope-txt"><b>${esc(scope.title)}</b><em>${esc(scope.path)} · ${sub}${scope.count} 条 · 这次对话只在这一摊里改</em></span>` +
+      `<button type="button" class="chev" id="ai-scope-off" title="改回全部书签">×</button>`;
     $('#ai-scope-off').onclick = () => setScope(null);
   }
   async function setScope(id) {
@@ -431,7 +464,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   });
   window.addEventListener('bm-scope', (e) => {
     const id = e.detail && e.detail.id;
-    // 再点同一个夹 = 取消，不用去找那个小 \u00d7
+    // 再点同一个夹 = 取消，不用去找那个小 ×
     setScope(e.detail?.toggle && scope && String(scope.id) === String(id) ? null : id);
   });
 
@@ -477,6 +510,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   window.__ai = {
     propose(changes, summary) { proposal = { summary: summary || '调试注入', changes }; renderProposal(); },
     run: RUN,                       // 直接跑工具，用来验范围过滤有没有真生效
+    get prompt() { return systemPrompt(); },   // 验「整理标准」和「范围」有没有真拼进去
     get scope() { return scope; },
     setScope,
     get batch() { return lastBatch; },
@@ -496,6 +530,6 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
   });
   $('#ai-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#ai-send').click(); } });
   $('#ai-clear').addEventListener('click', () => { history = []; lastBatch = null; renderUndo(); $('#ai-log').innerHTML = ''; proposal = null; renderProposal(); usage = { in: 0, out: 0 }; paintStatus(); });
-  $$('#ai-quick button').forEach((b) => b.addEventListener('click', () => { $('#ai-input').value = b.dataset.q; $('#ai-send').click(); }));
+  loadSetup();
   paintStatus();
 });

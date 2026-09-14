@@ -892,6 +892,7 @@ chrome:// ⚙️`;
       await chrome.sidePanel.open({ windowId: currentWindowId });
     } catch (e) { toast('打不开侧栏：' + (e.message || e)); }
   });
+  $('#ai-setup-btn')?.addEventListener('click', () => window.open('ai-setup.html', '_blank'));
   $('#backup-btn').addEventListener('click', () => window.open('backup.html', '_blank'));
   $('#sync-pill').addEventListener('click', () => runSyncPill());
   $('#more-btn').addEventListener('click', (e) => {

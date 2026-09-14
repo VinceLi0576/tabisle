@@ -472,3 +472,27 @@ test('「这台只接收不上传」：本机改动不会传上去，反而被�
  await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
  assert.equal(puts(),before+1,'关掉之后又能正常上传');
 });
+
+test('整理标准进完整备份、但不进同步内容（钥匙两样都不进）',async()=>{
+ const server=davServer(),a=await syncedWorker(server),b=await syncedWorker(server);
+ await a.api.seed([link('x','X','https://x.test')]);await b.api.seed([link('x','X','https://x.test')]);
+ a.local.data.aiStandard='标签只用已经定义好的那几个';
+ a.local.data.aiTasks=[{id:'t9',name:'查重复',prompt:'找出收了多份的'}];
+ a.local.data.ai={key:'sk-绝不能外泄',provider:'kimicode',model:'k3'};
+ // ① 完整备份带上标准和任务，🔴 但一个字的钥匙都不许有
+ const snap=await a.call('backupAction',{type:'BACKUP_CREATE',reason:'测试'});
+ const got=await a.call('backupAction',{type:'BACKUP_GET',id:snap.id||(await a.call('backupAction',{type:'BACKUP_STATUS'})).backups[0].id});
+ assert.equal(got.prefs.aiStandard,'标签只用已经定义好的那几个','整理标准要跟着备份走，否则换台机器就没了');
+ assert.equal(got.prefs.aiTasks[0].name,'查重复');
+ assert.ok(!JSON.stringify(got).includes('sk-绝不能外泄'),'🔴 钥匙绝不能进备份文件');
+ // ② 同步内容里两样都没有 —— 标准是本机的事，不该传给别的设备，也不该跟别人的打架
+ let p=await a.call('syncAction',{type:'SYNC_PREVIEW'});await a.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ const cloud=JSON.parse([...server.files.entries()].find(([k])=>k.endsWith('/sync/state.json'))[1].body);
+ assert.deepEqual(cloud.snapshot.prefs,{},'同步内容里的 prefs 必须是空的');
+ assert.ok(!JSON.stringify(cloud).includes('标签只用已经定义好的'),'整理标准不该上云端');
+ assert.ok(!JSON.stringify(cloud).includes('sk-绝不能外泄'),'🔴 钥匙绝不能上云端');
+ // ③ 另一台同步下来，它自己的标准不受影响
+ b.local.data.aiStandard='我这台的标准';
+ p=await b.call('syncAction',{type:'SYNC_PREVIEW'});await b.call('syncAction',{type:'SYNC_APPLY',token:p.token});
+ assert.equal(b.local.data.aiStandard,'我这台的标准','同步不该动别人的整理标准');
+});

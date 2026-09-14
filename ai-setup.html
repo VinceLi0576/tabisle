@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 整理标准 · 书签首页</title><link rel="stylesheet" href="panel.css"><link rel="stylesheet" href="backup.css"><link rel="stylesheet" href="ai-setup.css"></head>
+<body class="backup-page">
+<div class="backup-layout">
+<aside class="page-toc" aria-label="本页目录">
+<a class="toc-home" href="#page-top"><span>AI 整理</span><small>页内目录</small></a>
+<nav><a href="#page-top">概览</a><a href="#sec-standard"><span>1</span>整理标准</a><a href="#sec-tasks"><span>2</span>常用任务</a><a href="#sec-scope"><span>3</span>范围与安全</a><a href="#sec-kimi"><span>4</span>接口与钥匙</a></nav>
+<a class="toc-back" href="newtab.html">← 返回书签首页</a>
+</aside>
+<main class="backup-main">
+<header id="page-top" class="page-head"><div><small>书签首页 · TABISLE <span id="app-version"></span></small><h1>AI 整理标准</h1><p class="muted">在这儿把「我的书签该怎么整理」写清楚。写完之后，右侧栏里的 AI 每次都照着办——不用每次重新交代一遍。</p></div><a href="newtab.html">返回书签首页 ↗</a></header>
+
+<div class="overview"><div><small>整理标准</small><strong id="ov-standard">—</strong></div><div><small>常用任务</small><strong id="ov-tasks">—</strong></div><div><small>接口</small><strong id="ov-kimi">—</strong></div></div>
+
+<p id="status" class="status" role="status" aria-live="polite"></p><p id="error" class="error" role="alert"></p>
+
+<section id="sec-standard" class="card">
+  <div class="section-title"><span class="step">1</span><h2>整理标准</h2></div>
+  <p class="muted">写给 AI 的长期规矩：标签怎么打、备注写多长、什么算废弃、遇到拿不准的怎么办。<strong>每次对话都会带上它</strong>，所以写你希望它永远遵守的事，不要写一次性的活（那是下面「常用任务」）。</p>
+  <label for="standard">我的整理标准</label>
+  <textarea id="standard" rows="14" spellcheck="false" placeholder="例：&#10;· 标签只用已定义的那几个，拿不准就不打，不要自己造新标签&#10;· 备注名 ≤ 6 个字，说明一句话写清「这是什么、什么时候会用」&#10;· 域名带 test / localhost / 内网 IP 的，一律打「工具」标签&#10;· 一年没打开过又没有说明的，提出来问我要不要标废弃，不要直接删&#10;· 同一个网站的多个页面，优先并到同一个文件夹，别散着"></textarea>
+  <p class="muted footnote">这段会原样拼进给模型的系统提示。<strong>它只是规矩，不是权限</strong>——写「可以直接删除」也没用，所有改动照样要你在预览里点执行。</p>
+  <div class="action-row"><button id="standard-save" class="primary" type="button">保存标准</button><button id="standard-example" type="button">填一份示例</button><span id="standard-count" class="muted"></span></div>
+</section>
+
+<section id="sec-tasks" class="card">
+  <div class="section-title"><span class="step">2</span><h2>常用任务</h2></div>
+  <p class="muted">一次性的活，写好之后变成右侧栏 AI 上面那排按钮，点一下就发起。执行时会自动带上上面的整理标准和当前选中的文件夹。</p>
+  <div id="task-list"></div>
+  <div class="action-row"><button id="task-add" type="button">＋ 加一个任务</button><button id="tasks-save" class="primary" type="button">保存任务</button><button id="tasks-reset" type="button">恢复成默认那三个</button></div>
+</section>
+
+<section id="sec-scope" class="card">
+  <div class="section-title"><span class="step">3</span><h2>范围与安全</h2></div>
+  <div class="notice">
+    <h3>AI 能动什么、动不了什么</h3>
+    <ul>
+      <li><strong>在首页左边点一个文件夹</strong>，这次对话就只在那一摊里看和改（含它的子夹）。没选就是全部书签。</li>
+      <li><strong>所有改动都要你点「执行」</strong>。AI 提交的是一份预览清单，逐条可以取消勾选；删除那类默认不勾。</li>
+      <li><strong>整批可以撤销</strong>。执行完那一批留着逆操作，点「撤销这批」按原样退回去，期间被你自己改过的会跳过并说明。</li>
+      <li><strong>锁定的文件夹只读</strong>。首页右键文件夹可以锁上，AI 连提改动都不会提。</li>
+      <li><strong>文件夹说明</strong>（首页每个一级夹标题栏上那个「说明」）是局部规矩，AI 归类时会照它办。这里写的是全局规矩，两者叠加。</li>
+    </ul>
+  </div>
+  <p class="muted footnote">🔴 上面「整理标准」里的内容属于你写给 AI 的话，不改变它实际被允许做什么。真正拦住它的是预览确认、范围过滤和文件夹锁定这三层。</p>
+</section>
+
+<section id="sec-kimi" class="card">
+  <div class="section-title"><span class="step">4</span><h2>接口与钥匙</h2></div>
+  <p class="muted">钥匙只存在这台浏览器的插件本机存储里，不进备份文件、不进同步内容。到 platform.moonshot.cn 的「API Key 管理」生成一把贴进来。</p>
+  <label for="ai-provider">接口</label>
+  <select id="ai-provider">
+    <option value="moonshot">Moonshot 开放平台（platform.moonshot.cn 的 Key，按量付费）</option>
+    <option value="kimicode">Kimi Code 会员（kimi.com/code 控制台的 Key，走会员额度）</option>
+  </select>
+  <label for="ai-key">API Key</label>
+  <input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
+  <div class="split">
+    <div><label for="ai-model">模型</label><select id="ai-model"></select></div>
+    <div><label for="ai-temp">温度</label><input id="ai-temp" type="number" step="0.1" min="0" max="1"></div>
+  </div>
+  <p class="muted" id="ai-model-note"></p>
+  <div class="action-row"><button id="ai-save" class="primary" type="button">保存</button><button id="ai-test" type="button">测试连接</button><span id="ai-test-out" class="muted"></span></div>
+</section>
+
+</main></div>
+<script src="bg.js"></script>
+<script src="ai-setup.js"></script>
+</body></html>
