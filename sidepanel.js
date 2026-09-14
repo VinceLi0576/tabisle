@@ -23,7 +23,7 @@
         name.textContent=tag.name;label.append(input,glyph,name);return label;
       }));
       $('tags').closest('fieldset').hidden=!data.tags.length;
-      $('name-help').textContent=draft.id?'收藏网页时带入的标题，可修改。':'通常使用网页标题，也可以自己填写。';
+      $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
       renderDuplicates(data);
       updateStatus();

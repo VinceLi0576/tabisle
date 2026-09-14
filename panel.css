@@ -77,3 +77,9 @@
 #pane-ai .ai-log:empty{display:flex}
 #pane-ai .ai-proposal{margin:0;border-radius:0;border:0;border-top:1px solid var(--accent);max-height:46%;overflow-y:auto}
 #pane-ai .ai-msg{max-width:100%}
+
+/* 🔴 v0.10.6 引进的回归：#pane-detail 夹在 body（flex 纵向）和 #editor（flex:1）中间，
+   而它自己不是 flex 容器 ⇒ #editor 的 flex:1 落空、.editor-scroll 一路被内容撑高，
+   body 又是 height:100vh + overflow:hidden ⇒ 内容比侧栏高时下半截直接被裁掉，
+   「保存修改」看不见，而且整页没有任何地方能滚。 */
+#pane-detail{display:flex;flex-direction:column;flex:1;min-height:0}

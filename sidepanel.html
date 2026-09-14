@@ -32,7 +32,7 @@
         <textarea id="url" rows="2" spellcheck="false" placeholder="https://"></textarea>
         <label for="name">书签名</label>
         <input id="name" autocomplete="off" placeholder="书签的完整名称" aria-describedby="name-help">
-        <p id="name-help" class="field-help">收藏网页时带入的标题，可修改。</p>
+        <p id="name-help" class="field-help">收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。</p>
       </section>
       <section class="edit-section" aria-labelledby="display-heading">
         <div class="section-heading"><h2 id="display-heading">显示与备注</h2><span class="auto-badge">自动保存</span></div>
@@ -57,10 +57,10 @@
         <button type="button" id="duplicate-undo" hidden>撤销上次删除的重复收藏</button>
       </section>
       <details class="editor-more">
-        <summary>图标与更多操作</summary>
-        <label for="icon">自定义图标</label>
+        <summary>更多操作：换个图标 · 删掉这条书签</summary>
+        <label for="icon">换个图标</label>
         <input id="icon" placeholder="🐙 或图片网址" spellcheck="false">
-        <p class="field-help">支持 emoji 或图片链接，留空使用网站图标。</p>
+        <p class="field-help">首页那个小方块默认用网站自己的图标；填一个 emoji（例 🐙）或一张图片的网址就能换掉它，留空恢复默认。</p>
         <div class="more-actions"><button type="button" id="promote">用备注名作为书签名</button><button type="button" id="delete" class="danger">删除书签</button></div>
       </details>
     </div>

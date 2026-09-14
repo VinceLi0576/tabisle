@@ -11,6 +11,8 @@
       $(paneId).hidden = !on;
     }
     if (remember) chrome.storage.session?.set({ [KEY]: which }).catch(() => {});
+    // showModal() 打开的弹窗会让整页 inert：留着它切到详情，下面什么都点不动、也滚不了
+    if (which !== 'ai') $('dlg-ai')?.close();
     if (which === 'ai') $('ai-input')?.focus();
   }
   $('tab-detail').onclick = () => show('detail');
