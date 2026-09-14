@@ -30,7 +30,7 @@
     renderTasks(); fillModels(ai.provider, ai.model);
     $('ai-provider').innerHTML = Object.entries(PROVIDERS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join('');
     $('ai-provider').value = PROVIDERS[ai.provider] ? ai.provider : AiProviders.DEFAULT_ID;
-    $('ai-key').value = ai.key; $('ai-temp').value = ai.temperature;
+    $('ai-key').value = ai.key;
     $('ai-base').value = ai.base || ''; $('ai-model-custom').value = ai.model || '';
     fillModels($('ai-provider').value, ai.model);
     paintOverview();
@@ -91,16 +91,16 @@
       $('ai-model').innerHTML = p.models.map(([v, l, free]) => `<option value="${esc(v)}">${esc(l)}${free ? '  ★免费档' : ''}</option>`).join('');
       $('ai-model').value = p.models.some(([v]) => v === current) ? current : p.models[0][0];
     }
-    // 说明 ＋ 两个真链接：去哪拿钥匙、去哪查价。🔴 价格数字不写在这儿，写下来就会过期
-    const links = [p.apply && `<a href="${p.apply}" target="_blank" rel="noopener">去拿钥匙 ↗</a>`,
-                   p.pricing && `<a href="${p.pricing}" target="_blank" rel="noopener">查价格和额度 ↗</a>`].filter(Boolean).join(' · ');
+    // 🔴 价格数字不写在这儿，只给链接 —— 写下来第二天就在骗人，而且不报错
     const free = AiProviders.freeModels(provider);
     $('ai-model-note').innerHTML = esc(p.note || '') + (p.freeHint ? '<br>' + esc(p.freeHint) : '')
-      + (free.length ? `<br><b>官方标长期免费的：</b>${esc(free.join('、'))}（额度和限速以官网为准）` : '')
-      + (links ? '<br>' + links : '');
-    const m = isCustom ? $('ai-model-custom').value : $('ai-model').value;
-    const r = AiProviders.noTemperature(m);
-    $('ai-temp').disabled = r; $('ai-temp').title = r ? '这个模型会思考，不吃温度设置' : '0 最稳、1 最放飞；整理书签用 0.2～0.4';
+      + (free.length ? `<br><b>官方标长期免费的：</b>${esc(free.join('、'))}（额度和限速以官网为准）` : '');
+    // 注册入口做成两个明显的按钮摆在模型下面，🚫 别混在小字说明里
+    $('go-links').innerHTML = [
+      p.apply && `<a class="go-link primary-link" href="${p.apply}" target="_blank" rel="noopener">去 ${esc(p.name.replace(/（.*/, ''))} 注册 / 拿钥匙 ↗</a>`,
+      p.pricing && `<a class="go-link" href="${p.pricing}" target="_blank" rel="noopener">查价格和免费额度 ↗</a>`,
+    ].filter(Boolean).join('');
+    $('go-links').hidden = !p.apply;
   }
   $('ai-provider').onchange = () => fillModels($('ai-provider').value, '');
   $('ai-model').onchange = () => fillModels($('ai-provider').value, $('ai-model').value);
@@ -111,7 +111,9 @@
     return { key: $('ai-key').value.trim(), provider,
       base: (custom ? $('ai-base').value.trim() : p.base).replace(/\/$/, ''),
       model: (custom ? $('ai-model-custom').value : $('ai-model').value).trim(),
-      temperature: temp ?? (Number($('ai-temp').value) || 0.3) };
+      // 温度不再摆在界面上 —— 整理书签只需要稳，0.3 就是稳的那一档。
+      // 会思考的模型本来就不吃这个参数，摆出来只会让人以为它有用。
+      temperature: temp ?? 0.3 };
   };
   $('ai-save').onclick = async () => { try { ai = readForm();
     if (!ai.base) { oops(Error('接口地址不能为空')); return; }

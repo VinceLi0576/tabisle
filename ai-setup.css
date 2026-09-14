@@ -7,3 +7,18 @@
 #standard{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:1.8}
 .notice ul{margin:8px 0 0;padding-left:20px}
 .notice li{margin:6px 0;font-size:13px;line-height:1.7}
+
+/* 老徐 260914：接口这段字太小，看不清 —— 整段放大一号 */
+#sec-kimi label{font-size:15px;font-weight:600;margin-bottom:8px}
+#sec-kimi select,#sec-kimi input{height:46px;padding:0 14px;font-size:15px;border-radius:10px}
+#sec-kimi select{cursor:pointer}
+#sec-kimi .footnote{font-size:12.5px}
+.note-box{margin:14px 0 0;padding:14px 16px;border-radius:10px;background:var(--bg);font-size:13.5px;line-height:1.75;color:var(--muted)}
+.note-box b{color:var(--text)}
+/* 注册入口做成两个真按钮摆在模型下面，🚫 别混在小字说明里 */
+.go-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.go-link{display:inline-flex;align-items:center;height:40px;padding:0 16px;border:1px solid var(--border);border-radius:999px;font-size:14px;white-space:nowrap;background:var(--card)}
+.go-link:hover{border-color:var(--accent);color:var(--accent)}
+.go-link.primary-link{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card));font-weight:600}
+.go-link.primary-link:hover{background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+#sec-kimi .notice li code{font-size:13px;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card));color:var(--accent)}

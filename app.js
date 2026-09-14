@@ -896,8 +896,12 @@ chrome:// ⚙️`;
     } catch (e) { toast('打不开侧栏：' + (e.message || e)); }
   });
   $('#ai-setup-btn')?.addEventListener('click', () => window.open('ai-setup.html', '_blank'));
-  $('#backup-btn').addEventListener('click', () => window.open('backup.html', '_blank'));
-  $('#sync-pill').addEventListener('click', () => runSyncPill());
+  // 「备份与恢复」并进了同步药丸，🚫 顶栏不再单独摆一个按钮
+  $('#sync-pill').addEventListener('click', () => {
+    // 没连同步时，这个药丸就是「备份与恢复」那一页的入口
+    if ($('#sync-pill').dataset.state === 'idle') { window.open('backup.html', '_blank'); return; }
+    runSyncPill();
+  });
   $('#more-btn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu([
@@ -1390,7 +1394,9 @@ chrome:// ⚙️`;
         if(retry){setPill('busy','同步状态读取中…','后台正在启动，稍后自动重试');setTimeout(()=>updateSyncPill(false),1500);return;}
         setPill('attention','同步状态读不到','点一下打开「备份与恢复」查看详情');pillFailed=true;return;
       }
-      if(!status.data.initialized||status.data.verified===false){pill.hidden=true;return;}
+      // 🔴 以前这里把药丸藏掉，于是没配同步的浏览器顶栏就少一块、位置还会跳。
+      // 现在它同时是「备份与恢复」的入口，永远在，只是文案不同。
+      if(!status.data.initialized||status.data.verified===false){setPill('idle','☁ 备份与恢复','还没设置多设备同步，点开可以备份、恢复，或连上坚果云');return;}
       const d=status.data;
       if(d.inProgress){setPill('attention','上次同步未完成','点一下按云端共同版本恢复；写入前会先留本机保护副本');return;}
       if(d.error){pillFailed=true;setPill('attention','同步失败 · 点开查看','最近一次同步没有成功：'+d.error);return;}

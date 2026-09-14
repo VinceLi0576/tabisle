@@ -17,12 +17,12 @@
     <input id="search" type="search" placeholder="搜书签" title="按 / 直接跳到这里" autocomplete="off" spellcheck="false">
   </div>
   <div class="bar-actions">
-    <span class="ai-duo">
-      <button type="button" class="btn ai-duo-set" id="ai-setup-btn" title="AI 整理标准：写规矩、编常用任务、填钥匙">⚙</button>
-      <button type="button" class="btn ai-duo-go" id="ai-side" title="在右侧栏打开 AI 对话">✦ AI</button>
+    <span class="pill-duo">
+      <button type="button" class="pill pill-l" id="ai-setup-btn" title="AI 整理标准：写规矩、编常用任务、填钥匙">⚙</button>
+      <button type="button" class="pill pill-r pill-on" id="ai-side" title="在右侧栏打开 AI 对话">✦ AI</button>
     </span>
-    <button class="btn ghost" id="backup-btn">备份与恢复</button>
-    <button class="sync-pill" id="sync-pill" type="button" hidden>检查云端</button>
+    <!-- 备份和同步本来就是同一页，合成一个药丸：没配同步时显示「备份与恢复」，配了就显示云端状态 -->
+    <button class="pill" id="sync-pill" type="button" title="备份、恢复与多设备同步">☁ 备份与恢复</button>
   </div>
   <!-- 🔴 顶栏不再摆输入框（AI 全部走右侧栏），但这一块不能删：ai.js 按 id 直接抓这些元素 -->
   <div class="ai-bar" id="ai-bar" hidden>

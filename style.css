@@ -465,16 +465,30 @@ html[data-view="list"] .body .tile .strip { width: 26px; }
 /* ── 顶栏改版：第一行只放主要功能（搜索 · AI · 备份恢复 · 同步），第二行放怎么看和标签组 ── */
 .bar-actions{display:flex;align-items:center;gap:8px;flex:none}
 .bar-actions .btn{height:34px}
-.bar-ai{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:var(--accent-bg);font-weight:600;letter-spacing:.02em}
-.bar-ai:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card))}
-.bar .sync-pill{height:30px}
+
 .search-wrap{flex:0 1 320px}
 @media (max-width:1100px){.bar-actions .btn{padding:0 10px}.search-wrap{flex:0 1 200px}}
 
 /* AI 那一格是两个按钮：左边⚙进设置页，右边进侧栏对话 */
-.ai-duo{display:inline-flex;align-items:stretch;flex:none}
-.ai-duo .btn{height:34px;border-radius:0}
-.ai-duo-set{border-top-left-radius:8px;border-bottom-left-radius:8px;padding:0 10px;font-size:14px;color:var(--muted);border-right-width:0}
-.ai-duo-set:hover{color:var(--accent);border-color:var(--accent);position:relative;z-index:1}
-.ai-duo-go{border-top-right-radius:8px;border-bottom-right-radius:8px;border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:var(--accent-bg);font-weight:600}
-.ai-duo-go:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+
+/* ── 顶栏一种样式：全是椭圆药丸（老徐 260914：三个按钮三种长相，乱） ── */
+.pill{height:32px;padding:0 15px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--muted);font-size:12.5px;white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:border-color .12s,color .12s,background .12s}
+.pill:hover{border-color:var(--accent);color:var(--accent)}
+.pill-on{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:var(--accent-bg);font-weight:600}
+.pill-on:hover{background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+/* 两半拼成一颗药丸：左边进设置，右边进侧栏 */
+.pill-duo{display:inline-flex;align-items:stretch}
+.pill-duo .pill-l{border-radius:999px 0 0 999px;padding:0 11px;font-size:14px;border-right-width:0}
+.pill-duo .pill-l:hover{position:relative;z-index:1}
+.pill-duo .pill-r{border-radius:0 999px 999px 0;padding:0 14px}
+/* 同步状态用同一颗药丸，只换颜色 —— 🚫 别再另起一套样式 */
+#sync-pill[data-state="idle"]{color:var(--muted)}
+
+/* 🔴 状态配色原来挂在 .sync-pill 上，改成统一药丸后 class 变了、颜色全丢。
+   改按 id 写，跟长相（.pill）解耦，以后再换 class 也不会再掉一次。 */
+#sync-pill[data-state="ok"],#sync-pill[data-state="latest"]{color:#168652;border-color:color-mix(in srgb,#20a464 38%,var(--border));background:color-mix(in srgb,#20a464 8%,var(--card))}
+#sync-pill[data-state="warn"],#sync-pill[data-state="cloud-new"],#sync-pill[data-state="local-new"]{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 38%,var(--border));background:var(--accent-bg)}
+#sync-pill[data-state="attention"],#sync-pill[data-state="diverged"]{color:#a96800;border-color:color-mix(in srgb,#d08700 42%,var(--border));background:color-mix(in srgb,#d08700 9%,var(--card))}
+#sync-pill[data-state="busy"]{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
+#sync-pill[data-state="busy"]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;animation:pill-pulse 1s ease-in-out infinite}
+@keyframes pill-pulse{0%,100%{opacity:.25}50%{opacity:1}}
