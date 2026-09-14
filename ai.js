@@ -273,6 +273,8 @@ window.addEventListener('bm-ready', () => {
     if (!proposal) return;
     const picked = $$('#ai-proposal input[type=checkbox]').filter((c) => c.checked).map((c) => proposal.changes[Number(c.dataset.i)]);
     if (!picked.length) return;
+    // 逆操作日志只在内存里、刷新即失；这份快照是它之外的第二道保险
+    try { await BG.askBg({ type: 'BACKUP_CREATE', reason: 'AI 执行前' }, { ms: 20000, retry: false }); } catch {}
     try { await withWriteLease('执行', () => runPicked(picked)); }
     catch (e) { addMsg('sys', '没能执行：' + (e.message || e)); BM.toast(e.message || String(e)); }
   }

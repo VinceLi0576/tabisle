@@ -67,9 +67,30 @@ async function fingerprint(snapshot) {
 // 改成按真实字节算，并且给别的键留出余量。
 const BYTES=(v)=>new TextEncoder().encode(typeof v==='string'?v:JSON.stringify(v)).length;
 const BACKUP_BYTES_MAX=5.5*1024*1024;      // 10 MB 的区，备份最多占这么多，其余留给 meta 等
+// 本机备份按用途分档，各留各的 —— 🚫 别按总份数一刀切。
+// 260914 实测：20 个坑位里 16 份是「同步前」的（每分钟同步一次、每次拍一份），
+// 跨度只有 1.8 小时，4 份真正救命的「删除前」正被它们往外挤；而且连「回到昨天」都做不到。
+// 老徐拍：本地备份是操作保险丝，不是版本库，历史那一层云端在管（每小时归档、坚果云留一个月）。
+const KEEP={
+  '同步前自动保护':1,   // 只对「这一次同步出问题」有用，上一次的就没意义了 ⇒ 覆盖式
+  '同步前云端保护':1,   // 同上，是云端那份的副本
+  '定时自动备份':1,     // 它的正事是上云，本机这份顺带，留一份就够
+  '每日留底':3,         // 补上「回到昨天」，每天第一次同步时从同步前那份复制出来
+};
+const FUSE_KEEP=5;      // 其余全是保险丝：删除前 · 恢复前 · 手动 · AI 执行前 —— 这些才是本地备份不可替代的价值
+const quota=(reason)=>KEEP[reason]??FUSE_KEEP;
 async function storeSnapshot(snapshot) {
   const {backups=[]}=await chrome.storage.local.get('backups');
-  let list=[portable(snapshot),...backups.filter(b=>b.id!==snapshot.id)].slice(0,20);
+  let list=[portable(snapshot),...backups.filter(b=>b.id!==snapshot.id)];
+  // 每天第一份「同步前」顺手复制成「每日留底」—— 🚫 别为它多拍一次快照，那要再花几秒
+  if(snapshot.reason==='同步前自动保护'){
+    const today=String(snapshot.createdAt||'').slice(0,10);
+    if(today&&!list.some(b=>b.reason==='每日留底'&&String(b.createdAt||'').slice(0,10)===today))
+      list.splice(1,0,{...portable(snapshot),id:crypto.randomUUID(),reason:'每日留底'});
+  }
+  // 按档裁：list 是新→旧，每档留最新的 N 份
+  const seen={};
+  list=list.filter(b=>{const r=b.reason||'';seen[r]=(seen[r]||0)+1;return seen[r]<=quota(r);});
   // Keep storage bounded. Do not silently discard the safety snapshot we just made.
   while(list.length>1 && BYTES(list)>BACKUP_BYTES_MAX)list.pop();
   // 🔴 原来这里是 `list.length>1`，意思是「只剩一份就不再裁」⇒ 单份本身超标时闸门完全失效，

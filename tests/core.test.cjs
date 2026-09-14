@@ -92,8 +92,8 @@ test('backup modes stop automatic local and cloud work without deleting bookmark
  await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_AUTO',enabled:true}),/纯本地/);
  await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_DAV_UPLOAD',id:w.local.data.backups[0].id}),/关闭云端/);
  const exported=await w.call('backupAction',{type:'BACKUP_EXPORT_CURRENT'});assert.equal(exported.device,'Test');assert.equal(w.local.data.backups.length,1);
- await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalDays:7,device:'Test'});await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,2);assert.equal(w.requests.length,0);
- await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,2);
+ await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',auto:true,intervalDays:7,device:'Test'});await w.call('maybeBackup',{});assert.equal(w.local.data.backups[0].reason,'定时自动备份');assert.equal(w.requests.length,0);
+ const before96=w.local.data.backups[0].id;await w.call('maybeBackup',{});assert.equal(w.local.data.backups[0].id,before96,'刚备过、还没到点，不该再出一版');
 });
 test('failed WebDAV verification preserves previous credentials and policy; successful connection creates nested directories',async()=>{
  const w=await worker();const old={enabled:false,url:'https://dav.jianguoyun.com/dav/old/',username:'old',password:'oldpass'};w.local.data.webdav=old;w.local.data.backupMode='local';
@@ -110,8 +110,8 @@ test('cloud retry is idempotent after a lost response, and cloud failures never 
  w.context.fetch=async(url,options)=>{w.requests.push({url,options});if(options.method==='PUT'){if(remote.has(url))return {ok:false,status:412};remote.set(url,options.body);if(fail)throw Error('lost response');}return {ok:options.method!=='GET'||remote.has(url),status:options.method==='GET'&&!remote.has(url)?404:201,text:async()=>remote.get(url)||''};};
  const first=await w.call('backupAction',{type:'BACKUP_CREATE'});assert(first.warning);assert(w.local.data.pendingCloudBackup);
  fail=false;w.local.data.lastCloudAttemptAt='2020-01-01';await w.call('maybeBackup',{});assert.equal(w.local.data.backups.length,1);assert.equal(remote.size,1);assert(!w.local.data.pendingCloudBackup);assert(w.requests.some(r=>r.options.method==='GET'));
- clock.now+=3600001;w.context.fetch=async()=>{throw Error('offline')};await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,2);
- clock.now+=3600001;await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.equal(w.local.data.backups.length,3);assert.equal(w.local.data.pendingCloudBackup,w.local.data.backups[0].id);
+ clock.now+=3600001;w.context.fetch=async()=>{throw Error('offline')};const b113=w.local.data.backups[0].id;await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.notEqual(w.local.data.backups[0].id,b113,'云端离线，本机版本照出');
+ clock.now+=3600001;const b114=w.local.data.backups[0].id;await assert.rejects(()=>w.call('maybeBackup',{}),/offline/);assert.notEqual(w.local.data.backups[0].id,b114);assert.equal(w.local.data.pendingCloudBackup,w.local.data.backups[0].id);assert.equal(w.local.data.backups.filter(b=>b.reason==='定时自动备份').length,1,'定时的只留最新 1 份');
 });
 test('monthly cloud listing is read-only and rejects path traversal; conflicting existing files are never overwritten',async()=>{
  const w=await worker();w.local.data.webdav={enabled:true,url:'https://dav.jianguoyun.com/dav/test/',username:'user',password:'pass'};
@@ -311,7 +311,7 @@ test('hourly backups wait until due, accept three hours, and retain legacy daily
  w.local.data.lastBackupAt=new Date(Date.now()-61*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,1);
  await w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',intervalHours:3,auto:true});
  w.local.data.lastBackupAt=new Date(Date.now()-121*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,1);
- w.local.data.lastBackupAt=new Date(Date.now()-181*60000).toISOString();await w.call('maybeBackup');assert.equal(w.local.data.backups.length,2);
+ const b314=w.local.data.backups[0].id;w.local.data.lastBackupAt=new Date(Date.now()-181*60000).toISOString();await w.call('maybeBackup');assert.notEqual(w.local.data.backups[0].id,b314,'满 3 小时要出新的一版');
  await assert.rejects(()=>w.call('backupAction',{type:'BACKUP_POLICY_SAVE',mode:'browser',intervalHours:0,auto:true}));
 });
 test('backup receipts require full readback; HTTP success with corrupted content stays pending',async()=>{
