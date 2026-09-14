@@ -4,11 +4,8 @@
 (async () => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const PROVIDERS = {
-    moonshot: { base: 'https://api.moonshot.cn/v1', models: [['kimi-k2.6', 'kimi-k2.6 · 便宜够用，整理几十条约几分钱'], ['kimi-k3', 'kimi-k3 · 最强，贵约 4 倍']], note: '按量付费；kimi-k2.6 日常整理够用，kimi-k3 给难活。' },
-    kimicode: { base: 'https://api.kimi.com/coding/v1', models: [['k3', 'k3 · 最强（Moderato 及以上会员）'], ['k3-256k', 'k3-256k · 同上，256K 上下文'], ['kimi-for-coding', 'kimi-for-coding · 所有会员可用']], note: '走 Kimi Code 会员额度，不另计费。⚠️ 官方文档写它是给编程工具用的，在这里用属于灰色地带，额度异常时优先换回开放平台。' },
-  };
-  const DEFAULT_AI = { key: '', provider: 'kimicode', base: PROVIDERS.kimicode.base, model: 'k3', temperature: 0.3 };
+  const PROVIDERS = AiProviders.P;
+  const DEFAULT_AI = { key: '', provider: AiProviders.DEFAULT_ID, base: PROVIDERS[AiProviders.DEFAULT_ID].base, model: 'k3', temperature: 0.3 };
   const DEFAULT_TASKS = [
     { id: 't1', name: '体检', prompt: '看一下我的书签整体情况，哪些文件夹太杂、哪些重复' },
     { id: 't2', name: '补说明打标签', prompt: '给没有说明的书签补一句话说明，给能判断的打上标签，一批提交预览' },
@@ -31,7 +28,11 @@
     $('standard').value = d.aiStandard || '';
     tasks = Array.isArray(d.aiTasks) && d.aiTasks.length ? d.aiTasks : DEFAULT_TASKS.map((t) => ({ ...t }));
     renderTasks(); fillModels(ai.provider, ai.model);
-    $('ai-provider').value = ai.provider; $('ai-key').value = ai.key; $('ai-temp').value = ai.temperature;
+    $('ai-provider').innerHTML = Object.entries(PROVIDERS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join('');
+    $('ai-provider').value = PROVIDERS[ai.provider] ? ai.provider : AiProviders.DEFAULT_ID;
+    $('ai-key').value = ai.key; $('ai-temp').value = ai.temperature;
+    $('ai-base').value = ai.base || ''; $('ai-model-custom').value = ai.model || '';
+    fillModels($('ai-provider').value, ai.model);
     paintOverview();
   }
   function paintOverview() {
@@ -80,23 +81,48 @@
 
   // ── 接口 ──
   function fillModels(provider, current) {
-    const p = PROVIDERS[provider] || PROVIDERS.moonshot;
-    $('ai-model').innerHTML = p.models.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-    $('ai-model').value = p.models.some(([v]) => v === current) ? current : p.models[0][0];
-    $('ai-model-note').textContent = p.note;
-    const r = /(^|-)k3\b|kimi-k3/.test($('ai-model').value);
-    $('ai-temp').disabled = r; $('ai-temp').title = r ? 'k3 系列不让调温度，固定为 1' : '0 最稳、1 最放飞；整理书签用 0.2～0.4';
+    const p = PROVIDERS[provider] || PROVIDERS[AiProviders.DEFAULT_ID];
+    const isCustom = !!p.custom;
+    $('row-base').hidden = !isCustom;
+    $('row-model').hidden = isCustom || !p.models.length;
+    $('row-model-custom').hidden = !isCustom && p.models.length > 0;
+    if (!isCustom) $('ai-base').value = p.base;
+    if (p.models.length) {
+      $('ai-model').innerHTML = p.models.map(([v, l, free]) => `<option value="${esc(v)}">${esc(l)}${free ? '  ★免费档' : ''}</option>`).join('');
+      $('ai-model').value = p.models.some(([v]) => v === current) ? current : p.models[0][0];
+    }
+    // 说明 ＋ 两个真链接：去哪拿钥匙、去哪查价。🔴 价格数字不写在这儿，写下来就会过期
+    const links = [p.apply && `<a href="${p.apply}" target="_blank" rel="noopener">去拿钥匙 ↗</a>`,
+                   p.pricing && `<a href="${p.pricing}" target="_blank" rel="noopener">查价格和额度 ↗</a>`].filter(Boolean).join(' · ');
+    const free = AiProviders.freeModels(provider);
+    $('ai-model-note').innerHTML = esc(p.note || '') + (p.freeHint ? '<br>' + esc(p.freeHint) : '')
+      + (free.length ? `<br><b>官方标长期免费的：</b>${esc(free.join('、'))}（额度和限速以官网为准）` : '')
+      + (links ? '<br>' + links : '');
+    const m = isCustom ? $('ai-model-custom').value : $('ai-model').value;
+    const r = AiProviders.noTemperature(m);
+    $('ai-temp').disabled = r; $('ai-temp').title = r ? '这个模型会思考，不吃温度设置' : '0 最稳、1 最放飞；整理书签用 0.2～0.4';
   }
   $('ai-provider').onchange = () => fillModels($('ai-provider').value, '');
   $('ai-model').onchange = () => fillModels($('ai-provider').value, $('ai-model').value);
-  const readForm = (temp) => { const provider = $('ai-provider').value; return { key: $('ai-key').value.trim(), provider, base: PROVIDERS[provider].base, model: $('ai-model').value, temperature: temp ?? (Number($('ai-temp').value) || 0.3) }; };
-  $('ai-save').onclick = async () => { try { ai = readForm(); await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
+  $('ai-model-custom').oninput = () => fillModels($('ai-provider').value, $('ai-model-custom').value);
+  const readForm = (temp) => {
+    const provider = $('ai-provider').value, p = PROVIDERS[provider];
+    const custom = !!p.custom || !p.models.length;
+    return { key: $('ai-key').value.trim(), provider,
+      base: (custom ? $('ai-base').value.trim() : p.base).replace(/\/$/, ''),
+      model: (custom ? $('ai-model-custom').value : $('ai-model').value).trim(),
+      temperature: temp ?? (Number($('ai-temp').value) || 0.3) };
+  };
+  $('ai-save').onclick = async () => { try { ai = readForm();
+    if (!ai.base) { oops(Error('接口地址不能为空')); return; }
+    if (!ai.model) { oops(Error('模型名不能为空')); return; }
+    $('error').textContent = ''; await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
   $('ai-test').onclick = async () => {
     const out = $('ai-test-out'); out.textContent = '测试中…';
     const c = readForm(0);
     try {
       const r = await fetch(`${c.base.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.key}` },
-        body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: '回复两个字：可以' }], max_tokens: 256, ...(/(^|-)k3\b|kimi-k3/.test(c.model) ? {} : { temperature: 0 }) }) });
+        body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: '回复两个字：可以' }], max_tokens: 256, ...(AiProviders.noTemperature(c.model) ? {} : { temperature: 0 }) }) });
       const j = await r.json();
       out.textContent = r.ok ? `✅ 通了（${j.model || c.model}）` : `❌ ${r.status} ${j.error?.message || ''}`;
     } catch (e) { out.textContent = '❌ ' + (e.message || e); }

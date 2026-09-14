@@ -108,6 +108,8 @@ chrome:// ⚙️`;
   // ── 本机偏好 ──
   const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {} };
   let prefs = await store.prefs.get(DEFAULTS);
+  // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
+  try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
   if (!prefs.folderCollapsed || typeof prefs.folderCollapsed !== 'object' || Array.isArray(prefs.folderCollapsed)) prefs.folderCollapsed = {};
   if (prefs.view !== 'list') prefs.view = 'card';
   function applyPrefs() {
@@ -877,6 +879,7 @@ chrome:// ⚙️`;
   // ── 工具栏 ──
   $$('.seg').forEach((seg) => seg.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
+    if (!seg.dataset.key) return;   // #filter-mode 有自己的 handler；没有 data-key 时这里会写出一个字面量 'undefined' 键
     prefs[seg.dataset.key] = b.dataset.val;
     applyPrefs(); savePrefs();
   }));

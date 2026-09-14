@@ -6,11 +6,8 @@ window.addEventListener('bm-ready', () => {
   const $ = (s) => document.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const esc = BM.esc;
-  const PROVIDERS = {
-    moonshot: { base: 'https://api.moonshot.cn/v1', models: [['kimi-k2.6', 'kimi-k2.6 · 便宜够用，整理几十条约几分钱'], ['kimi-k3', 'kimi-k3 · 最强，贵约 4 倍']], note: '按量付费；kimi-k2.6 日常整理够用，kimi-k3 给难活。' },
-    kimicode: { base: 'https://api.kimi.com/coding/v1', models: [['k3', 'k3 · 最强（Moderato 及以上会员）'], ['k3-256k', 'k3-256k · 同上，256K 上下文'], ['kimi-for-coding', 'kimi-for-coding · 所有会员可用']], note: '走 Kimi Code 会员额度，不另计费。⚠️ 官方文档写它是给编程工具用的，在这里用属于灰色地带，额度异常时优先换回开放平台。' },
-  };
-  const DEFAULT_AI = { key: '', provider: 'kimicode', base: PROVIDERS.kimicode.base, model: 'k3', temperature: 0.3 };
+  const PROVIDERS = AiProviders.P;
+  const DEFAULT_AI = { key: '', provider: AiProviders.DEFAULT_ID, base: PROVIDERS[AiProviders.DEFAULT_ID].base, model: 'k3', temperature: 0.3 };
   let ai = { ...DEFAULT_AI };
   let history = [];
   let lastBatch = null;      // 上一批 AI 改动的逆操作日志（只存内存，刷新即失）          // OpenAI 格式 messages（不含 system）
@@ -340,7 +337,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
       + '这次只看它、只改它：读的工具已经按这个范围过滤，提交范围外的 id 会被整批挡回来。'
       + '需要范围外的东西时，直接说明「这需要用户把某某文件夹也附加进来」，不要自己换工具或换 id 去试。';
   }
-  const isReasoning = (m) => /(^|-)k3\b|kimi-k3/.test(m || '');   // k3 系列只接受 temperature=1，干脆不送
+  const isReasoning = AiProviders.noTemperature;   // 会思考的那些不吃温度设置，干脆不送
   async function callKimi(messages) {
     const body = { model: ai.model, messages: [{ role: 'system', content: systemPrompt() }, ...messages], tools: TOOLS, tool_choice: 'auto' };
     if (!isReasoning(ai.model)) body.temperature = Number(ai.temperature) || 0.3;
@@ -516,7 +513,7 @@ locked:true 的文件夹是用户锁定的，只读，不要提任何改动。
     get batch() { return lastBatch; },
     undo: () => undoBatch(),
   };
-  $('#ai-settings').addEventListener('click', openSettings);
+  $('#ai-settings').addEventListener('click', () => { try { window.open('ai-setup.html', '_blank'); } catch { openSettings(); } });
   $('#ai-toggle').addEventListener('click', () => showPanel($('#ai-panel').hidden));
   $('#ai-close').addEventListener('click', () => showPanel(false));
   $('#ai-input').addEventListener('focus', () => { if (history.length || !ai.key) showPanel(true); });

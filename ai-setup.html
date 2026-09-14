@@ -47,16 +47,20 @@
 
 <section id="sec-kimi" class="card">
   <div class="section-title"><span class="step">4</span><h2>接口与钥匙</h2></div>
-  <p class="muted">钥匙只存在这台浏览器的插件本机存储里，不进备份文件、不进同步内容。到 platform.moonshot.cn 的「API Key 管理」生成一把贴进来。</p>
+  <p class="muted">钥匙只存在这台浏览器的插件本机存储里，<strong>不进备份文件、不进同步内容</strong>。选一家、去它的控制台拿一把钥匙贴进来。下面每家都带「去拿钥匙」和「查价格」两个直达链接。</p>
+  <div class="notice"><h3>挑哪家</h3><ul>
+    <li><strong>想先不花钱试</strong>：智谱 GLM 的 <code>glm-4.7-flash</code>、腾讯混元 <code>hunyuan-lite</code>、讯飞星火 <code>lite</code>——官方标长期免费，整理书签这种活够用。</li>
+    <li><strong>要效果好</strong>：Kimi（k3）、DeepSeek、通义 qwen-max 这些按量付费的；整理几十条通常是几分钱的事。</li>
+    <li><strong>已经有别家的钥匙</strong>：选最后那个「自定义」，任何 OpenAI 兼容接口都能填，包括本地跑的 Ollama。</li>
+  </ul><p class="muted footnote">🔴 上面这些接口地址是 260914 逐个实测过的（不带钥匙发请求、返回 401 才收）。但<strong>免费政策和价格随时会变，以各家官网为准</strong>——所以这个页面不写额度数字，只给链接。</p></div>
   <label for="ai-provider">接口</label>
-  <select id="ai-provider">
-    <option value="moonshot">Moonshot 开放平台（platform.moonshot.cn 的 Key，按量付费）</option>
-    <option value="kimicode">Kimi Code 会员（kimi.com/code 控制台的 Key，走会员额度）</option>
-  </select>
+  <select id="ai-provider"></select>
   <label for="ai-key">API Key</label>
   <input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
+  <div id="row-base" hidden><label for="ai-base">接口地址</label><input id="ai-base" spellcheck="false" placeholder="https://…/v1"><p class="muted footnote">填到 /v1 为止，后面的 /chat/completions 由插件自己补。本地 Ollama 填 http://localhost:11434/v1。</p></div>
   <div class="split">
-    <div><label for="ai-model">模型</label><select id="ai-model"></select></div>
+    <div id="row-model"><label for="ai-model">模型</label><select id="ai-model"></select></div>
+    <div id="row-model-custom" hidden><label for="ai-model-custom">模型名</label><input id="ai-model-custom" spellcheck="false" placeholder="例 glm-4.7-flash"></div>
     <div><label for="ai-temp">温度</label><input id="ai-temp" type="number" step="0.1" min="0" max="1"></div>
   </div>
   <p class="muted" id="ai-model-note"></p>
@@ -64,6 +68,7 @@
 </section>
 
 </main></div>
+<script src="ai-providers.js"></script>
 <script src="bg.js"></script>
 <script src="ai-setup.js"></script>
 </body></html>
