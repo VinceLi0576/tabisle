@@ -68,3 +68,26 @@ body.backup-page{max-width:none;margin:0;padding:0 32px 28px}
 .guide-card ol{margin:6px 0 0;padding-left:22px}.guide-card li{margin:6px 0;line-height:1.7}
 .guide-card p{line-height:1.75}.guide-card code{font-size:12px;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card))}
 .guide-card .guide-table th[scope=row]{width:64px;white-space:nowrap}.guide-card .guide-table td{width:auto}
+
+/* 侧栏顶上的两颗快捷键：同步和备份不用滚到下面去点（老徐 260914） */
+.toc-actions{display:flex;flex-wrap:wrap;gap:8px;padding:12px 10px 4px;border-bottom:1px solid var(--border)}
+.toc-actions button{flex:1;min-width:0;padding:7px 8px;font-size:13px;white-space:nowrap}
+.toc-actions small{flex-basis:100%;font-size:11px;color:var(--muted);text-align:center}
+.toc-actions small[data-state="latest"]{color:#16824e}.toc-actions small[data-state="cloud-new"],.toc-actions small[data-state="local-new"],.toc-actions small[data-state="diverged"]{color:#a76a00}.toc-actions small[data-state="attention"]{color:var(--danger)}
+/* 段标题栏上的快捷按钮：不展开也能点 */
+.summary-actions{display:flex;gap:6px;flex:none;margin-left:10px}
+.summary-actions:empty{display:none}
+.summary-actions button{padding:4px 11px;font-size:12px;line-height:1.4}
+/* 多设备同步开头：这台 vs 云端最新来自哪台 */
+.devices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+.devices small{color:var(--muted);font-size:12px}.devices strong{display:block;margin-top:3px;font-size:15px}.devices p{margin:2px 0 0;font-size:12px}
+/* 「先分清三件事」收成一条可展开的说明 */
+.guide-card>summary{display:flex;align-items:center;cursor:pointer;list-style:none}
+.guide-card>summary::-webkit-details-marker{display:none}
+.guide-card>summary h2{margin:0;font-size:16px}
+.guide-card>summary::after{content:'›';margin-left:auto;font-size:22px;color:var(--muted);transition:transform .15s}
+.guide-card[open]>summary::after{transform:rotate(90deg)}
+.guide-body{margin-top:14px}
+#where-notice{margin-bottom:18px}#where-notice p{margin:8px 0 0;font-size:13px;line-height:1.7}#where-notice code{font-size:12px;word-break:break-all;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card))}
+@media(max-width:1080px){.toc-actions{flex:none;flex-wrap:nowrap;padding:0 10px;border:0;border-left:1px solid var(--border)}.toc-actions small{display:none}}
+@media(max-width:760px){.summary-actions{order:5;margin-left:38px}.devices{grid-template-columns:1fr}}

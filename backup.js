@@ -36,6 +36,8 @@
     $('forget').disabled=blocked||!current?.webdav.hasPassword;
     $('policy-save').disabled=blocked||!policyBaseline;
     $('config-gate').hidden=configLoaded;
+    // 侧栏和各段标题栏上的快捷按钮只是代点正文里那颗，可用状态跟着正文那颗走
+    document.querySelectorAll('[data-proxy]').forEach(b=>{const t=$(b.dataset.proxy);b.disabled=!t||t.disabled;});
   }
   async function run(fn){if(busy)return;busy=true;$('error').textContent='';availability();try{await fn();}catch(e){$('error').textContent=e.message||String(e);}finally{busy=false;availability();}}
   function button(text,fn){const b=document.createElement('button');b.textContent=text;b.onclick=()=>run(fn);return b;}
@@ -67,6 +69,11 @@
     const remote=latest?.remote,source=remote?.updatedBy?.name?' · 来源：'+remote.updatedBy.name:'',time=remote?.updatedAt?' · '+date(remote.updatedAt):'',revision=remote?.revision?' · 版本 '+remote.revision.slice(0,8):'';
     const help={latest:'本机与坚果云内容一致。', 'cloud-new':'可以立即同步，或等待后台自动拉取。','local-new':'后台会先确认云端版本，再合并上传。',diverged:'后台会合并修改；同一字段冲突时保留云端版本。',attention:sync.error||'上次同步未完成，点击立即同步以云端版本恢复。',off:'点击“立即同步”，建立共同版本并开启持续同步。'}[state]||'';
     $('latest-detail').textContent=help+source+time+revision+(latest?.checkedAt?' · 检查于 '+date(latest.checkedAt):'');
+    $('side-state').textContent=labels[state]||'正在检查最新版';$('side-state').dataset.state=state;
+    const mine=current?.backupDevice||'';$('dev-this').textContent=mine||'—';
+    const who=remote?.updatedBy?.name||'';
+    $('dev-remote').textContent=!who?(sync.initialized?'（云端还没记录来源）':'尚未建立共同版本'):who===mine?who+'（就是这台）':who;
+    $('dev-remote-time').textContent=remote?.updatedAt?'写入于 '+date(remote.updatedAt):'';
   }
   async function refresh({forms=false,preferWebdav=false}={}){
     // 第一段：本机已保存的配置。读不到就保持页面原样并禁写，🚫 不清空表单、🚫 不当成「未配置」
@@ -86,6 +93,7 @@
       syncReady=sync.initialized&&sync.verified!==false&&!sync.inProgress&&data.webdav.enabled;$('sync-auto').checked=sync.auto;$('sync-follow-only').checked=!!sync.followOnly;
     }catch(error){
       syncLoaded=false;syncReady=false;
+      $('side-state').textContent='同步状态暂时读不到';
       $('sync-status').textContent='同步状态暂时读不到：'+(error.message||String(error))+'\n已保存的账号、方案和本机备份不受影响。';
     }
     if(sync&&syncReady&&!sync.error){try{latest=await ask('SYNC_LATEST_STATUS');}catch(error){latest={state:'attention',error:error.message||String(error)};}}
@@ -99,6 +107,9 @@
     $('backup-receipt').textContent=br?'最近云备份核验：'+date(br.verifiedAt)+' · '+br.count+' 条书签 · 已重新下载，完整内容一致。'+(data.lastBackupError?' 上次成功记录；当前备份有异常。':''):'尚无云备份读回核验记录。完成下一次上传后显示。';
     $('mode-status').textContent={webdav:data.webdav.enabled?'坚果云 · 云备份已启用':'坚果云 · 待连接',browser:'浏览器账号 · 本机备份',local:'纯本地 · 自动备份关闭'}[data.backupMode];
     $('local-status').textContent=data.lastBackupAt?date(data.lastBackupAt):'尚无本机版本';$('remote-status').textContent=data.lastCloudBackupAt?date(data.lastCloudBackupAt):'尚无完整备份上传记录';
+    const base=data.webdav.url||'';const known=data.webdav.enabled||data.webdav.hasPassword;
+    $('where-cloud').textContent=known&&base?base+'年-月/bookmarks-时间-编号.json':'连接坚果云后显示';
+    $('where-sync').textContent=known&&base?base+'sync/state.json':'连接坚果云后显示';
     $('connection-state').textContent=data.webdav.enabled?'账号与目录已验证':data.webdav.hasPassword?'连接已保存 · 上传关闭':'待连接';
     const recovery=data.restoreInProgress||sync?.inProgress;
     $('recovery-notice').hidden=!recovery;
@@ -178,6 +189,7 @@
   $('sync-apply').onclick=()=>run(async()=>{if(!syncToken)throw Error('请先更新预览');await ask('SYNC_APPLY',{token:syncToken});syncToken=null;$('sync-review').hidden=true;await refresh();$('status').textContent='两端已完成同步。可开启每分钟自动跟随最新版；出现冲突时会暂停，等待你确认。';});
   $('sync-auto').onchange=()=>run(async()=>{try{await ask('SYNC_AUTO',{enabled:$('sync-auto').checked});}finally{await refresh();}});
   $('sync-follow-only').onchange=()=>run(async()=>{try{await ask('SYNC_FOLLOW_ONLY',{enabled:$('sync-follow-only').checked});}finally{await refresh();}});
+  document.querySelectorAll('[data-proxy]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();$(b.dataset.proxy)?.click();}));
   $('reconnect-page').onclick=()=>location.reload();
   $('app-version').textContent='v'+(chrome.runtime?.getManifest?.()?.version||'待重新加载');
   $('recovery-history').onclick=()=>{setTab(false);window.BackupPage?.reveal('backup-history',false);$('history').scrollIntoView({behavior:'smooth',block:'start'});};

@@ -48,7 +48,7 @@
   }
   for(const section of sections){
     const summary=section.querySelector('summary');
-    summary.addEventListener('click',e=>{e.preventDefault();setOpen(section,!section.open,true);});
+    summary.addEventListener('click',e=>{if(e.target?.closest?.('.summary-actions'))return;e.preventDefault();setOpen(section,!section.open,true);});
     section.addEventListener('toggle',schedule);
   }
   for(const link of links)link.addEventListener('click',e=>{e.preventDefault();navigate(link.hash.slice(1));});
