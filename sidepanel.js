@@ -28,6 +28,7 @@
       $('tags').closest('fieldset').hidden=!data.tags.length;
       $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
       currentId=draft.id;$('detail-nudge').hidden=!draft.id;
+      $('from-tabs').hidden=!!draft.id;$('tab-list').hidden=true;$('autofill-state').hidden=true;
       for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('use-title').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
       renderDuplicates(data);
@@ -169,6 +170,67 @@
     pending.then(()=>{if(version===editVersion){updateStatus();$('promote').disabled=!draft.fields.alias;}}).catch(error);
   }
   for(const id of ['alias','name','url','desc','note','icon'])$(id).addEventListener('input',()=>persist({[id]:$(id).value}));
+
+  // ── 自动填：不靠 AI。① 从打开的标签页选一条；② 按网址去读网页的标题和它自带的一句话简介 ──
+  const ORIGINS={origins:['https://*/*']};
+  const say=(t)=>{$('autofill-state').textContent=t;$('autofill-state').hidden=!t;};
+  function fill(patch){for(const [k,v] of Object.entries(patch))$(k).value=v;persist(patch);}
+  $('from-tabs').onclick=async()=>{
+    const list=$('tab-list');
+    if(!list.hidden){list.hidden=true;return;}
+    let tabs=[];try{tabs=await chrome.tabs.query({currentWindow:true});}catch(e){say('读不到标签页：'+(e.message||e));return;}
+    const picks=BmCore.tabPick(tabs.filter(t=>!t.active||true));
+    list.replaceChildren(...picks.map(t=>{
+      const b=document.createElement('button');b.type='button';b.className='tab-item';
+      const img=document.createElement('img');img.src=chrome.runtime.getURL('/_favicon/')+'?pageUrl='+encodeURIComponent(t.url)+'&size=16';img.alt='';
+      const name=document.createElement('span');name.className='tab-name';name.textContent=t.title;
+      const hostEl=document.createElement('span');hostEl.className='tab-host';hostEl.textContent=BmCore.host(t.url);
+      b.append(img,name,hostEl);b.title=t.url;
+      b.onclick=async()=>{
+        list.hidden=true;
+        const patch={url:t.url};if(!draft.fields.name.trim())patch.name=t.title;
+        fill(patch);say('已填网址和书签名。');
+        // 简介只有网页源码里才有；已经同意过读网页的，顺手补上
+        if(!draft.fields.desc.trim()&&await chrome.permissions.contains(ORIGINS).catch(()=>false))await grabMeta(false);
+      };
+      return b;
+    }));
+    if(!picks.length){const p=document.createElement('p');p.className='field-help';p.textContent='这个窗口里没有别的网页标签。';list.append(p);}
+    list.hidden=false;
+  };
+  // 🔴 chrome.permissions.request 必须是用户点击之后的第一个调用，前面任何一个 await 都会把手势丢掉
+  $('fetch-meta').onclick=()=>{const p=chrome.permissions.request(ORIGINS);grabMeta(true,p);};
+  async function grabMeta(manual,permission){
+    const url=draft?.fields.url?.trim();
+    if(!url||!/^https?:/i.test(url)){say('先填一个 http(s) 网址。');return;}
+    if(permission&&!await permission){say('没有同意读取网页，无法自动填。手填也行。');return;}
+    if(!permission&&!await chrome.permissions.contains(ORIGINS).catch(()=>false)){say('点「按网址取标题和简介」，第一次要同意一次。');return;}
+    say('正在读取网页…');
+    try{
+      const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),8000);
+      const res=await fetch(url,{signal:ctrl.signal,credentials:'include',redirect:'follow'});clearTimeout(timer);
+      if(!res.ok)throw Error('网页返回 '+res.status);
+      const buf=await res.arrayBuffer();
+      // 国内不少站还是 GBK：先按响应头，没有就看源码里声明的 charset，都没有才当 UTF-8
+      let cs=(res.headers.get('content-type')||'').match(/charset=([\w-]+)/i)?.[1]||'';
+      let html=new TextDecoder('utf-8').decode(buf);
+      const declared=BmCore.pageMeta(html).charset;
+      if(!cs&&declared)cs=declared;
+      if(cs&&!/^utf-?8$/i.test(cs)){try{html=new TextDecoder(cs).decode(buf);}catch{}}
+      const m=BmCore.pageMeta(html);
+      const patch={};
+      if(m.title&&!draft.fields.name.trim())patch.name=m.title;
+      if(m.desc&&!draft.fields.desc.trim())patch.desc=m.desc;
+      if(Object.keys(patch).length){fill(patch);say('已填：'+Object.keys(patch).map(k=>({name:'书签名',desc:'一句话说明'})[k]).join('、')+'。'+(m.desc?'':'这个网页没写简介。'));}
+      else say(m.title||m.desc?'书签名和一句话说明都已有内容，没有改动。':'这个网页没给出标题和简介。');
+    }catch(e){say('读取失败：'+(e.name==='AbortError'?'8 秒没响应':(e.message||e))+'。要登录的站请用「从打开的标签页选」。');}
+  }
+  // 新书签里刚粘进一个网址：同意过读网页的直接去取，没同意过的提示一句怎么开
+  $('url').addEventListener('paste',()=>{setTimeout(async()=>{
+    if(!draft||draft.id||draft.fields.name.trim())return;
+    if(!/^https?:/i.test(draft.fields.url.trim()))return;
+    if(await chrome.permissions.contains(ORIGINS).catch(()=>false))grabMeta(false);else say('点「按网址取标题和简介」可以自动填书签名和简介，第一次要同意一次。');
+  },0);});
   $('parentId').addEventListener('change',()=>persist({parentId:$('parentId').value}));
   $('tags').addEventListener('change',()=>persist({tags:[...$('tags').querySelectorAll('input:checked')].map(e=>e.value)}));
   $('editor').addEventListener('submit',async e=>{e.preventDefault();$('save').disabled=true;try{await pending;await ask('EDITOR_SAVE',{selection});await load();}catch(e){error(e);updateStatus();}});

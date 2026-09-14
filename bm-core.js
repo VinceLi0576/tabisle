@@ -239,6 +239,44 @@
     return Math.floor(d / 365) + ' 年前打开过';
   }
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, mergeMetaWrite, sinceLabel, SLD };
+
+  // ── 新增书签自动填（老徐 260914「不用 AI 的方式，直接就能自动填上」）──
+  // 从网页源码里抠标题和一句话简介。纯字符串处理，侧栏和测试共用；🚫 别用 DOMParser（worker 里没有）。
+  const ENT = { amp:'&', lt:'<', gt:'>', quot:'"', apos:"'", nbsp:' ', hellip:'…', mdash:'—', ndash:'–', middot:'·' };
+  const unent = (s) => String(s || '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') { try { return String.fromCodePoint(parseInt(e[1] === 'x' || e[1] === 'X' ? e.slice(2) : e.slice(1), e[1] === 'x' || e[1] === 'X' ? 16 : 10)); } catch { return m; } }
+    return ENT[e.toLowerCase()] ?? m;
+  });
+  const tidy = (s) => unent(s).replace(/\s+/g, ' ').trim();
+  function metaContent(html, matcher) {
+    // <meta> 属性顺序不定：name 在前 content 在后，或反过来。一条一条 meta 看，🚫 一条正则硬吃
+    for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+      const attrs = {}; for (const m of tag.matchAll(/([a-z:_-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) attrs[m[1].toLowerCase()] = m[3] ?? m[4] ?? m[5] ?? '';
+      if (matcher(attrs) && attrs.content) return tidy(attrs.content);
+    }
+    return '';
+  }
+  function pageMeta(html) {
+    const h = String(html || '').slice(0, 200000);      // 头 200K 足够拿到 <head>，别把整页正文都正则一遍
+    const t = h.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+    const title = tidy(t ? t[1] : '') || metaContent(h, (a) => a.property === 'og:title' || a.name === 'og:title');
+    const desc = metaContent(h, (a) => (a.name || '').toLowerCase() === 'description')
+      || metaContent(h, (a) => a.property === 'og:description' || a.name === 'og:description');
+    const cs = h.match(/<meta\b[^>]*charset\s*=\s*["']?\s*([\w-]+)/i);
+    return { title, desc: desc.length > 300 ? desc.slice(0, 299) + '…' : desc, charset: cs ? cs[1].toLowerCase() : '' };
+  }
+  // 「从打开的标签页选」：只列 http(s) 页，扩展自己的页和新标签页不算，最近用过的排前面，同一个网址只留一条
+  function tabPick(tabs, cap = 8) {
+    const seen = new Set(), out = [];
+    for (const t of [...(tabs || [])].sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))) {
+      const u = t.url || t.pendingUrl || ''; if (!/^https?:/i.test(u)) continue;
+      const k = key(u); if (seen.has(k)) continue; seen.add(k);
+      out.push({ id: t.id, url: u, title: tidy(t.title) || host(u), favIconUrl: t.favIconUrl || '' });
+      if (out.length >= cap) break;
+    }
+    return out;
+  }
+
+  root.BmCore = { pageMeta, tabPick, unent, esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, mergeMetaWrite, sinceLabel, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

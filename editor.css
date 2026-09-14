@@ -112,3 +112,10 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .detail-summary span{color:var(--text);opacity:.85}
 .detail-summary em{font-style:normal;color:var(--muted);font-size:11px}
 .editor-page #editor[hidden] ~ .detail-summary,.detail-summary:has(strong:empty){display:none}
+
+/* 自动填：从标签页选 / 按网址取 */
+.autofill{display:flex;gap:6px;margin-top:8px}.autofill button{font-size:12px;padding:5px 10px}
+.tab-list{margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.tab-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-bottom:1px solid var(--border);background:transparent;text-align:left;cursor:pointer}
+.tab-item:last-child{border-bottom:0}.tab-item:hover{background:var(--well)}
+.tab-item img{width:16px;height:16px;flex:none}.tab-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.tab-host{flex:none;font-size:11px;color:var(--muted)}

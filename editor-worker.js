@@ -75,7 +75,7 @@ async function editorAction(m) {
   const { [dk]: savedDraft }=await chrome.storage.session.get(dk);
   const draft=savedDraft||{id:node?.id||null,parentId:node?.parentId||selection.parentId,base:node?{title:node.title,url:node.url,parentId:node.parentId,dateAdded:node.dateAdded}:null,fields:{name:node?.title||'',url:node?.url||'',alias:item.name||'',desc:item.desc||'',note:item.note||'',icon:item.icon||'',tags:item.tags||[],parentId:node?.parentId||selection.parentId}};
   if(m.type==='EDITOR_LOAD') {
-    const bar=await bookmarkBar();const folders=[{id:bar.id,title:'未分组（书签栏）'}];
+    const bar=await bookmarkBar();const folders=[{id:bar.id,title:'收集箱（书签栏根目录，待整理）'}];
     const walk=(n,path)=>{for(const c of n.children||[])if(!c.url){const p=path?path+' / '+c.title:c.title;folders.push({id:c.id,title:p});walk(c,p);}};walk(bar,'');
     if(!draft.fields.parentId)draft.fields.parentId=bar.id;
     const duplicates=[];

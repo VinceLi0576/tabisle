@@ -358,6 +358,7 @@ chrome:// ⚙️`;
     const line1 = document.createElement('span'); line1.className = 'line1';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = label(n); line1.appendChild(name);
     line1.appendChild(tagChips(m.tags));
+    if (n.parentId === bar.id) { const mv = document.createElement('button'); mv.type = 'button'; mv.className = 'tile-move'; mv.dataset.id = n.id; mv.textContent = '归入…'; mv.title = '挪进一个文件夹'; line1.appendChild(mv); }
     txt.appendChild(line1);
     // 老徐 260914 拍：详细版多露三样 —— 书签名原样（有显示名时才露，灰字）· 详细说明前两行 · 最近打开
     if (m.name) { const o = document.createElement('span'); o.className = 'orig'; o.textContent = rawLabel(n); o.title = '网页带过来的原名'; txt.appendChild(o); }
@@ -462,6 +463,7 @@ chrome:// ⚙️`;
       `<span class="hd-name" title="${opts.fixed ? '' : '点名字改名 · 点色块换颜色'}"><span class="swatch"></span><span class="title">${esc(f.title || '（未命名）')}</span>${folderLocked(f) ? '<span class="lock" title="已锁定：AI 只看不动">🔒</span>' : ''}</span>` +
       (opts.fixed ? '' : `<span class="level-label">${opts.level || 1}级</span>`) +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
+      (opts.fixed ? '<span class="inbox-hint">星号收藏落在根目录的都在这 · 点「归入」挪进文件夹</span>' : '') +
       (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
       (opts.tags ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
@@ -679,7 +681,8 @@ chrome:// ⚙️`;
     const kids = deprecatedLast(bar.children || []);
     const loose = kids.filter((k) => k.url), folders = kids.filter((k) => !k.url);
     folders.filter(f => !isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
-    if (loose.length) groups.appendChild(cardEl({ id: bar.id, title: '未分组', children: loose }, { fixed: true }));
+    // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失
+    if (loose.length) { const c = cardEl({ id: bar.id, title: '收集箱', children: loose }, { fixed: true }); c.classList.add('inbox'); groups.prepend(c); }
     folders.filter(f => isDeprecated(f)).forEach((f) => groups.appendChild(cardEl(f)));
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
@@ -687,7 +690,8 @@ chrome:// ⚙️`;
     if (!$('#organize').hidden) renderOrganize();
     renderTagDefs();
     applyFilters();
-    renderSide(folders, loose.length ? bar.id : null);
+    renderSide(folders, loose.length ? bar.id : null, loose);
+    noticeInbox(loose);
     if (search.value.trim()) renderSearch();
     renderRecent();
     paintSince(); refreshLastVisits();
@@ -707,7 +711,7 @@ chrome:// ⚙️`;
   let sideObserver = null;
   // 左栏哪几个一级夹是展开的。只活在这一页里 —— 它是导航状态，不是内容，刷新后全收起正好清爽
   const sideOpen = new Set();
-  function renderSide(folders, looseId) {
+  function renderSide(folders, looseId, loose = []) {
     const list = $('#side-list'); list.innerHTML = '';
     const add = (f, depth, parentId) => {
       const d = document.createElement('div');
@@ -727,8 +731,8 @@ chrome:// ⚙️`;
       list.appendChild(d);
       if (depth < 1 && sideOpen.has(f.id)) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
     };
+    if (looseId) { add({ id: bar.id, title: '收集箱', children: loose }, 0, bar.id); list.lastElementChild.classList.add('inbox'); }
     for (const f of folders.filter(f => !isDeprecated(f))) add(f, 0, bar.id);
-    if (looseId) add({ id: bar.id, title: '未分组', children: [] }, 0, bar.id);
     for (const f of folders.filter(f => isDeprecated(f))) add(f, 0, bar.id);
     if (sideObserver) sideObserver.disconnect();
     const visible = new Set();
@@ -912,7 +916,7 @@ chrome:// ⚙️`;
       const l1 = document.createElement('span'); l1.className = 'line1';
       l1.innerHTML = `<span class="name">${esc(label(b))}</span>`; l1.appendChild(tagChips(itemMeta(b.url).tags)); txt.appendChild(l1);
       if (!isDeprecated(b) && isDeprecated(b, true)) l1.insertAdjacentHTML('beforeend', '<span class="deprecated-badge" title="所属文件夹已标记废弃">废弃</span>');
-      txt.innerHTML += `<span class="desc">${esc(b.path || '未分组')} · ${esc(host(b.url))}</span>`;
+      txt.innerHTML += `<span class="desc">${esc(b.path || '收集箱')} · ${esc(host(b.url))}</span>`;
       a.appendChild(txt);
       a.appendChild(detailArrow(b.id));
       if (selectedId === b.id) a.classList.add('selected');
@@ -1032,6 +1036,8 @@ chrome:// ⚙️`;
     if (e.target.closest('.hd-name')) { if (box.dataset.kind !== 'bar') inlineRename(box.querySelector('.title')); return; }
     const more = e.target.closest('.more');
     if (more) { e.preventDefault(); openMenu(folderMenu(box), e.clientX, e.clientY); return; }
+    const mv = e.target.closest('.tile-move');
+    if (mv) { e.preventDefault(); e.stopPropagation(); openMenu(moveMenu(mv.dataset.id), e.clientX, e.clientY); return; }
     const strip = e.target.closest('.strip');
     if (strip) { e.preventDefault(); e.stopPropagation(); openDetail(strip.closest('.tile').dataset.id, null, true); return; }
     const add = e.target.closest('.tile.add');
@@ -1052,6 +1058,38 @@ chrome:// ⚙️`;
 
   const findNode = (id) => BmCore.findNode(bar, id);
 
+  // ── 归入：把一条书签挪进某个文件夹（收集箱里每条都有这颗按钮；右键菜单里所有书签都有）──
+  function moveMenu(id) {
+    const n = findNode(id); if (!n) return [];
+    const items = [];
+    const push = (f, depth) => {
+      if (f.id === n.parentId) return;
+      items.push({ t: (depth ? '　'.repeat(depth) + '└ ' : '') + (f.title || '（未命名）'), f: () => moveTo(id, f.id) });
+    };
+    for (const f of deprecatedLast(bar.children || []).filter((c) => !c.url)) {
+      push(f, 0);
+      for (const c of deprecatedLast(f.children || []).filter((x) => !x.url)) push(c, 1);
+    }
+    if (n.parentId !== bar.id) items.push(null, { t: '放回收集箱（根目录）', f: () => moveTo(id, bar.id) });
+    return items.length ? items : [{ t: '还没有文件夹，先建一个分组', f: () => $('#new-group').click() }];
+  }
+  async function moveTo(id, parentId) {
+    const n = findNode(id); if (!n) return;
+    const from = { parentId: n.parentId, index: n.index };
+    try { await store.move(id, { parentId }); }
+    catch (e) { toast('没挪动：' + e.message); return; }
+    const dest = findNode(parentId);
+    toast(`「${label(n)}」已归入「${dest?.title || '收集箱'}」`, { t: '撤销', f: () => store.move(id, from).catch((e) => toast('撤销失败：' + e.message)) });
+  }
+  // 收集箱多了新东西（多半是在别的页面点了星号）：每条只提醒一次，这台浏览器自己记
+  function noticeInbox(loose) {
+    let seen = []; try { seen = JSON.parse(localStorage.getItem('inboxSeen') || '[]'); } catch {}
+    const fresh = loose.filter((n) => !seen.includes(n.id));
+    try { localStorage.setItem('inboxSeen', JSON.stringify(loose.map((n) => n.id))); } catch {}
+    if (!fresh.length || (seen.length === 0 && loose.length > 3)) return;   // 第一次装上、根目录本来就一堆：别一上来就吼
+    const first = label(fresh[0]);
+    toast(fresh.length === 1 ? `收集箱多了一条：${first}` : `收集箱多了 ${fresh.length} 条：${first} 等`, { t: '去看看', f: () => $('.card.inbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) });
+  }
   function urlMenu(id) {
     const n = findNode(id); if (!n) return [];
     const m = itemMeta(n.url); const tags = m.tags || [];
@@ -1067,6 +1105,7 @@ chrome:// ⚙️`;
       ...tagList().map((t) => ({ t: `${tags.includes(t.id) ? '☑' : '☐'} 标记「${t.glyph}」${t.name}`, f: toggleTag(t.id) })),
       null,
       { t: '详情 / 编辑', f: () => openDetail(id) },
+      { t: '归入文件夹…', f: () => openMenu(moveMenu(id), menuPos.x, menuPos.y) },
       null,
       ...nudgeMenu(id),
       null,
@@ -1257,8 +1296,10 @@ chrome:// ⚙️`;
 
   // ── 菜单 / 对话框 / 提示 ──
   const menu = $('#menu');
+  let menuPos = { x: 0, y: 0 };
   function openMenu(items, x, y) {
     if (!items.length) return;
+    menuPos = { x, y };
     menu.innerHTML = '';
     for (const it of items) {
       if (!it) { menu.appendChild(document.createElement('hr')); continue; }

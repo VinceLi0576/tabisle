@@ -285,7 +285,7 @@ html[data-view="list"] .body .tile.drop-after::after { bottom: -2px; }
 .results .none { color: var(--muted); padding: 20px 4px; }
 
 /* 右键菜单 */
-.menu { position: fixed; z-index: 50; min-width: 180px; padding: 4px; background: var(--card); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: var(--shadow-hover); }
+.menu { position: fixed; z-index: 50; min-width: 180px; max-height: 70vh; overflow-y: auto; padding: 4px; background: var(--card); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: var(--shadow-hover); }
 .menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
 .menu button:hover { background: var(--well); }
 .menu button.danger { color: var(--danger); }
@@ -538,3 +538,13 @@ html[data-view="detail"] .tile .foot{display:flex;gap:8px;align-items:center;fon
 html[data-view="detail"] .tile .foot .since.never{color:#c9822e}   /* 没打开过的标出来 —— 判断要不要留的第一依据 */
 html[data-view="detail"] .tile .desc .pre,html[data-view="detail"] .tile .desc .sep,html[data-view="detail"] .tile .desc .dom{display:none}  /* 域名挪到脚注去了，别显示两遍 */
 html[data-view="detail"] .tile .desc:not(.said){display:none}
+
+/* 收集箱：根目录散着的网址。虚线框 + 强调底色，跟正经分组一眼分开（老徐 260914） */
+.card.inbox { border: 1.5px dashed var(--accent); padding: 8px 10px 10px; background: color-mix(in srgb, var(--accent) 4%, var(--card)); }
+.card.inbox > .head { border-bottom-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.card.inbox > .head .title { color: var(--accent); }
+.inbox-hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
+.side-item.inbox { border: 1px dashed var(--accent); border-radius: 6px; }
+.side-item.inbox .nm { color: var(--accent); }
+.tile-move { flex: none; margin-left: auto; padding: 1px 7px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-bg); color: var(--accent); font-size: 11px; line-height: 1.5; cursor: pointer; }
+.tile-move:hover { background: var(--accent); color: #fff; }

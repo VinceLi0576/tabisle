@@ -62,6 +62,9 @@
           <a id="open-link" class="preview-open" target="_blank" rel="noopener" title="打开网页" aria-label="打开网页">↗</a>
         </div>
         <textarea id="url" rows="2" spellcheck="false" placeholder="https://"></textarea>
+        <div class="autofill" id="autofill"><button type="button" id="from-tabs">从打开的标签页选</button><button type="button" id="fetch-meta">按网址取标题和简介</button></div>
+        <div id="tab-list" class="tab-list" hidden></div>
+        <p id="autofill-state" class="field-help" hidden></p>
         <label for="name">书签名</label>
         <input id="name" autocomplete="off" placeholder="书签的完整名称" aria-describedby="name-help">
         <p id="name-help" class="field-help">收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。</p>
