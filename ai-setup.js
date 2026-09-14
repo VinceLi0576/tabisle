@@ -105,6 +105,18 @@
   $('ai-provider').onchange = () => fillModels($('ai-provider').value, '');
   $('ai-model').onchange = () => fillModels($('ai-provider').value, $('ai-model').value);
   $('ai-model-custom').oninput = () => fillModels($('ai-provider').value, $('ai-model-custom').value);
+  // 🔴 实测（260914，在扩展页面里真发请求）：新加的 9 家里，火山方舟 / 腾讯混元 / 讯飞星火
+  // 三家不放行跨域，没有主机权限就是 Failed to fetch，连鉴权那一步都到不了。
+  // 权限走「按需申请」而不是写死在清单里：装扩展时不该为你没用的服务索权。
+  // ⚠️ 必须在用户点击那一下里发起，await 之后再调会被当成非用户操作拒掉。
+  async function ensureHost(base) {
+    if (!base) return true;
+    let origin; try { origin = new URL(base).origin + '/*'; } catch { return true; }
+    try {
+      if (await chrome.permissions.contains({ origins: [origin] })) return true;
+      return await chrome.permissions.request({ origins: [origin] });
+    } catch { return true; }          // 拿不准就放行，真不通时 fetch 会报出来
+  }
   const readForm = (temp) => {
     const provider = $('ai-provider').value, p = PROVIDERS[provider];
     const custom = !!p.custom || !p.models.length;
@@ -118,10 +130,12 @@
   $('ai-save').onclick = async () => { try { ai = readForm();
     if (!ai.base) { oops(Error('接口地址不能为空')); return; }
     if (!ai.model) { oops(Error('模型名不能为空')); return; }
-    $('error').textContent = ''; await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
+    $('error').textContent = '';
+    if (!await ensureHost(ai.base)) { oops(Error('没有拿到访问这个接口的权限，保存了也调不通。再点一次保存并在弹窗里选「允许」。')); return; } await chrome.storage.local.set({ ai }); say('接口设置已保存'); paintOverview(); } catch (e) { oops(e); } };
   $('ai-test').onclick = async () => {
     const out = $('ai-test-out'); out.textContent = '测试中…';
     const c = readForm(0);
+    if (!await ensureHost(c.base)) { out.textContent = '❌ 没拿到访问这个接口的权限，再点一次并选「允许」'; return; }
     try {
       const r = await fetch(`${c.base.replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.key}` },
         body: JSON.stringify({ model: c.model, messages: [{ role: 'user', content: '回复两个字：可以' }], max_tokens: 256, ...(AiProviders.noTemperature(c.model) ? {} : { temperature: 0 }) }) });

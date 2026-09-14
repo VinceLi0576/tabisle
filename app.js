@@ -155,7 +155,10 @@ chrome:// ⚙️`;
     for (const node of nodes) (isDeprecated(node, includeParents) ? deprecated : current).push(node);
     return [...current, ...deprecated]; // 仅稳定分区展示，不改变浏览器书签树。
   }
-  const tagBtn = (t, cls = '') => `<button type="button" class="tag ${cls}" data-tag="${t.id}" style="--tc:${t.color}" title="${esc(t.name)}${t.desc ? '：' + esc(t.desc) : ''}"><b>${esc(t.glyph)}</b>`;
+  // 🔴 color 和 id 曾经是裸插值：标签可以从「导入附属数据」和 AI 的 add_tag 两条路进来，
+  // 那两条都不走备份那套校验 ⇒ 一个带引号的 color 就能往 button 上挂属性。这里按位置各自转义。
+  const safeColor = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c)) ? c : 'currentColor';
+  const tagBtn = (t, cls = '') => `<button type="button" class="tag ${cls}" data-tag="${esc(t.id)}" style="--tc:${safeColor(t.color)}" title="${esc(t.name)}${t.desc ? '：' + esc(t.desc) : ''}"><b>${esc(t.glyph)}</b>`;
   let lastMetaJson = '';
   const saveMeta = () => { lastMetaJson = JSON.stringify(meta); return store.meta.set(meta); };
   store.meta.onChanged?.((fresh) => {
@@ -935,9 +938,23 @@ chrome:// ⚙️`;
       if (!d.items && !d.groups) throw new Error('不是附属数据文件');
       meta.items = { ...meta.items, ...(d.items || {}) };
       meta.groups = { ...meta.groups, ...(d.groups || {}) };
-      for (const t of d.tags || []) { const cur = tagDef(t.id); if (cur) Object.assign(cur, t); else if (meta.tags.length < MAX_TAGS) meta.tags.push(t); }
+      // 🔴 260914 实撞：导出用的是 {...meta}（带着锁定和夹说明），导入却只合并 items/groups/tags。
+      // 导出→再导入，或者拷到另一台，锁和夹说明就没了，提示还说「已导入」。
+      const plainMap = (v) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+      meta.locks = { ...(meta.locks || {}), ...plainMap(d.locks) };
+      meta.folderNotes = { ...(meta.folderNotes || {}), ...Object.fromEntries(Object.entries(plainMap(d.folderNotes)).filter(([, v]) => typeof v === 'string')) };
+      // 🔴 标签直接 Object.assign 进来，color 会被原样插进 style="--tc:..."。
+      // 这条路不经过备份那套校验 ⇒ 在这儿自己挡一次，格式不对就退回调色板。
+      const okColor = (c) => typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c);
+      const cleanTag = (t, i) => ({ id: String(t.id || '').replace(/[^\w-]/g, '') || 't' + i,
+        name: String(t.name ?? '').slice(0, 20), glyph: String(t.glyph ?? '').slice(0, 2),
+        desc: String(t.desc ?? '').slice(0, 60), color: okColor(t.color) ? t.color : PALETTE[i % PALETTE.length] });
+      for (const [i, raw] of (Array.isArray(d.tags) ? d.tags : []).entries()) {
+        const t = cleanTag(raw, i); if (!t.id) continue;
+        const cur = tagDef(t.id); if (cur) Object.assign(cur, t); else if (meta.tags.length < MAX_TAGS) meta.tags.push(t);
+      }
       if (typeof d.emojiRules === 'string') { meta.emojiRules = d.emojiRules; emojiRules = parseEmojiRules(meta.emojiRules); }
-      await saveMeta(); render(); toast(`已导入：${Object.keys(d.items || {}).length} 条标签／说明，${Object.keys(d.groups || {}).length} 个组颜色`);
+      await saveMeta(); render(); toast(`已导入：${Object.keys(d.items || {}).length} 条标签／说明，${Object.keys(d.groups || {}).length} 个组颜色，${Object.keys(plainMap(d.locks)).length} 个锁定，${Object.keys(plainMap(d.folderNotes)).length} 条夹说明`);
     } catch (err) { toast('导入失败：' + err.message); }
   });
 

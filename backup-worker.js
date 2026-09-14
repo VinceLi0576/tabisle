@@ -200,8 +200,14 @@ async function backupAction(message) {
       return {token,changes:p.changes,metaChanged:p.metaChanged,prefsChanged:p.prefsChanged,folderStateChanged:desired.folderState!=null&&BK.stableStringify(current.folderState)!==BK.stableStringify(desired.folderState)};
     }
     case 'BACKUP_RESTORE': {
+      // 🔴 260914 实撞：这里原来只「查一下别人有没有在写」，自己从不持锁。
+      // 于是恢复正在重建整棵树的那几十秒里，AI 那边 acquire('ai') 照样成功、两边同时改；
+      // 而 write-lease 里那个 NAME.restore 分支永远不可能被触发（死分支）。
       const busy=await WriteLease.heldByOther('restore');
       if(busy)throw Error(`${WriteLease.NAME[busy.owner]||busy.owner}正在改书签，请等它结束后再恢复`);
+      const restoreLease=(await WriteLease.acquire('restore')).lease;
+      if(!restoreLease)throw Error('另一方正在改书签，请稍后再恢复');
+      try {
       const {restorePreview:p}=await chrome.storage.session.get('restorePreview');if(!p||p.token!==message.token)throw Error('请重新预览要恢复的备份');
       const current=await captureSnapshot('恢复前自动保护');if(await fingerprint(current)!==p.fingerprint)throw Error('书签或附属数据已变化，请重新预览后恢复');
       await storeSnapshot(current);await chrome.storage.local.set({syncAuto:false,restoreInProgress:{backupId:current.id,startedAt:new Date().toISOString()}});
@@ -217,6 +223,7 @@ async function backupAction(message) {
         const session=await chrome.storage.session.get(null);await chrome.storage.session.remove(Object.keys(session).filter(k=>k.startsWith('editorDraft:')||k.startsWith('editorSelection:')));
         await chrome.storage.local.remove('restoreInProgress');return {ok:true,safetyBackupId:current.id};
       }catch(e){throw Error('恢复未完成：'+e.message+'。恢复前的完整状态已保存在本机备份列表中，可预览后恢复。');}
+      } finally { await WriteLease.release(restoreLease.id); }
     }
     case 'BACKUP_AUTO': {
       const data=await chrome.storage.local.get('backupMode');

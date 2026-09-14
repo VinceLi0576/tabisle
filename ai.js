@@ -168,7 +168,9 @@ window.addEventListener('bm-ready', () => {
       case 'create_bookmark': return `在 ${tgt || '书签栏'} 新建书签「${ch.title}」 ${ch.url}`;
       case 'delete': return `🗑 删除 ${nm}`;
       case 'sort_folder': return `${nm} 按${{ domain: '域名', title: '标题', alias: '备注名' }[ch.by] || '域名'}排序`;
-      case 'add_tag': return `新增标签「${ch.glyph} ${ch.name}」`;
+      // 🔴 desc 会拼进每一轮的系统提示，但原来预览里只显示名字 ⇒
+      // 模型把指令塞在 desc 里，用户看不见就点了执行，那段话此后一直在提示里、还会同步到别的设备。
+      case 'add_tag': return `新增标签「${ch.glyph} ${ch.name}」${ch.desc ? '，说明：' + ch.desc : ''}`;
       case 'set_folder_color': return `${nm} 颜色 ${ch.color}`;
       case 'folder_note': return `${nm} 说明：${ch.note ? '「' + ch.note + '」' : '（清空）'}`;
       default: return JSON.stringify(ch);
@@ -275,6 +277,14 @@ window.addEventListener('bm-ready', () => {
             const kids = await store.children(R(ch.parent_id) || barId); await store.move(String(ch.id), { parentId: String(R(ch.parent_id) || barId), index: ch.index != null ? Number(ch.index) : kids.length }); break; }
           case 'rename': { const cur = BM.findNode(String(ch.id)); if (!cur) throw new Error('不存在');
             journal.push({ kind: 'update', id: String(ch.id), to: { title: cur.title || '' }, after: { title: String(ch.title) } });
+            // 🔴 组颜色还是按文件夹名字存的（meta.groups[名字]）⇒ 改名不带着走，颜色当场就没了，
+            // 旧数据还留在旧名字下。锁和夹说明已经迁到 uid，不受影响，只有颜色这一项要手动搬。
+            const oldTitle = cur.title, g = !cur.url && oldTitle && BM.meta.groups[oldTitle];
+            if (g && oldTitle !== String(ch.title)) {
+              journal.push({ kind: 'group', title: oldTitle, to: { ...g } });
+              BM.meta.groups[String(ch.title)] = { ...(BM.meta.groups[String(ch.title)] || {}), ...g };
+              delete BM.meta.groups[oldTitle]; BM.saveMeta();
+            }
             await store.update(String(ch.id), { title: String(ch.title) }); break; }
           case 'set_url': { const n0 = BM.findNode(String(ch.id)); if (!n0) throw new Error('不存在');
             journal.push({ kind: 'update', id: String(ch.id), to: { url: n0.url }, after: { url: String(ch.url) },
@@ -291,9 +301,9 @@ window.addEventListener('bm-ready', () => {
             journal.push({ kind: 'restore', parentId: String(n.parentId), index: at < 0 ? sibs.length : at, plan: AiCore.flattenForRebuild(await readSubtree(sibs[at] || { id: n.id, title: n.title, url: n.url })) }); if (n.url) await store.remove(n.id); else await store.removeTree(n.id); break; }
           case 'sort_folder': { const sid = String(ch.id);
             journal.push({ kind: 'order', id: sid, ids: (await store.children(sid)).map((k) => String(k.id)) });
-            const id = String(ch.id); const kids = (await store.children(id)).filter((k) => k.url); const keyOf = (k) => { const d = BM.domainParts(k.url); const m = BM.itemMeta(k.url); return ch.by === 'title' ? k.title : ch.by === 'alias' ? (m.name || k.title) : [d.root, d.pre, BM.label(k)].join(' '); }; for (const k of [...kids].sort((x, y) => keyOf(x).localeCompare(keyOf(y), 'zh'))) await store.move(k.id, { parentId: id, index: (await store.children(id)).length }); break; }
+            const id = String(ch.id); const kids = (await store.children(id)).filter((k) => k.url); const keyOf = (k) => { const d = BM.domainParts(k.url); const m = BM.itemMeta(k.url); return ch.by === 'title' ? k.title : ch.by === 'alias' ? (m.name || k.title) : [d.root, d.pre, BM.label(k)].join('\u0000'); }; for (const k of [...kids].sort((x, y) => keyOf(x).localeCompare(keyOf(y), 'zh'))) await store.move(k.id, { parentId: id, index: (await store.children(id)).length }); break; }
           case 'add_tag': { if (BM.tagList().length >= BM.MAX_TAGS) throw new Error('标签已满 9 个');
-            journal.push({ kind: 'tagAdded' }); const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), glyph: String(ch.glyph || ch.name || '标').slice(0, 2), name: String(ch.name || ''), desc: String(ch.desc || ''), color: ch.color || BM.PALETTE[BM.tagList().length % BM.PALETTE.length] }; BM.meta.tags.push(t); BM.saveMeta(); journal[journal.length-1].id = t.id; if (ch.ref) refs[ch.ref] = t.id; break; }
+            journal.push({ kind: 'tagAdded' }); const t = { id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), glyph: String(ch.glyph || ch.name || '标').slice(0, 2), name: String(ch.name || ''), desc: String(ch.desc || ''), color: (typeof ch.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(ch.color)) ? ch.color : BM.PALETTE[BM.tagList().length % BM.PALETTE.length] }; BM.meta.tags.push(t); BM.saveMeta(); journal[journal.length-1].id = t.id; if (ch.ref) refs[ch.ref] = t.id; break; }
           case 'folder_note': { const n = BM.findNode(String(ch.id)); if (!n || n.url) throw new Error('不是文件夹');
             journal.push({ kind: 'folderNote', id: String(ch.id), to: BM.folderNote(ch.id), after: {} });
             BM.setFolderNote(ch.id, String(ch.note || '')); break; }

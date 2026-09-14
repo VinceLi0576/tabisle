@@ -17,7 +17,15 @@
       if(r){map.set(n.uid,r.uid);used.add(r.uid);}
     }
     const walk=nodes=>nodes.map(n=>({...n,uid:map.get(n.uid)||n.uid,...(n.children?{children:walk(n.children)}:{})}));
-    return {...clone(local),children:walk(local.children),folderState:Object.fromEntries(Object.entries(local.folderState||{}).map(([uid,v])=>[map.get(uid)||uid,v]))};
+    // 🔴 260914 实撞：这里把树和折叠状态的 uid 都对齐到云端了，却漏了同样按 uid 存的
+    // meta.locks 和 meta.folderNotes ⇒ 新设备第一次连上已有云端时，树换成了云端的 uid，
+    // 锁和夹说明还停在本机旧 uid 上，变成谁也对不上的孤儿键：界面上锁和说明凭空消失，
+    // 数据却还在文件里。凡是按 uid 存的东西都得在这儿一起改键。
+    const rekey=(obj)=>Object.fromEntries(Object.entries(obj||{}).map(([uid,v])=>[map.get(uid)||uid,v]));
+    const meta=clone(local.meta)||{};
+    if(meta.locks)meta.locks=rekey(meta.locks);
+    if(meta.folderNotes)meta.folderNotes=rekey(meta.folderNotes);
+    return {...clone(local),meta,children:walk(local.children),folderState:rekey(local.folderState)};
   }
   function merge(base,inputLocal,remote,choices={},tombstones=[]){
     BK.validate(inputLocal);if(base)BK.validate(base);if(remote)BK.validate(remote);

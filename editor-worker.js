@@ -42,7 +42,11 @@ async function editorAction(m) {
     const target=(await chrome.bookmarks.get(String(m.id)))[0];
     if(!target?.url||target.id===node.id||target.url!==node.url||target.dateAdded!==m.dateAdded)throw Error('这份收藏已变化，请刷新后重试');
     let parent=(await chrome.bookmarks.get(target.parentId))[0];
-    while(parent){if(meta.groups?.[parent.title]?.locked)throw Error('这份收藏所在文件夹已锁定');if(!parent.parentId)break;parent=(await chrome.bookmarks.get(parent.parentId))[0];}
+    // 🔴 260914 实撞：锁 v0.10.5 就迁到 meta.locks[uid] 了，这里还只认旧的按名锁 ⇒
+    // 只用新锁锁住的文件夹，从详情侧栏「删除这一份」照样删得掉。两种锁都要认。
+    const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
+    const lockedNode=(n)=>!!(meta.locks?.[uidMap[String(n.id)]?.uid]||meta.groups?.[n.title]?.locked);
+    while(parent){if(lockedNode(parent))throw Error('这份收藏所在文件夹已锁定');if(!parent.parentId)break;parent=(await chrome.bookmarks.get(parent.parentId))[0];}
     await makeSnapshot('删除重复收藏前');
     const fresh=(await chrome.bookmarks.get(target.id))[0];
     if(fresh.url!==target.url||fresh.parentId!==target.parentId||fresh.dateAdded!==target.dateAdded)throw Error('收藏已变化，请刷新后重试');
