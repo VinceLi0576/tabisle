@@ -395,43 +395,85 @@ dialog .palette span.on { border-color: var(--text); }
 .tile.peer:hover { border-color: hsl(var(--ph) 65% 50%);
   box-shadow: 0 0 0 2px color-mix(in srgb, hsl(var(--ph) 70% 50%) 28%, transparent), var(--shadow-hover); }
 
-/* ── 整理文件夹页：所有文件夹摊成一排，左右拖 ── */
-.organize { display: flex; flex-direction: column; gap: 10px; }
+/* ── 整理文件夹页：一棵缩进的树，上下拖改顺序（老徐 260914：「类似 Markdown 一样缩进」「框稍微扩大一点」） ── */
+/* 🔴 这一页只管「整理文件夹」，🚫 别把 .card/.tile/.body 那套首页样式拉进来 */
+.organize { display: flex; flex-direction: column; gap: 12px; min-width: 0; max-width: min(1400px, 100%); }
 .forg-tip { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
-.forg-h { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.forg-h .n { font-size: 12px; }
-.frow { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; align-content: flex-start;
-  padding: 8px; border-radius: 10px; background: var(--band); border: 1px dashed var(--border); }
+.forg-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; font-weight: 600; color: var(--muted); }
+.forg-h .n { font-size: 12px; font-weight: 500; color: var(--muted-2); }
+.forg-h .sp { flex: 1 1 auto; min-width: 0; }
+.forg-act { font: inherit; font-size: 12px; font-weight: 500; color: var(--muted); background: var(--card);
+  border: 1px solid var(--border-2); border-radius: 7px; padding: 5px 11px; cursor: pointer; }
+.forg-act:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 一列到底：🚫 不再 flex-wrap 横铺 —— 老徐要的是「按顺序上下拖」 */
+.frow { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0;
+  border: 1px dashed transparent; border-radius: 10px; }
+.ftree { padding: 10px; background: var(--band); border-color: var(--border); min-height: 72px; }
 .frow.drop-into { border-color: var(--accent); background: var(--accent-bg); border-style: solid; }
-.fgrp { display: flex; align-items: flex-start; gap: 10px; }
-.fgrp-lab { flex: none; width: 132px; padding-top: 14px; font-size: 12px; font-weight: 600; color: var(--muted);
-  text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  border-right: 3px solid var(--gc, var(--border-2)); padding-right: 8px; align-self: stretch; }
-.fgrp .frow { flex: 1; min-width: 0; }
-.fdrops { display: flex; flex-wrap: wrap; gap: 8px; }
-.frow.mini { display: inline-flex; width: auto; min-height: 0; height: 32px; align-items: center; padding: 0 12px;
-  color: var(--muted); font-size: 12px; border-left: 3px solid var(--gc, var(--border-2)); }
-.fchip { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px;
-  border-radius: 8px; border: 1px solid var(--border-2); background: var(--card); cursor: grab; user-select: none; font-size: 13px; max-width: 100%; min-width: 0; }
-.fchip.sm { height: 30px; font-size: 12px; }
+/* 缩进线：子夹整体往右缩一层，左边一条竖线连着（Markdown 列表那样） */
+.fkids { margin: 1px 0 3px var(--find, 26px); padding: 3px 0 3px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--level-color, var(--border-2)) 55%, transparent); min-height: 34px; }
+.fnode { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0; }
+
+/* 块本身：两行，宽高按层级分档 —— 🔴 min-height/min-width 不再是一刀切的一个数 */
+.fchip { position: relative; display: flex; align-items: stretch; gap: 10px; box-sizing: border-box;
+  width: 100%; min-width: min(var(--fmin, 250px), 100%); min-height: var(--fh, 44px);
+  padding: var(--fpy, 5px) 12px var(--fpy, 5px) 14px; border-radius: 10px; border: 1px solid var(--border-2);
+  background: var(--card); cursor: grab; user-select: none; font-size: 13px; }
+/* 🔴 一刀切的那个 height: 34px 没了：每一级各自一档宽高，越往里越收 —— 但都比原来宽、比原来高 */
+.fchip[data-lv="1"] { --fh: 66px; --fmin: 420px; --fpy: 11px; font-size: 14px; }
+.fchip[data-lv="2"] { --fh: 58px; --fmin: 340px; --fpy: 9px; font-size: 13px; }
+.fchip[data-lv="3"] { --fh: 50px; --fmin: 290px; --fpy: 6px; font-size: 12.5px; }
+.fchip[data-lv="4"] { --fh: 44px; --fmin: 250px; --fpy: 4px; font-size: 12px; }   /* 5 级及以下吃 .fchip 上的默认值 */
+.fchip[data-lv="3"] .fmeta, .fchip[data-lv="4"] .fmeta { font-size: 11px; }
+.fnode[data-lv="1"] > .fkids { --find: 26px; }
+.fnode[data-lv="2"] > .fkids, .fnode[data-lv="3"] > .fkids, .fnode[data-lv="4"] > .fkids { --find: 20px; }
 .fchip:active { cursor: grabbing; }
 .fchip:hover { border-color: var(--accent); }
-.fchip .swatch { width: 4px; height: 16px; }
-.fchip .title { font-size: inherit; font-weight: 500; max-width: 180px; }
-.fchip u { text-decoration: none; color: var(--muted-2); font-size: 11px; font-variant-numeric: tabular-nums; }
-.fchip em { font-style: normal; font-size: 11px; }
-.finto { flex: none; display: grid; place-items: center; width: 24px; align-self: stretch; margin-right: -10px; border-left: 1px dashed var(--border); color: var(--muted); border-radius: 0 7px 7px 0; }
+.fchip .swatch { align-self: center; width: 4px; height: 22px; }
+.fchip .level-mark { left: 4px; }
+
+.ftwist { flex: none; align-self: center; display: grid; place-items: center; width: 22px; height: 22px;
+  padding: 0; border: 0; background: none; color: var(--muted); border-radius: 6px; cursor: pointer; }
+.ftwist svg { width: 12px; height: 12px; transition: transform .12s ease; }
+.fnode.open > .fchip .ftwist svg { transform: rotate(90deg); }
+.ftwist:hover { background: var(--accent-bg); color: var(--accent); }
+.ftwist.none { cursor: default; }
+.ftwist.none::after { content: "·"; color: var(--muted-2); }
+
+.fchip .fmain { display: flex; flex-direction: column; justify-content: center; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.fchip .fline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fchip .title { font-size: inherit; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fchip em { font-style: normal; font-size: 12px; flex: none; }
+.fchip .fmeta { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; min-width: 0;
+  font-size: 11.5px; color: var(--muted-2); }
+.fchip .fmeta u { text-decoration: none; flex: none; font-variant-numeric: tabular-nums; }
+.fchip .fmeta .c-url { color: var(--muted); font-weight: 600; }
+.fchip .fmeta .c-sub.none { opacity: .8; }
+.fchip .fnote { flex: 1 1 180px; min-width: 0; color: var(--muted);
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.fchip .fnote.none { flex: none; opacity: .6; }
+
+.finto { flex: none; display: grid; place-items: center; width: 34px; align-self: stretch;
+  margin: calc(-1 * var(--fpy, 5px)) -12px calc(-1 * var(--fpy, 5px)) 0;
+  border-left: 1px dashed var(--border); color: var(--muted);
+  border-radius: 0 9px 9px 0; font-size: 15px; }
 .finto.drop-into { background: var(--accent-bg); color: var(--accent); outline: 2px solid var(--accent); }
-.forg-deeper { margin-left: 20px; min-width: 0; }
-.forg-deeper > summary { cursor: pointer; color: var(--muted); padding: 6px 0; font-size: 12px; }
-.forg-deeper .fgrp { margin-top: 8px; }
-.forg-deeper .fgrp-lab { width: 190px; white-space: normal; overflow-wrap: anywhere; border-color: var(--level-color); }
+
+/* 落点提示改成上下两条横线 —— 顺序是上下的，🚫 不再是左右 */
 .fchip.dragging { opacity: .35; }
-.fchip.drop-before::before, .fchip.drop-after::after { content: ""; position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: var(--accent); }
-.fchip.drop-before::before { left: -6px; }
-.fchip.drop-after::after { right: -6px; }
+.fchip.drop-before::before, .fchip.drop-after::after { content: ""; position: absolute; left: -2px; right: -2px;
+  height: 3px; border-radius: 2px; background: var(--accent); }
+.fchip.drop-before::before { top: -5px; }
+.fchip.drop-after::after { bottom: -5px; }
 #organize-btn.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
-@media (max-width: 900px) { .fgrp { flex-direction: column; gap: 4px; } .fgrp-lab { width: auto; text-align: left; padding: 0 0 0 8px; border-right: 0; border-left: 3px solid var(--gc, var(--border-2)); } }
+@media (max-width: 1100px) {
+  .fchip { padding: var(--fpy, 5px) 10px; --fmin: 0px; }
+  .fchip[data-lv="1"], .fchip[data-lv="2"], .fchip[data-lv="3"], .fchip[data-lv="4"] { --fmin: 0px; }
+  .fkids { margin-left: 12px; padding-left: 8px; }
+  .fnode[data-lv="1"] > .fkids, .fnode[data-lv="2"] > .fkids, .fnode[data-lv="3"] > .fkids, .fnode[data-lv="4"] > .fkids { --find: 12px; }
+}
 
 /* 同步状态条：检查/上传/下载/读回核验期间的进行态 */
 .sync-pill[data-state="busy"]{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}

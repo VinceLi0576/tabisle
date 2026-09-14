@@ -641,78 +641,90 @@ chrome:// ⚙️`;
     return card;
   }
 
-  // ── 整理文件夹：所有文件夹摊成一排，左右拖动改顺序（侧栏太长，从底往上拖没法弄） ──
-  function fchipEl(f, parentId, lv) {
-    const c = document.createElement('span');
+
+  // ── 整理文件夹：一棵缩进的树，上下拖改顺序 ──
+  // 老徐 260914：「不要一级二级给它拆出来，就是那种缩线的、类似于 Markdown 一样缩进这种状态」
+  //   ＋「整体框稍微扩大一点，显示内容多一点」＋「底部『还没有子文件夹的组』直接在一级分组里标上」
+  // ⇒ 一列到底（🚫 不再横铺），子夹往右缩一层用竖线连；每块两行：名字 ／ 条数·子夹数·锁·说明；
+  //   没有子夹的在自己那行标「无子夹」，底部那一段就不用存在了。
+  const orgFold = new Map();                      // id → true 折起 / false 展开；没记的按默认：一级展开、二级及以下折起
+  const orgSubs = (f) => deprecatedLast((f.children || []).filter((c) => !c.url));
+  const orgOpen = (id, lv) => (orgFold.has(id) ? !orgFold.get(id) : lv <= 1);
+  function fchipEl(f, parentId, lv, open) {
+    const c = document.createElement('div');
     c.className = 'fchip' + (lv > 1 ? ' sm' : '');
     c.draggable = true;
     c.dataset.id = f.id; c.dataset.parent = parentId; c.dataset.kind = 'folder'; c.dataset.lv = lv;
     markLevel(c, lv);
     const col = groupColor(f.title); if (col) c.style.setProperty('--gc', col);
-    c.innerHTML = levelMark(lv) + `<i class="swatch"></i><b class="title">${esc(f.title || '（未命名）')}</b>${folderLockedByTitle(f.title) ? '<em class="lk">🔒</em>' : ''}<u>${countUrls(f)}</u><span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
+    const subs = orgSubs(f).length;
+    const direct = (f.children || []).filter((k) => k.url).length;
+    const total = countUrls(f);
+    const note = folderNote(f.id);
+    c.innerHTML = levelMark(lv)
+      + (subs
+        ? `<button type="button" class="ftwist" data-twist="${f.id}" aria-expanded="${open ? 'true' : 'false'}" title="${open ? '收起' : '展开'}子文件夹"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5l4 3.5-4 3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
+        : '<span class="ftwist none" aria-hidden="true"></span>')
+      + '<i class="swatch"></i>'
+      + '<span class="fmain">'
+      +   `<span class="fline"><b class="title">${esc(f.title || '（未命名）')}</b>${folderLockedByTitle(f.title) ? '<em class="lk" title="锁着，先解锁再挪">🔒</em>' : ''}</span>`
+      +   '<span class="fmeta">'
+      +     `<u class="c-url">${direct} 条</u>`
+      +     (total > direct ? `<u class="c-all">连子夹 ${total} 条</u>` : '')
+      +     (subs ? `<u class="c-sub">${subs} 个子夹</u>` : '<u class="c-sub none">无子夹</u>')
+      +     (note ? `<span class="fnote" title="${esc(note)}">${esc(note)}</span>` : '<span class="fnote none">没写说明</span>')
+      +   '</span>'
+      + '</span>'
+      + `<span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
     if (isDeprecated(f)) c.querySelector('.title').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
-    c.title = '拖动改顺序 · 点一下跳到那一组 · 右键改名/换色';
+    c.title = '上下拖改顺序 · 点一下跳到那一组 · 右键改名/换色';
     return c;
+  }
+  function orgFoldAll(collapse) {
+    orgFold.clear();
+    const walk = (f) => { for (const sf of orgSubs(f)) { orgFold.set(sf.id, collapse); walk(sf); } };
+    for (const f of (bar.children || [])) if (!f.url) { orgFold.set(f.id, collapse); walk(f); }
   }
   function renderOrganize() {
     const box = $('#organize');
-    const expanded = new Set($$('.forg-deeper[open]', box).map((el) => el.dataset.id));
     box.innerHTML = '';
     const folders = deprecatedLast((bar.children || []).filter((f) => !f.url));
+    const withSubs = folders.filter((f) => orgSubs(f).length).length;
+
     const tip = document.createElement('p'); tip.className = 'forg-tip';
-    tip.textContent = '拖到文件夹左右两侧改顺序；拖到 ↳ 放进该文件夹；拖回一级分组那排可提升为一级。保留所有层级，改动直接写回书签栏。';
-    box.appendChild(tip);
+    tip.textContent = '一棵缩进的树：子文件夹往右缩一层。上下拖到某一块的上边或下边改顺序；拖到右端 ↳ 就放进那个文件夹；拖回最外层那一列可提升为一级。改动直接写回书签栏。';
 
-    const h1 = document.createElement('div'); h1.className = 'forg-h'; h1.innerHTML = `一级分组 <span class="n">${folders.length}</span>`;
-    const r1 = document.createElement('div'); r1.className = 'frow lv1'; r1.dataset.parent = bar.id;
-    folders.forEach((f) => r1.appendChild(fchipEl(f, bar.id, 1)));
-    box.append(h1, r1);
+    const head = document.createElement('div'); head.className = 'forg-h';
+    head.innerHTML = `一级分组 <span class="n">${folders.length} 个 · ${withSubs} 个有子文件夹 · ${folders.length - withSubs} 个还没有</span>`;
+    const sp = document.createElement('span'); sp.className = 'sp';
+    const bOpen = document.createElement('button');
+    bOpen.type = 'button'; bOpen.className = 'forg-act'; bOpen.dataset.orgall = 'open'; bOpen.textContent = '全部展开';
+    const bClose = document.createElement('button');
+    bClose.type = 'button'; bClose.className = 'forg-act'; bClose.dataset.orgall = 'close'; bClose.textContent = '全部折起';
+    head.append(sp, bOpen, bClose);
 
-    const appendRow = (container, f, level, path) => {
-      const wrap = document.createElement('div'); wrap.className = 'fgrp';
-      markLevel(wrap, level);
-      const color = groupColor(f.title); if (color) wrap.style.setProperty('--gc', color);
-      const lab = document.createElement('span'); lab.className = 'fgrp-lab';
-      lab.textContent = path; lab.title = path;
-      const row = document.createElement('div'); row.className = 'frow lv2'; row.dataset.parent = f.id;
-      deprecatedLast((f.children || []).filter((c) => !c.url)).forEach((sf) => row.appendChild(fchipEl(sf, f.id, level)));
-      wrap.append(lab, row); container.appendChild(wrap);
+    const root = document.createElement('div');
+    root.className = 'frow ftree'; root.dataset.parent = bar.id; root.dataset.lv = 1;
+    markLevel(root, 1);
+    const build = (f, parentId, lv, into) => {
+      const node = document.createElement('div');
+      node.className = 'fnode'; node.dataset.id = f.id; node.dataset.lv = lv;
+      const col = groupColor(f.title); if (col) node.style.setProperty('--gc', col);
+      const subs = orgSubs(f);
+      const open = subs.length > 0 && orgOpen(f.id, lv);
+      node.classList.toggle('open', open);
+      node.appendChild(fchipEl(f, parentId, lv, open));
+      if (open) {
+        const kids = document.createElement('div');
+        kids.className = 'frow fkids'; kids.dataset.parent = f.id; kids.dataset.lv = lv + 1;
+        markLevel(kids, lv + 1);
+        subs.forEach((sf) => build(sf, f.id, lv + 1, kids));
+        node.appendChild(kids);
+      }
+      into.appendChild(node);
     };
-    const hasSubs = folders.filter((f) => (f.children || []).some((c) => !c.url));
-    const noSubs = folders.filter((f) => !(f.children || []).some((c) => !c.url));
-    if (hasSubs.length) {
-      const h2 = document.createElement('div'); h2.className = 'forg-h'; h2.innerHTML = `二级文件夹 <span class="n">${hasSubs.length} 组里有</span>`;
-      box.appendChild(h2);
-      hasSubs.forEach((f) => {
-        appendRow(box, f, 2, f.title || '（未命名）');
-        const deeper = document.createElement('details'); deeper.className = 'forg-deeper';
-        deeper.dataset.id = f.id; deeper.open = expanded.has(f.id);
-        const summary = document.createElement('summary');
-        summary.textContent = `${f.title || '（未命名）'} · 第3级及以下`;
-        deeper.appendChild(summary);
-        const walk = (parent, level, path) => {
-          for (const child of deprecatedLast(parent.children || [])) {
-            if (child.url || !(child.children || []).some((c) => !c.url)) continue;
-            const nextPath = `${path} / ${child.title || '（未命名）'}`;
-            appendRow(deeper, child, level + 1, nextPath);
-            walk(child, level + 1, nextPath);
-          }
-        };
-        walk(f, 2, f.title || '（未命名）');
-        if (deeper.children.length > 1) box.appendChild(deeper);
-      });
-    }
-    if (noSubs.length) {
-      const h3 = document.createElement('div'); h3.className = 'forg-h'; h3.innerHTML = `还没有子文件夹的组 <span class="n">拖一个子夹到框里就进去了</span>`;
-      const wrap = document.createElement('div'); wrap.className = 'fdrops';
-      noSubs.forEach((f) => {
-        const d = document.createElement('span'); d.className = 'frow lv2 mini'; d.dataset.parent = f.id;
-        const col = groupColor(f.title); if (col) d.style.setProperty('--gc', col);
-        d.textContent = f.title || '（未命名）';
-        wrap.appendChild(d);
-      });
-      box.append(h3, wrap);
-    }
+    folders.forEach((f) => build(f, bar.id, 1, root));
+    box.append(tip, head, root);
   }
   function toggleOrganize(on) {
     const box = $('#organize');
@@ -728,6 +740,14 @@ chrome:// ⚙️`;
   $('#organize-btn').addEventListener('click', () => toggleOrganize());
   $('#organize').addEventListener('click', (e) => {
     e.stopPropagation();
+    const all = e.target.closest('[data-orgall]');
+    if (all) { orgFoldAll(all.dataset.orgall === 'close'); renderOrganize(); return; }
+    const tw = e.target.closest('.ftwist[data-twist]');
+    if (tw) {                                                  // 三角＝这一夹的子夹开合，🚫 不跳走
+      const id = tw.dataset.twist, lv = Number(tw.closest('.fchip').dataset.lv) || 1;
+      orgFold.set(id, orgOpen(id, lv));                         // 记的是「折起没有」：现在开着就折起
+      renderOrganize(); return;
+    }
     const c = e.target.closest('.fchip'); if (!c || dragJustHappened) return;
     toggleOrganize(false);
     revealFolder(c.dataset.id);
@@ -968,7 +988,9 @@ chrome:// ⚙️`;
     const items = deprecatedLast(await store.recent(8));   // 老徐 260914：「最多就显示 8 个好了，不要 16 个」
     if (request !== recentRender) return;
     const box = $('#recent-body'); box.innerHTML = '';
-    $('#recent').hidden = !!search.value.trim() || !items.length;
+    // 🔴 整理页开着时别把「最近访问」放出来盖在上面：拖一次就触发 render → renderRecent，
+    //    它原来不看整理页开没开，把 toggleOrganize 刚藏起来的那块又显出来了（260914 子 agent 查出）
+    $('#recent').hidden = !!search.value.trim() || !items.length || !$('#organize').hidden;
     $('#recent-count').textContent = items.length;
     $('#recent').replaceChild(noteCardEl({ id: RECENT_NOTE }), $('#recent-note'));
     $('#recent').querySelector('.note-card').id = 'recent-note';
@@ -996,7 +1018,7 @@ chrome:// ⚙️`;
     const q = search.value.trim().toLowerCase();
     const results = $('#results');
     const showing = !!q;
-    $('#groups').hidden = showing; $('#recent').hidden = showing || !$('#recent-body').children.length; results.hidden = !showing;
+    $('#groups').hidden = showing; $('#recent').hidden = showing || !$('#recent-body').children.length || !$('#organize').hidden; results.hidden = !showing;
     if (!showing) { results.innerHTML = ''; return; }
     const terms = q.split(/\s+/);
     const hits = deprecatedLast(flat.filter((b) => {
@@ -1549,7 +1571,7 @@ chrome:// ⚙️`;
       const into = t.closest('.finto');
       if (into) return { parentId: into.dataset.folder, refId: null, el: into, cls: 'drop-into' };
       const chip = t.closest('.fchip');
-      if (chip) return { parentId: chip.dataset.parent, refId: chip.dataset.id, pos: side(chip, false), el: chip, cls: 'drop-' + side(chip, false) };
+      if (chip) return { parentId: chip.dataset.parent, refId: chip.dataset.id, pos: side_(chip), el: chip, cls: 'drop-' + side_(chip) };
       const row = t.closest('.frow');
       if (row) return { parentId: row.dataset.parent, refId: null, el: row, cls: 'drop-into' };
       return null;
