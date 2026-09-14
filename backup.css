@@ -62,3 +62,8 @@ body.backup-page{max-width:none;margin:0;padding:0 32px 28px}
 
 /* 最后一段也要能滚到目录判定线，否则目录高亮会停在倒数第二段 */
 .backup-main{padding-bottom:max(260px,45vh)}
+
+/* 页首「先分清三件事」 */
+.guide-card{margin-bottom:22px}.guide-card h2{margin:0 0 14px}.guide-card h3{margin:20px 0 8px;font-size:14px}
+.guide-card ol{margin:6px 0 0;padding-left:22px}.guide-card li{margin:6px 0;line-height:1.7}
+.guide-card p{line-height:1.75}.guide-card code{font-size:12px;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card))}

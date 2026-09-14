@@ -940,11 +940,9 @@ chrome:// ⚙️`;
   });
   $('#ai-setup-btn')?.addEventListener('click', () => window.open('ai-setup.html', '_blank'));
   // 「备份与恢复」并进了同步药丸，🚫 顶栏不再单独摆一个按钮
-  $('#sync-pill').addEventListener('click', () => {
-    // 没连同步时，这个药丸就是「备份与恢复」那一页的入口
-    if ($('#sync-pill').dataset.state === 'idle') { window.open('backup.html', '_blank'); return; }
-    runSyncPill();
-  });
+  // 老徐 260914：「检查云端之后，其实还是需要能让我进到设置页。我现在进不到」
+  // ⇒ 药丸只负责显示状态，点它一律进「同步与备份」页；同步本身每分钟自动跑，不需要人点。
+  $('#sync-pill').addEventListener('click', () => { window.open('backup.html', '_blank'); });
   $('#more-btn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu([
@@ -1488,7 +1486,7 @@ chrome:// ⚙️`;
       if(!latest?.ok)throw Error(latest?.error||'无法检查云端');
       pillFailed=false;
       const st=latest.data.state,at=hhmm(latest.data.checkedAt);
-      const map={latest:['ok','云端最新版 · '+at],'cloud-new':['warn','云端有新版 · 点一下同步'],'local-new':['warn','本机待上传 · 点一下同步'],diverged:['warn','两端有修改 · 点一下合并']};
+      const map={latest:['ok','云端最新版 · '+at],'cloud-new':['warn','云端有新版 · 稍后自动跟上'],'local-new':['warn','本机有改动 · 稍后自动上传'],diverged:['warn','两端都改了 · 自动合并中']};
       // 这台设成「只接收」时，本机改动本来就不会上传 ⇒ 别再拿「本机待上传」吓人，
       // 说清楚它的角色：它跟着云端走，自己的改动会被盖掉
       if(d.followOnly){

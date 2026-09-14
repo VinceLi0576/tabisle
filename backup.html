@@ -9,6 +9,23 @@
 </aside>
 <main class="backup-main">
 <header id="page-top" class="page-head toc-section"><div><small>书签首页 · TABISLE <span id="app-version"></span></small><h1>同步、备份与恢复</h1><p class="muted">多台电脑共用一套云端资料，每台浏览器保留自己的连接设置。同步保持一致，备份留住历史，恢复找回过去。</p></div><a href="newtab.html">返回书签首页 ↗</a></header>
+<section class="card notice guide-card" id="how-it-works">
+<h2>先分清三件事</h2>
+<table class="guide-table"><tbody>
+<tr><th scope="row">同步</th><td><strong>让几台浏览器的书签保持一致。</strong>每分钟自动跑一次，把两边的新增和修改合到一起，不用你点。云端只存一份「最新版」（<code>backups/sync/state.json</code>）。</td></tr>
+<tr><th scope="row">备份</th><td><strong>留住历史，好回头。</strong>每小时往云端 <code>backups/</code> 目录归档一份完整快照（坚果云自己再保留一个月历史）；本机只留几份「保险丝」——删除前、恢复前、手动、AI 执行前各留最近 5 份，外加每天一份留底。</td></tr>
+<tr><th scope="row">恢复</th><td><strong>回到某一份备份的样子。</strong>在下面「版本与恢复」里挑一份，先预览会改什么，再确认。恢复前会自动再留一份保护副本，怕改错。</td></tr>
+</tbody></table>
+<h3>换一台新浏览器，怎么开始</h3>
+<ol>
+<li>装好插件，到这一页「连接坚果云」填同一个账号、同一个目录，点验证。</li>
+<li>点一次「立即同步」。<strong>第一次是「合并」不是「覆盖」</strong>：这台原有的书签和云端的都会留下（所以想干净地接云端，就先让这台的书签栏空着）。这一步一定要人点，自动同步遇到「第一次」会停下来等你。</li>
+<li>之后就不用管了：每分钟自动同步。</li>
+</ol>
+<h3>两台浏览器来回切换</h3>
+<p><strong>不需要「先下载、改完再上传」这套动作。</strong>你在哪台改，一分钟内另一台就跟上；反过来一样。唯一要留意的：<strong>别在同一分钟里、在两台上改同一条书签的同一个字段</strong>——那才叫冲突，自动同步会保留云端那一份。新增、删除、挪位置、改不同的条，两边都会合起来，互不打架。</p>
+<p class="muted footnote">顶栏那颗药丸只是把这一切的状态告诉你；点它就是进这一页。</p>
+</section>
 <div class="overview"><div><small>当前备份方案</small><strong id="mode-status">正在读取…</strong></div><div><small>最近本机版本</small><strong id="local-status">—</strong></div><div><small>最近云端上传</small><strong id="remote-status">—</strong></div><div><small>最近同步核验</small><strong id="overview-sync">正在读取…</strong></div></div>
 <div class="overview-action"><p id="overview-next" class="muted">正在读取配置与同步状态…</p><button id="overview-action" type="button">查看当前状态</button></div><div class="section-tools"><button id="expand-all" type="button">展开全部</button><button id="collapse-all" type="button">收起全部</button></div>
 <p id="status" class="status" role="status" aria-live="polite"></p><p id="error" class="error" role="alert"></p><button id="reconnect-page" type="button" hidden>重新加载此页面</button><p id="config-gate" class="error" role="status" hidden>尚未读到这台浏览器已保存的备份设置，暂时不能保存或连接，以免把空白覆盖上去。这不表示账号或密码已被删除——请点上面的「重新加载此页面」。未保存的输入会保留。</p>

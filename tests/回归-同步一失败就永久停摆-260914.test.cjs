@@ -110,3 +110,12 @@ test('成功一次就把连败计数清零，不然好了之后还会被判死',
   const hits = src.match(/syncFailStreak:0/g) || [];
   assert.ok(hits.length >= 4, '成功、自愈、用户手动开关这几处都要清零，实际 ' + hits.length + ' 处');
 });
+
+test('顶栏药丸点一下就进同步与备份页 —— 老徐：「检查云端之后还是需要能进到设置页，我现在进不到」', () => {
+  const app = fs.readFileSync(R('app.js'), 'utf8');
+  const i = app.indexOf("$('#sync-pill').addEventListener('click'");
+  const body = app.slice(i, app.indexOf('\n', i + 60));
+  assert.match(body, /backup\.html/, '点击要打开备份页');
+  assert.doesNotMatch(body, /runSyncPill\(\)/, '不再由点击触发同步，同步是自动的');
+  assert.doesNotMatch(app, /点一下同步|点一下合并/, '药丸文案不能再叫人点它去同步');
+});
