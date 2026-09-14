@@ -160,7 +160,13 @@ chrome:// ⚙️`;
   const safeColor = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c)) ? c : 'currentColor';
   const tagBtn = (t, cls = '') => `<button type="button" class="tag ${cls}" data-tag="${esc(t.id)}" style="--tc:${safeColor(t.color)}" title="${esc(t.name)}${t.desc ? '：' + esc(t.desc) : ''}"><b>${esc(t.glyph)}</b>`;
   let lastMetaJson = '';
-  const saveMeta = () => { lastMetaJson = JSON.stringify(meta); return store.meta.set(meta); };
+  const saveMeta = () => {
+    lastMetaJson = JSON.stringify(meta);
+    const p = store.meta.set(meta);
+    // 多数调用方不 await 它 ⇒ 失败就静默了，刷新之后改动凭空消失。这里兜住并说出来。
+    p.catch((e) => toast('这次改动没能存下来：' + (e.message || e) + '（刷新后会恢复成上次保存的样子）'));
+    return p;
+  };
   store.meta.onChanged?.((fresh) => {
     const j = JSON.stringify(fresh);
     if (j === lastMetaJson || j === JSON.stringify(meta)) return;   // 自己写的回声

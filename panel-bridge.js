@@ -12,7 +12,11 @@
   let flat = BmCore.flatten(bar);
   let uidById = {};
 
-  const saveMeta = () => store.meta.set(meta);
+  const saveMeta = () => {
+    const p = store.meta.set(meta);
+    p.catch((e) => toast('这次改动没能存下来：' + (e.message || e)));   // 同首页：🚫 别静默
+    return p;
+  };
   async function refresh() {
     bar = await store.bar();
     flat = BmCore.flatten(bar);

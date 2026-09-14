@@ -62,9 +62,23 @@ const ChromeStore = {
   },
   // 附属数据（标签／说明／图标按网址对应，组颜色按组名对应）。书签里放不下这些，所以另存一份；丢了只丢装饰
   meta: {
-    async get() { return (await chrome.storage.local.get({ meta: { items: {}, groups: {} } })).meta; },
-    set: (meta) => chrome.storage.local.set({ meta }),
-    onChanged(cb) { chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.meta && ch.meta.newValue) cb(ch.meta.newValue); }); },
+    // base ＝ 这个页面最后一次「从存储读到的那一份」。写的时候拿它算出我到底改了什么，
+    // 🚫 不再整包覆盖 —— 别的页面这期间写进去的东西要留着。
+    _base: null,
+    async get() {
+      const m = (await chrome.storage.local.get({ meta: { items: {}, groups: {} } })).meta;
+      this._base = JSON.parse(JSON.stringify(m));
+      return m;
+    },
+    async set(meta) {
+      const r = await BG.askBg({ type: 'META_MERGE_WRITE', base: this._base, mine: meta }, { ms: 10000, retry: false });
+      if (r && r.ok) { this._base = JSON.parse(JSON.stringify(r.data)); return r.data; }
+      // 后台不在（冷启动、刚重载）时退回直接写：宁可偶尔覆盖，也别把用户的输入丢掉
+      await chrome.storage.local.set({ meta });
+      this._base = JSON.parse(JSON.stringify(meta));
+      return meta;
+    },
+    onChanged(cb) { chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.meta && ch.meta.newValue) { this._base = JSON.parse(JSON.stringify(ch.meta.newValue)); cb(ch.meta.newValue); } }); },
   },
   // 后台统一请求站点图标，避免页面跨域失败与重复请求。
   _iconCache: new Map(),

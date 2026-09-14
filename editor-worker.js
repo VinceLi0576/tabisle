@@ -100,6 +100,12 @@ async function editorAction(m) {
       }
     } else {
       result=await chrome.bookmarks.create({parentId,title:fields.name.trim()||fields.alias.trim()||new URL(url).hostname,url});
+      // 🔴 这里原来拿着几百毫秒前读到的 meta 整包写回，首页这期间的改动会被抹掉。
+      // 现在只动这一条书签的附属数据，其余字段原样保留存储里最新的那份。
+      const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
+      meta.items=fresh.items||{};meta.groups=fresh.groups||{};meta.tags=fresh.tags||[];
+      if(fresh.locks)meta.locks=fresh.locks;if(fresh.folderNotes)meta.folderNotes=fresh.folderNotes;
+      if(fresh.emojiRules!==undefined)meta.emojiRules=fresh.emojiRules;
       meta.items[BK.key(url)]={...(meta.items[BK.key(url)]||{}),name:fields.alias,desc:fields.desc,note:fields.note,icon:fields.icon,tags:fields.tags};
       await chrome.storage.local.set({meta});
     }

@@ -181,6 +181,51 @@
   // 这四个方向里，现在哪些是能动的（拿来置灰按钮）
   const nudgeable = (bar, id) => Object.fromEntries(['up', 'down', 'in', 'out'].map((d) => [d, !!nudgeTarget(bar, id, d)]));
 
-  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, SLD };
+  // ── 附属数据的合并写 ──
+  // 🔴 首页、侧栏、详情编辑器各自拿着一份 meta 快照，谁后写谁赢 ⇒
+  //    两边同时开着（日常就是这样），一边加标签一边写说明，后写的把先写的整个盖掉，
+  //    而且两边都显示成功。260914 grok 和 codex 各自独立发现。
+  // 解法不是加锁（那要等，手感变差），是别再整包覆盖：
+  //    只把「我这份相对我读到时的那份」改了什么，应用到「存储里现在那份」上。
+  //    我没碰过的字段一律不动 —— 那才是别人刚写进去的东西。
+  // 语义跟多设备同步那套三方合并一致，只是这里三方都在同一台机器上。
+  const DICTS = ['items', 'groups', 'locks', 'folderNotes'];
+  const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+  function mergeMetaWrite(base, mine, current) {
+    const out = JSON.parse(JSON.stringify(current || {}));
+    base = base || {}; mine = mine || {};
+    for (const d of DICTS) {
+      const b = base[d] || {}, m = mine[d] || {};
+      if (!out[d]) out[d] = {};
+      for (const k of new Set([...Object.keys(b), ...Object.keys(m)])) {
+        if (same(b[k], m[k])) continue;              // 我没动过这一条 ⇒ 别碰，那可能是别人刚写的
+        if (m[k] === undefined) delete out[d][k];    // 我删掉了
+        else out[d][k] = JSON.parse(JSON.stringify(m[k]));
+      }
+    }
+    // 标签是数组，按 id 对；顺序以「动过的那一方」为准
+    const byId = (list) => Object.fromEntries((list || []).map((t) => [t.id, t]));
+    const bT = byId(base.tags), mT = byId(mine.tags), cT = byId(out.tags);
+    let touched = false;
+    for (const id of new Set([...Object.keys(bT), ...Object.keys(mT)])) {
+      if (same(bT[id], mT[id])) continue;
+      touched = true;
+      if (mT[id] === undefined) delete cT[id]; else cT[id] = mT[id];
+    }
+    if (touched) {
+      const order = (mine.tags || []).map((t) => t.id).filter((id) => cT[id]);
+      for (const t of out.tags || []) if (cT[t.id] && !order.includes(t.id)) order.push(t.id);
+      out.tags = order.map((id) => cT[id]);
+    } else if (!out.tags) out.tags = mine.tags || [];
+    // 剩下的标量字段（emoji 兜底库这类）：我改过才覆盖
+    for (const k of Object.keys({ ...base, ...mine })) {
+      if (DICTS.includes(k) || k === 'tags') continue;
+      if (!same(base[k], mine[k])) out[k] = mine[k];
+      else if (!(k in out) && mine[k] !== undefined) out[k] = mine[k];
+    }
+    return out;
+  }
+
+  root.BmCore = { esc, key, host, domainParts, countUrls, findNode, flatten, applyItemMeta, folderLocked, lockedInTree, sameDomainFolders, scopeIds, scopeStats, folderPath, folderNote, nudgeTarget, nudgeable, mergeMetaWrite, SLD };
   if (typeof module !== 'undefined') module.exports = root.BmCore;
 })(globalThis);

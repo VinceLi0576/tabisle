@@ -35,6 +35,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === 'WRITE_RENEW') return WriteLease.renew(message.id, message.ms);
     if (message.type === 'WRITE_RELEASE') return WriteLease.release(message.id);
     if (message.type === 'WRITE_STATUS') return WriteLease.read();
+    // 🔴 附属数据一律走这里合并写，🚫 页面别再整包 set —— 两个页面同时开着就会互相覆盖。
+    // 这条消息排在 queueTask 串行链上，所以「读→合并→写」中间插不进别人。
+    if (message.type === 'META_MERGE_WRITE') {
+      const { meta: current = {} } = await chrome.storage.local.get('meta');
+      const merged = BmCore.mergeMetaWrite(message.base, message.mine, current);
+      await chrome.storage.local.set({ meta: merged });
+      return merged;
+    }
     if (message.type === 'ICON_FETCH') return remoteIcon(message.host);
     if (message.type === 'APP_READY') { await ensureBackupAlarm(); return runScheduledTasks(); }
     throw Error('未知操作');

@@ -16,7 +16,10 @@ function observeNative(type,id,info={}){
     }
   }
 }
-for(const [event,type]of [['onCreated','create'],['onChanged','update'],['onMoved','move'],['onRemoved','remove'],['onChildrenReordered','reorder']])chrome.bookmarks[event]?.addListener((id,info)=>observeNative(type,id,info));
+// 🔴 ?. 原来挡的是「这个事件不存在」，挡不住「chrome.bookmarks 整个还没就绪」——
+// 扩展重载那一瞬间真的会这样（260914 实测到一次）。那一次 service worker 起来后
+// 一个书签事件都监听不上，直到它下次重启，而且外面完全看不出来。
+for(const [event,type]of [['onCreated','create'],['onChanged','update'],['onMoved','move'],['onRemoved','remove'],['onChildrenReordered','reorder']])chrome.bookmarks?.[event]?.addListener((id,info)=>observeNative(type,id,info));
 const syncVerification=c=>syncEndpoint(c)+'|move-v1';
 function syncEndpoint(c){return c.url+'sync/state.json#account='+encodeURIComponent(c.username||'');}
 async function syncRequest(c,method,name,body,headers={}){
