@@ -408,6 +408,40 @@ dialog .palette span.on { border-color: var(--text); }
 .card[data-kind="folder"].is-dim:hover { opacity: 1; }
 .side-item.is-dim .nm { color: var(--muted-2); }
 
+/* ── 标签管理页（老徐 260914：「点『标签』跳到一个专门的标签页面，统一管理和整理」）── */
+.tb-label-btn { height: 26px; padding: 0 10px; font-size: 12px; }
+.tb-label-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.tagcols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+@media (max-width: 900px) { .tagcols { grid-template-columns: 1fr; } }
+.tagcol { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px; background: var(--card); min-width: 0; }
+.tagcol-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.tagcol-h b { font-size: 14px; }
+.tagcol-h span { font-size: 11px; color: var(--muted-2); }
+.tagcol-h em { flex: 1 1 100%; font-style: normal; font-size: 11.5px; color: var(--muted); }
+.tagrow { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 8px; border-radius: 8px;
+  border: 1px solid transparent; }
+.tagrow:hover { background: color-mix(in srgb, var(--tc, var(--muted-2)) 7%, transparent); }
+.tagrow .tr-chip { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px;
+  background: color-mix(in srgb, var(--tc) 15%, transparent); color: var(--tc); font-size: 12px; font-weight: 600; }
+.tagrow .tr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tagrow .tr-name { font-size: 13px; }
+.tagrow .tr-desc { font-size: 11px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagrow .tr-flag { flex: none; padding: 2px 7px; border-radius: 9px; font-size: 10px;
+  background: color-mix(in srgb, var(--tc) 13%, transparent); color: var(--tc); }
+.tagrow .tr-n { flex: none; min-width: 26px; text-align: right; font-size: 12px; color: var(--muted); }
+.tagrow .tr-act { flex: none; height: 22px; padding: 0 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--muted); font-size: 11px; cursor: pointer; }
+.tagrow .tr-act:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.tagrow .tr-act.danger-text:hover { border-color: var(--danger); color: var(--danger); background: transparent; }
+/* 合并的两步：选中的那行亮起来，可以当目标的那些行虚线提示 */
+.tagrow.merging { border-color: var(--accent); background: var(--accent-bg); }
+.tagrow.mergetarget { border-style: dashed; border-color: color-mix(in srgb, var(--accent) 45%, transparent); cursor: pointer; }
+.tagrow.mergetarget:hover { border-style: solid; border-color: var(--accent); background: var(--accent-bg); }
+.tagadd { width: 100%; margin-top: 8px; height: 30px; border: 1px dashed var(--border-2); border-radius: 8px;
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.tagadd:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── 段标题拖柄 ── */
 .grip { color: var(--muted-2); font-size: 12px; letter-spacing: -2px; cursor: grab; padding: 0 2px 0 4px; user-select: none; }
 .grip:active { cursor: grabbing; }

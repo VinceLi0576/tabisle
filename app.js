@@ -999,10 +999,94 @@ chrome:// ⚙️`;
     box.style.setProperty('--org-cols', String(Number(prefs.orgCols) || 3));
     box.append(tip, head, root);
   }
+  // ── 标签管理页（老徐 260914：「点『标签』其实应该跳到一个专门的标签页面，把每一个标签都定义一下，
+  //   让我能在标签页里做统一的管理和整理……像链接的标签、文件夹的标签，全都得独立开来」）──
+  // 两套名单在这一页并排：左边书签的、右边文件夹的。🚫 不做批量打标签（他 260914 明确废止）。
+  function tagUsage(tagId) {
+    // 书签标签：数有多少条书签自己挂了它（🚫 不算从文件夹继承来的，那是另一回事）
+    return flat.filter((n) => (itemMeta(n.url).tags || []).includes(tagId)).length;
+  }
+  function fTagUsage(tagId) {
+    return (bar?.children || []).filter((f) => !f.url && (meta.groups[f.title]?.ftags || []).includes(tagId)).length;
+  }
+  function tagRowEl(t, kind) {
+    const n = kind === 'folder' ? fTagUsage(t.id) : tagUsage(t.id);
+    const row = document.createElement('div');
+    row.className = 'tagrow' + (mergeFrom === t.id ? ' merging' : '') + (mergeFrom && kind === 'link' && mergeFrom !== t.id ? ' mergetarget' : '');
+    row.dataset.tag = t.id; row.dataset.kind = kind;
+    row.style.setProperty('--tc', safeColor(t.color));
+    row.innerHTML = `<span class="tr-chip"><b>${esc(t.glyph || t.name.slice(0, 1))}</b></span>`
+      + `<span class="tr-main"><b class="tr-name">${esc(t.name)}</b>`
+      + `<span class="tr-desc">${esc(t.desc || '还没写说明')}</span></span>`
+      // 🔴「排到最后」只有文件夹标签才有这回事。书签标签里可能留着历史数据的 dim
+      //   （早先那版「排到最后」是挂在书签标签上的），🚫 别把它当真显示出来。
+      + (kind === 'folder' && t.dim ? '<span class="tr-flag" title="打了这个标签的分组会排到最后并整组压淡">排到最后</span>' : '')
+      + `<span class="tr-n" title="${kind === 'folder' ? '有几个一级分组打了它'
+          : '有几条书签挂了它。标签是按网址存的 ⇒ 同一个网址收藏了两份，这里算两条（跟首页筛选看到的张数一致）'}">${n}</span>`
+      + `<button type="button" class="tr-act" data-act="edit" title="改名字、字形、颜色、说明">改</button>`
+      + (kind === 'link' ? `<button type="button" class="tr-act" data-act="merge" title="把这个标签并进另一个：打了它的都改挂过去，然后删掉它">并</button>` : '')
+      + `<button type="button" class="tr-act danger-text" data-act="del" title="删掉它；打了它的条目会去掉这个标签，内容本身不动">删</button>`;
+    return row;
+  }
+  function renderTagPage() {
+    const box = $('#tagpage'); if (!box) return;
+    box.innerHTML = '';
+    const tip = document.createElement('p'); tip.className = 'forg-tip';
+    tip.textContent = '这一页只管标签本身：改名、换色、看有多少在用、合并、删除。书签的标签和文件夹的标签是两套，互不相干——'
+      + '书签的用来跨文件夹分类，文件夹的只有一级分组能打、用来标「定了没有」。'
+      + '🚫 这里不批量打标签：书签的标签在书签详情侧栏点，文件夹的在分组详情侧栏点。';
+    box.appendChild(tip);
+    const cols = document.createElement('div'); cols.className = 'tagcols';
+    for (const [kind, title, list, hint] of [
+      ['link', '书签的标签', tagList(), '给单条书签打的，用来跨文件夹找东西'],
+      ['folder', '文件夹的标签', fTagList(), '只有一级分组能打，用来标「确定 / 待定」'],
+    ]) {
+      const col = document.createElement('section'); col.className = 'tagcol'; col.dataset.kind = kind;
+      const h = document.createElement('div'); h.className = 'tagcol-h';
+      h.innerHTML = `<b>${title}</b><span>${list.length} 个</span><em>${esc(hint)}</em>`;
+      col.appendChild(h);
+      for (const t of list) col.appendChild(tagRowEl(t, kind));
+      if (!list.length) { const e = document.createElement('p'); e.className = 'field-help'; e.textContent = '一个都还没有。'; col.appendChild(e); }
+      if (kind === 'link' && list.length < MAX_TAGS) {
+        const add = document.createElement('button');
+        add.type = 'button'; add.className = 'tagadd'; add.dataset.act = 'add'; add.textContent = '＋ 加一个书签标签';
+        col.appendChild(add);
+      }
+      cols.appendChild(col);
+    }
+    box.appendChild(cols);
+  }
+  function toggleTagPage(on) {
+    const box = $('#tagpage');
+    const show = on === undefined ? box.hidden : on;
+    box.hidden = !show;
+    if (show) toggleOrganize(false);
+    $('#groups').hidden = show;
+    $('#deck').hidden = show;
+    $('#tagpage-btn').classList.toggle('on', show);
+    if (show) { renderTagPage(); $('#empty').hidden = true; }
+    else $('#empty').hidden = (bar.children || []).length > 0;
+  }
+  $('#tagpage-btn').addEventListener('click', () => toggleTagPage());
+  $('#tagpage').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const add = e.target.closest('[data-act="add"]');
+    if (add) { await editTag(null); renderTagPage(); return; }
+    const row = e.target.closest('.tagrow');
+    if (!row) { if (mergeFrom) setMergeMode(null); return; }   // 点空白处＝取消选靶
+    const act = e.target.closest('.tr-act')?.dataset.act;
+    const id = row.dataset.tag, kind = row.dataset.kind;
+    // 选靶模式下：点书签标签那一栏的任意一行就是选中它当目标
+    if (mergeFrom && kind === 'link' && !act) { await doMerge(mergeFrom, id); renderTagPage(); return; }
+    if (act === 'edit') { await (kind === 'folder' ? editFolderTag(id) : editTag(id)); renderTagPage(); return; }
+    if (act === 'del') { await deleteTagOf(kind, id); renderTagPage(); return; }
+    if (act === 'merge') { setMergeMode(mergeFrom === id ? null : id); return; }
+  });
   function toggleOrganize(on) {
     const box = $('#organize');
     const show = on === undefined ? box.hidden : on;
     box.hidden = !show;
+    if (show && !$('#tagpage').hidden) toggleTagPage(false);
     $('#groups').hidden = show;
     $('#deck').hidden = show;
     if (show) { clearDomHl(); renderOrganize(); }
@@ -1208,6 +1292,68 @@ chrome:// ⚙️`;
       { t: `只看「${t.name}」`, f: () => { globalFilter.clear(); globalFilter.add(t.id); applyFilters(); } },
     ], e.clientX, e.clientY);
   });
+  // 文件夹标签的编辑：跟书签标签同一个对话框，只是存到另一份名单里，并且多一个「排到最后」开关
+  async function editFolderTag(id) {
+    const cur = fTagDef(id); if (!cur) return;
+    const r = await tagDialog({ ...cur, forFolder: true }, true);
+    if (!r) return;
+    if (r.delete) { await deleteTagOf('folder', id); return; }
+    Object.assign(cur, { glyph: r.glyph, name: r.name, desc: r.desc, color: r.color, dim: !!r.dim });
+    if (!cur.dim) delete cur.dim;
+    saveMeta(); render();
+  }
+  // 删标签：两套各走各的清理路径。🔴 只去掉「谁挂了它」，🚫 书签和文件夹本身一个不动
+  async function deleteTagOf(kind, id) {
+    const def = kind === 'folder' ? fTagDef(id) : tagDef(id);
+    if (!def) return;
+    const n = kind === 'folder' ? fTagUsage(id) : tagUsage(id);
+    const what = kind === 'folder' ? '个分组' : '条书签';
+    if (!confirm(`删掉标签「${def.glyph} ${def.name}」？\n现在有 ${n} ${what}打了它，它们会去掉这个标签——${kind === 'folder' ? '分组' : '书签'}本身一个都不动。`)) return;
+    if (kind === 'folder') {
+      meta.folderTags = fTagList().filter((t) => t.id !== id);
+      for (const [k, g] of Object.entries(meta.groups || {})) {
+        if (!g.ftags?.includes(id)) continue;
+        g.ftags = g.ftags.filter((x) => x !== id);
+        if (!g.ftags.length) delete g.ftags;
+        if (!Object.keys(g).length) delete meta.groups[k];
+      }
+    } else {
+      meta.tags = meta.tags.filter((t) => t.id !== id);
+      for (const [k, v] of Object.entries(meta.items)) {
+        if (!v.tags?.includes(id)) continue;
+        v.tags = v.tags.filter((x) => x !== id);
+        if (!v.tags.length && !v.desc && !v.note && !v.icon && !v.name) delete meta.items[k];
+      }
+      for (const g of Object.values(meta.groups)) if (g.tags?.includes(id)) { g.tags = g.tags.filter((x) => x !== id); if (!g.tags.length) delete g.tags; }
+      globalFilter.delete(id); groupFilter.forEach((s) => s.delete(id));
+    }
+    saveMeta(); render();
+  }
+  // 合并：把 A 并进 B —— 打了 A 的都改挂 B，然后删掉 A。🔴 只动标签，🚫 不碰书签本身。
+  // 两步点击：点「并」进入选靶，再点另一行完成；再点一次「并」或点空白处取消。
+  // 🚫 别用菜单做单选 —— closeMenu 只是把它藏起来，没有任何「关闭了」的信号可以等。
+  let mergeFrom = null;
+  function setMergeMode(id) {
+    mergeFrom = id;
+    renderTagPage();
+    if (id) toast(`点另一个标签，把「${tagDef(id)?.name}」并进它；点空白处取消`);
+  }
+  async function doMerge(id, pick) {
+    const from = tagDef(id), to = tagDef(pick);
+    if (!from || !to || id === pick) { setMergeMode(null); return; }
+    const n = tagUsage(id);
+    if (!confirm(`把「${from.glyph} ${from.name}」并进「${to.glyph} ${to.name}」？\n${n} 条书签会改挂到「${to.name}」，然后「${from.name}」被删掉。书签本身一个不动。`)) { setMergeMode(null); return; }
+    for (const v of Object.values(meta.items)) {
+      if (!v.tags?.includes(id)) continue;
+      v.tags = [...new Set(v.tags.map((x) => (x === id ? pick : x)))];
+    }
+    for (const g of Object.values(meta.groups)) if (g.tags?.includes(id)) g.tags = [...new Set(g.tags.map((x) => (x === id ? pick : x)))];
+    meta.tags = meta.tags.filter((t) => t.id !== id);
+    globalFilter.delete(id); groupFilter.forEach((s) => s.delete(id));
+    mergeFrom = null;
+    saveMeta(); render();
+    toast(`已并进「${to.name}」，${n} 条改挂过去了`);
+  }
   async function editTag(id) {
     const cur = id ? tagDef(id) : { glyph: '', name: '', desc: '', color: PALETTE[tagList().length % PALETTE.length] };
     const r = await tagDialog(cur, !!id);
@@ -1231,6 +1377,8 @@ chrome:// ⚙️`;
       $('#dlg-tag-title').textContent = existing ? '编辑标签' : '新标签';
       $('#tag-glyph').value = cur.glyph; $('#tag-name').value = cur.name; $('#tag-desc').value = cur.desc || '';
       $('#tag-dim').checked = !!cur.dim;
+      // 「排到最后」只对文件夹标签有意义 —— 书签标签没有「沉底」这回事
+      $('#tag-dim').closest('.tag-dim-row').hidden = !cur.forFolder;
       let color = cur.color;
       const pal = $('#tag-palette'); pal.innerHTML = '';
       for (const c of PALETTE) { const s = document.createElement('span'); s.style.background = c; s.classList.toggle('on', c === color); s.onclick = () => { color = c; $$('span', pal).forEach((x) => x.classList.toggle('on', x === s)); }; pal.appendChild(s); }
