@@ -87,11 +87,24 @@ test('四段各一个颜色、铺满一整行（老徐 260915「不是缩起来�
   assert.equal(colors.length, 4, '有的段没给颜色');
   assert.equal(new Set(colors).size, 4, '四段撞色了 ⇒ 分不出来');
   assert.match(app, /b\.style\.setProperty\('--tc', t\.c\)/, '颜色没传进样式');
+  // 老徐 260915：四段前面都要一个不夸张的 emoji
+  // 🔴 别漏 \b：note: '…' 里的 note 也以 e 结尾，不加词边界会多数出三个
+  const emos = [...tabs.matchAll(/\be: '([^']+)'/g)].map((m) => m[1]);
+  assert.equal(emos.length, 4, '有的段没给 emoji');
+  assert.equal(new Set(emos).size, 4, '两段用了同一个 emoji');
+  assert.match(app, /<span class="dt-e" aria-hidden="true">/, 'emoji 没画出来');
   const tab = css.match(/^\.deck-tab \{([^}]*)\}/m)[1];
   assert.match(tab, /flex: 1 1 0/, '标签还是按内容宽 ⇒ 缩在左边一小截');
   assert.match(tab, /var\(--tc/, '样式里没用那个颜色');
   // 折起来也得留着颜色，否则折着就认不出是哪四块
   assert.match(css, /\.deck\.collapsed \.deck-tab \{[^}]*--tc/, '折叠后丢了颜色');
+});
+
+test('搜索那页不显示「紧凑／详细」—— 它一张卡片都没有', () => {
+  // 老徐 260915：「搜索这里没有所谓的紧凑型嘛，有吗？就这一个比较特殊嘛」
+  const fn = app.match(/function renderDeck\(\) \{[\s\S]*?\n  \}/)[0];
+  assert.match(fn, /hv\.hidden = cur\.k === 'web'/, '搜索页还挂着紧凑按钮');
+  assert.doesNotMatch(fn, /hv\.hidden = false/, '写死成不藏了');
 });
 
 test('搜索引擎不止三个，且每个都有能用的地址', () => {
@@ -100,7 +113,14 @@ test('搜索引擎不止三个，且每个都有能用的地址', () => {
   const us = [...eng.matchAll(/u: '(https:\/\/[^']+)'/g)].map((m) => m[1]);
   assert.ok(us.length >= 6, '引擎太少：' + us.length);
   assert.equal(new Set(us).size, us.length, '有两个引擎地址一样');
-  for (const u of us) assert.match(u, /[?&][a-z]+=$/i, '地址末尾不是待拼关键词的形态：' + u);
+  for (const u of us) assert.match(u, /[?&][a-z_]+=$/i, '地址末尾不是待拼关键词的形态：' + u);
+  // 老徐 260915 点名的八个，一个都不能少；知乎／小红书／抖音他说先不要
+  for (const t of ['百度', '必应', '谷歌', '搜狗', 'B站', 'YouTube', 'GitHub', 'Twitter']) {
+    assert.match(eng, new RegExp("t: '" + t + "'"), '少了 ' + t);
+  }
+  for (const t of ['知乎', '小红书', '抖音']) assert.doesNotMatch(eng, new RegExp("t: '" + t + "'"), t + ' 他说先不要');
+  // 名单删过东西之后，存着的那个可能已经不存在 ⇒ 必须回落，否则一个都不亮
+  assert.match(app, /const curEngine = \(\) => WEB_ENGINES\.find/, '没有回落 ⇒ 删掉某个引擎后老偏好会指空');
   const seg = css.match(/\.eng-seg button \{([^}]*)\}/)[1];
   assert.match(seg, /flex: 1 1 0/, '引擎排没铺开（老徐：「也可以再宽一点」）');
 });

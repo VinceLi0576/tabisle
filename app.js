@@ -124,21 +124,24 @@ chrome:// ⚙️`;
   // 工作台这一块的四页。老徐 260915：「在这个区域顶部横排一列标签，把这些功能都整合到这一整块里面」
   // 老徐 260915 定的顺序：搜索最左 → 快捷方式 → 收集箱 → 最近访问，四段各一个颜色、铺满一整行
   const DECK_TABS = [
-    { k: 'web',    t: '搜索',     note: '',          c: '#2f6fdb' },
-    { k: 'pinned', t: '快捷方式', note: '__pinned',  c: '#8e44ad' },
-    { k: 'inbox',  t: '收集箱',   note: 'bar',       c: '#e07a2f' },
-    { k: 'recent', t: '最近访问', note: '__recent',  c: '#1f9d55' },
+    { k: 'web',    t: '搜索',     note: '',          c: '#2f6fdb', e: '🔍' },
+    { k: 'pinned', t: '快捷方式', note: '__pinned',  c: '#8e44ad', e: '📌' },
+    { k: 'inbox',  t: '收集箱',   note: 'bar',       c: '#e07a2f', e: '📥' },
+    { k: 'recent', t: '最近访问', note: '__recent',  c: '#1f9d55', e: '🕘' },
   ];
+  // 老徐 260915 点名要这八个；知乎／小红书／抖音他说先不要
   const WEB_ENGINES = [
-    { k: 'baidu',  t: '百度',  u: 'https://www.baidu.com/s?wd=' },
-    { k: 'bing',   t: '必应',  u: 'https://www.bing.com/search?q=' },
-    { k: 'google', t: '谷歌',  u: 'https://www.google.com/search?q=' },
-    { k: 'sogou',  t: '搜狗',  u: 'https://www.sogou.com/web?query=' },
-    { k: 'ddg',    t: 'DuckDuckGo', u: 'https://duckduckgo.com/?q=' },
-    { k: 'zhihu',  t: '知乎',  u: 'https://www.zhihu.com/search?type=content&q=' },
-    { k: 'bili',   t: 'B站',   u: 'https://search.bilibili.com/all?keyword=' },
-    { k: 'github', t: 'GitHub', u: 'https://github.com/search?q=' },
+    { k: 'baidu',   t: '百度',    u: 'https://www.baidu.com/s?wd=' },
+    { k: 'bing',    t: '必应',    u: 'https://www.bing.com/search?q=' },
+    { k: 'google',  t: '谷歌',    u: 'https://www.google.com/search?q=' },
+    { k: 'sogou',   t: '搜狗',    u: 'https://www.sogou.com/web?query=' },
+    { k: 'bili',    t: 'B站',     u: 'https://search.bilibili.com/all?keyword=' },
+    { k: 'youtube', t: 'YouTube', u: 'https://www.youtube.com/results?search_query=' },
+    { k: 'github',  t: 'GitHub',  u: 'https://github.com/search?q=' },
+    { k: 'x',       t: 'Twitter', u: 'https://x.com/search?q=' },
   ];
+  // 名单增删过之后，存着的那个可能已经没了 ⇒ 回落到第一个，否则一个都不亮、搜出来也不知道用的哪家
+  const curEngine = () => WEB_ENGINES.find((x) => x.k === prefs.webEngine) || WEB_ENGINES[0];
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
@@ -1104,20 +1107,19 @@ chrome:// ⚙️`;
     for (const e of WEB_ENGINES) {
       const b = document.createElement('button');
       b.type = 'button'; b.dataset.eng = e.k; b.textContent = e.t;
-      b.className = prefs.webEngine === e.k ? 'on' : '';
+      b.className = curEngine().k === e.k ? 'on' : '';
       seg.appendChild(b);
     }
     const form = document.createElement('form'); form.className = 'web-form';
     const input = document.createElement('input');
     input.type = 'search'; input.id = 'web-q'; input.autocomplete = 'off';
-    input.placeholder = `用${(WEB_ENGINES.find((e) => e.k === prefs.webEngine) || WEB_ENGINES[0]).t}搜网页（上面那个搜索框搜的是书签）`;
+    input.placeholder = `用${curEngine().t}搜网页（上面那个搜索框搜的是书签）`;
     const go = document.createElement('button'); go.type = 'submit'; go.className = 'web-go'; go.textContent = '搜';
     form.append(input, go);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const q = input.value.trim(); if (!q) return;
-      const eng = WEB_ENGINES.find((x) => x.k === prefs.webEngine) || WEB_ENGINES[0];
-      location.href = eng.u + encodeURIComponent(q);
+      location.href = curEngine().u + encodeURIComponent(q);
     });
     body.append(seg, form);
     return body;
@@ -1138,7 +1140,8 @@ chrome:// ⚙️`;
       b.type = 'button'; b.className = 'deck-tab' + (t.k === cur.k ? ' on' : '');
       b.dataset.deck = t.k; b.style.setProperty('--tc', t.c);
       b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(t.k === cur.k));
-      b.innerHTML = `<span class="dt-name">${esc(t.t)}</span>` + (deckCount(t.k) === null ? '' : `<span class="dt-n">${deckCount(t.k)}</span>`);
+      b.innerHTML = `<span class="dt-e" aria-hidden="true">${t.e}</span><span class="dt-name">${esc(t.t)}</span>`
+        + (deckCount(t.k) === null ? '' : `<span class="dt-n">${deckCount(t.k)}</span>`);
       tabs.appendChild(b);
     }
     // 说明跟着当前那一页走；搜网页那页没有说明
@@ -1148,6 +1151,8 @@ chrome:// ⚙️`;
     note.id = 'deck-note';
     deck.replaceChild(note, $('#deck-note'));
     $('#deck-note').hidden = !!prefs.deckCollapsed || !noteId;
+    // 搜索那页里一张卡片都没有 ⇒ 「紧凑／详细」在这儿没有意义，藏掉
+    const hv = $('#deck-head .hd-view'); if (hv) hv.hidden = cur.k === 'web';
     const box = $('#deck-body'); box.innerHTML = '';
     box.appendChild(cur.k === 'recent' ? deckRecentBody() : cur.k === 'pinned' ? deckPinnedBody() : cur.k === 'inbox' ? deckInboxBody() : deckWebBody());
     paintSince();

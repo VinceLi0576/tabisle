@@ -173,6 +173,7 @@ a { color: inherit; text-decoration: none; }
   color: color-mix(in srgb, var(--tc, var(--accent)) 72%, var(--muted));
   font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; cursor: pointer; }
 .deck-tab .dt-name { overflow: hidden; text-overflow: ellipsis; }
+.deck-tab .dt-e { flex: none; font-size: 13px; line-height: 1; opacity: .85; }
 .deck-tab:hover { background: color-mix(in srgb, var(--tc, var(--accent)) 14%, transparent);
   color: var(--tc, var(--accent)); }
 .deck-tab.on { background: color-mix(in srgb, var(--tc, var(--accent)) 12%, var(--card));
