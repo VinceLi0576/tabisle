@@ -203,23 +203,27 @@
         else out[d][k] = JSON.parse(JSON.stringify(m[k]));
       }
     }
-    // 标签是数组，按 id 对；顺序以「动过的那一方」为准
+    // 标签是数组，按 id 对；顺序以「动过的那一方」为准。
+    // 🔴 书签标签（tags）和文件夹标签（folderTags）是两套名单，合并规矩一模一样 ⇒ 同一段代码跑两遍，
+    //    🚫 别只处理一套：漏掉的那套会被整份覆盖，另一台刚建的标签当场消失。
     const byId = (list) => Object.fromEntries((list || []).map((t) => [t.id, t]));
-    const bT = byId(base.tags), mT = byId(mine.tags), cT = byId(out.tags);
-    let touched = false;
-    for (const id of new Set([...Object.keys(bT), ...Object.keys(mT)])) {
-      if (same(bT[id], mT[id])) continue;
-      touched = true;
-      if (mT[id] === undefined) delete cT[id]; else cT[id] = mT[id];
+    for (const key of ['tags', 'folderTags']) {
+      const bT = byId(base[key]), mT = byId(mine[key]), cT = byId(out[key]);
+      let touched = false;
+      for (const id of new Set([...Object.keys(bT), ...Object.keys(mT)])) {
+        if (same(bT[id], mT[id])) continue;
+        touched = true;
+        if (mT[id] === undefined) delete cT[id]; else cT[id] = mT[id];
+      }
+      if (touched) {
+        const order = (mine[key] || []).map((t) => t.id).filter((id) => cT[id]);
+        for (const t of out[key] || []) if (cT[t.id] && !order.includes(t.id)) order.push(t.id);
+        out[key] = order.map((id) => cT[id]);
+      } else if (!out[key]) out[key] = mine[key] || [];
     }
-    if (touched) {
-      const order = (mine.tags || []).map((t) => t.id).filter((id) => cT[id]);
-      for (const t of out.tags || []) if (cT[t.id] && !order.includes(t.id)) order.push(t.id);
-      out.tags = order.map((id) => cT[id]);
-    } else if (!out.tags) out.tags = mine.tags || [];
     // 剩下的标量字段（emoji 兜底库这类）：我改过才覆盖
     for (const k of Object.keys({ ...base, ...mine })) {
-      if (DICTS.includes(k) || k === 'tags') continue;
+      if (DICTS.includes(k) || k === 'tags' || k === 'folderTags') continue;
       if (!same(base[k], mine[k])) out[k] = mine[k];
       else if (!(k in out) && mine[k] !== undefined) out[k] = mine[k];
     }

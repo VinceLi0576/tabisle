@@ -29,6 +29,15 @@
   //    一个夹打一下就能把几十条一起塞进来，那就不叫快捷方式了。
   const PINNED_TAG = 'K';
   const PINNED_MAX = 16;
+  // 老徐 260915：「我刚才讲的是文件夹整理，不是标签组。标签组是标签组，文件夹自己也要有标签组。
+  //   比如这个是『已经上线』的，我们总共有 7 个，其他都是『待整理』」
+  // 🔴 这是跟书签标签完全分开的第二套名单（他拍的「完全两套，互不相干」）：
+  //   存在 meta.folderTags，打在 meta.groups[名字].ftags 上。
+  //   带 dim 的那个＝排到最后＋整组压淡。
+  const DEFAULT_FOLDER_TAGS = [
+    { id: 'F1', glyph: '线', name: '已上线', desc: '正式在用的分组', color: '#2f6fdb' },
+    { id: 'F0', glyph: '整', name: '待整理', desc: '还没归位，排到最后并压淡', color: '#5c6b7a', dim: true },
+  ];
   const MAX_TAGS = 9;
   const DEFAULT_EMOJI_RULES = `github 🐙
 gitlab 🦊
@@ -185,12 +194,33 @@ chrome:// ⚙️`;
   const { esc, key, host, domainParts, countUrls } = BmCore;   // 派生逻辑跟侧栏共用一份
   const tagList = () => meta.tags;
   const tagDef = (id) => meta.tags.find((t) => t.id === id);
-  // 🔴 原来这儿是硬匹配名字叫不叫「废弃」—— 他把标签改名成「待整理」，排到最后和变灰就静默失效了。
-  //    改成标签自己带一个开关（dim），叫什么名字都不影响；老数据里名叫「废弃」的仍然认，并在下面补上这个开关。
-  const deprecatedTags = () => meta.tags.filter((t) => t.dim || t.name?.trim() === '废弃' || t.name?.trim() === '待整理');
-  function migrateDimTag() {
+  // ── 文件夹那一套（跟上面那套互不相干）──
+  const fTagList = () => (meta.folderTags ||= DEFAULT_FOLDER_TAGS.map((t) => ({ ...t })));
+  const fTagDef = (id) => fTagList().find((t) => t.id === id);
+  const folderTagIds = (f) => (f && !f.url && meta.groups[f.title]?.ftags) || [];
+  function setFolderTags(f, ids) {
+    const g = (meta.groups[f.title] ||= {});
+    if (ids && ids.length) g.ftags = [...new Set(ids)]; else delete g.ftags;
+    if (!Object.keys(g).length) delete meta.groups[f.title];
+    saveMeta(); render();
+  }
+  // 🔴 「排到最后＋压淡」现在只看文件夹自己那套标签里带 dim 的那个，🚫 不再硬匹配名字、也🚫 不掺和书签标签
+  const deprecatedTags = () => fTagList().filter((t) => t.dim);
+  // 老数据：他之前是拿书签标签（名叫「废弃」）标文件夹的 ⇒ 把那些搬到文件夹标签上来，🚫 别让他的标记凭空消失
+  function migrateFolderTags() {
     let changed = false;
-    for (const t of meta.tags) if (!t.dim && ['废弃', '待整理'].includes(t.name?.trim())) { t.dim = true; changed = true; }
+    if (!meta.folderTags) { meta.folderTags = DEFAULT_FOLDER_TAGS.map((t) => ({ ...t })); changed = true; }
+    const dimId = meta.folderTags.find((t) => t.dim)?.id;
+    const oldIds = new Set((meta.tags || []).filter((t) => t.dim || ['废弃', '待整理'].includes(t.name?.trim())).map((t) => t.id));
+    if (dimId && oldIds.size) {
+      for (const g of Object.values(meta.groups || {})) {
+        if (!g.tags?.some((id) => oldIds.has(id))) continue;
+        g.ftags = [...new Set([...(g.ftags || []), dimId])];
+        g.tags = g.tags.filter((id) => !oldIds.has(id));
+        if (!g.tags.length) delete g.tags;
+        changed = true;
+      }
+    }
     return changed;
   }
   function effectiveTags(n) {
@@ -200,19 +230,21 @@ chrome:// ⚙️`;
     }
     return [...ids];
   }
+  // 只有文件夹会被标成「待整理」；一条书签算不算，看它所在的夹（includeParents 时）
   function isDeprecated(n, includeParents = false) {
     const ids = new Set(deprecatedTags().map((t) => t.id));
-    for (let node = n; node; node = includeParents && node.parentId ? findNode(node.parentId) : null) {
-      const tags = (node.url ? itemMeta(node.url) : meta.groups[node.title])?.tags || [];
-      if (tags.some((id) => ids.has(id))) return true;
+    if (!ids.size) return false;
+    for (let node = n; node; node = node.parentId ? findNode(node.parentId) : null) {
+      if (!node.url && (meta.groups[node.title]?.ftags || []).some((id) => ids.has(id))) return true;
+      if (!includeParents && node === n) { if (n.url) continue; return false; }
     }
     return false;
   }
   // 徽章上写标签自己的名字（他改成「待整理」就显示「待整理」），🚫 别写死
   function dimLabel(n) {
     const ids = new Set(deprecatedTags().map((t) => t.id));
-    const own = ((n.url ? itemMeta(n.url) : meta.groups[n.title])?.tags || []).find((id) => ids.has(id));
-    return (own && tagDef(own)?.name) || deprecatedTags()[0]?.name || '待整理';
+    const own = (folderTagIds(n) || []).find((id) => ids.has(id));
+    return (own && fTagDef(own)?.name) || deprecatedTags()[0]?.name || '待整理';
   }
   function deprecatedLast(nodes, includeParents = false) {
     const current = [], deprecated = [];
@@ -235,7 +267,7 @@ chrome:// ⚙️`;
     const j = JSON.stringify(fresh);
     if (j === lastMetaJson || j === JSON.stringify(meta)) return;   // 自己写的回声
     meta = fresh; meta.items ||= {}; meta.groups ||= {}; meta.tags ||= DEFAULT_TAGS.map((t) => ({ ...t }));
-    ensurePinnedTag(); migrateDimTag();   // 只补内存这一份，🚫 别在这儿存盘：会跟另一台来回写
+    ensurePinnedTag(); migrateFolderTags();   // 只补内存这一份，🚫 别在这儿存盘：会跟另一台来回写
     if (typeof meta.emojiRules !== 'string') meta.emojiRules = DEFAULT_EMOJI_RULES;
     emojiRules = parseEmojiRules(meta.emojiRules);
     if (typeof render === 'function' && bar) render();
@@ -249,7 +281,7 @@ chrome:// ⚙️`;
     meta.tags.push({ ...DEFAULT_TAGS.find((t) => t.id === PINNED_TAG) });
     return true;
   }
-  if (ensurePinnedTag() | migrateDimTag()) saveMeta();
+  if (ensurePinnedTag() | migrateFolderTags()) saveMeta();
   const groupColor = (title) => (meta.groups[title] || {}).color || '';
   // ── 锁定：锁在文件夹的稳定身份（uid）上，不再认名字 ──
   // 🔴 原先按文件夹名记（meta.groups[title].locked）有三个后果：同名夹互相串；

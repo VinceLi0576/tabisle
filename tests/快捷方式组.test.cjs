@@ -51,18 +51,26 @@ test('老数据要补上这个标签，而且只补不改', () => {
   assert.match(fn, /some\(\(t\) => t\.id === PINNED_TAG\)/, '没判断已存在 ⇒ 每次打开都塞一个重复标签');
   assert.match(fn, /push/, '不补 ⇒ 老数据里 meta.tags 已经存在，||= 走不到，界面上永远勾不上');
   // 外部 meta 变更重载那处只补内存，别存盘：两台机器会互相写个没完
-  assert.match(app, /ensurePinnedTag\(\); migrateDimTag\(\);/, '重载路径没补');
+  assert.match(app, /ensurePinnedTag\(\); migrateFolderTags\(\);/, '重载路径没补');
 });
 
-test('🔴 「排到最后＋变灰」按标签自己的开关走，🚫 别硬匹配名字', () => {
-  // 原来是 t.name === '废弃' 硬匹配 ⇒ 他一把标签改名成「待整理」，排序和变灰就静默失效。
-  // 老徐 260915 要的正是「待整理」这个名字，所以这条必须先立住。
-  assert.match(app, /const deprecatedTags = \(\) => meta\.tags\.filter\(\(t\) => t\.dim/, '还在按名字硬匹配');
-  assert.match(app, /function migrateDimTag\(\)/, '老数据里那个标签没补上开关');
-  assert.match(app, /\$\('#tag-dim'\)\.checked/, '标签编辑框里没有这个开关 ⇒ 用户打不开它');
-  assert.match(app, /dim: \$\('#tag-dim'\)\.checked/, '开关没存回标签');
-  assert.match(app, /function dimLabel\(n\)/, '徽章还写死一个词');
-  assert.doesNotMatch(app, /class="deprecated-badge">废弃</, '徽章上还硬写着「废弃」');
+test('🔴 文件夹有自己一套标签，跟书签那套完全分开（老徐 260915 拍的「两套，互不相干」）', () => {
+  // 他原话：「我刚才讲的是文件夹整理，不是标签组。标签组是标签组，文件夹自己也要有标签组」
+  assert.match(app, /const DEFAULT_FOLDER_TAGS = \[/, '没有文件夹那套默认标签');
+  assert.match(app, /meta\.folderTags \|\|= DEFAULT_FOLDER_TAGS/, '文件夹标签没有自己的存放处');
+  assert.match(app, /const folderTagIds = \(f\) => .*\.ftags/, '文件夹标签没打在自己的字段上');
+  // 「排到最后＋压淡」只看文件夹那套，🚫 别再掺和书签标签
+  assert.match(app, /const deprecatedTags = \(\) => fTagList\(\)\.filter\(\(t\) => t\.dim\)/, '还在从书签标签里找');
+  const isDep = app.match(/function isDeprecated\(n, includeParents = false\) \{[\s\S]*?\n  \}/)[0];
+  assert.match(isDep, /ftags/, '判断还在看书签标签');
+  assert.doesNotMatch(isDep, /itemMeta\(node\.url\)/, '一条书签自己不该能被标成「待整理」');
+  // 老数据：他之前拿书签标签标过文件夹 ⇒ 得搬过来，🚫 别让标记凭空消失
+  assert.match(app, /function migrateFolderTags\(\)/, '没有迁移');
+  assert.match(app, /g\.ftags = \[\.\.\.new Set\(\[\.\.\.\(g\.ftags \|\| \[\]\), dimId\]\)\]/, '老标记没搬到文件夹标签上');
+  // 🔴 同步：两套名单都得走按 id 合并那一段，漏掉哪套，另一台新建的标签就会被整份覆盖掉
+  const core = nocomment(fs.readFileSync(p('bm-core.js'), 'utf8'));
+  assert.match(core, /for \(const key of \['tags', 'folderTags'\]\)/, '合并只处理了一套名单');
+  assert.match(core, /k === 'tags' \|\| k === 'folderTags'/, 'folderTags 被当普通标量字段覆盖了');
 });
 
 test('说明那一句不写死在代码里，他能自己改', () => {

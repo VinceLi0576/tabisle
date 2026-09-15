@@ -10,7 +10,7 @@ async function editorAction(m) {
     const id=String(m.id||'');const node=(await chrome.bookmarks.get(id))[0];
     if(!node||node.url)throw Error('不是文件夹');
     if(typeof m.title==='string'&&m.title.trim()&&m.title!==node.title)await chrome.bookmarks.update(id,{title:m.title.trim()});
-    if(m.note!==undefined||m.locked!==undefined||m.color!==undefined){
+    if(m.note!==undefined||m.locked!==undefined||m.color!==undefined||m.ftags!==undefined){
       // 🔴 只动这个夹的那几个键，其余原样 —— 跟附属数据合并写同一条纪律，别整包盖
       const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
       const uidMap=(await chrome.storage.local.get('bookmarkIdentity')).bookmarkIdentity||{};
@@ -25,6 +25,16 @@ async function editorAction(m) {
         const ok=FOLDER_COLORS.some(x=>x.c===m.color);
         const g={...(fresh.groups?.[name]||{})};
         if(m.color&&ok)g.color=m.color;else delete g.color;
+        fresh.groups=fresh.groups||{};
+        if(Object.keys(g).length)fresh.groups[name]=g;else delete fresh.groups[name];
+      }
+      // 文件夹自己那套标签（跟书签标签是两套名单，老徐 260915 拍的）—— 跟颜色一样按夹名存
+      if(m.ftags!==undefined){
+        const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
+        const known=new Set((fresh.folderTags||[]).map(t=>t.id));
+        const ids=[...new Set((Array.isArray(m.ftags)?m.ftags:[]).map(String).filter(x=>known.has(x)))];
+        const g={...(fresh.groups?.[name]||{})};
+        if(ids.length)g.ftags=ids;else delete g.ftags;
         fresh.groups=fresh.groups||{};
         if(Object.keys(g).length)fresh.groups[name]=g;else delete fresh.groups[name];
       }
@@ -89,7 +99,9 @@ async function editorAction(m) {
       color:meta.groups?.[node.title]?.color||'',
       colors:FOLDER_COLORS,
       locked:!!(uid&&meta.locks?.[uid])||!!meta.groups?.[node.title]?.locked,
-      color:meta.groups?.[node.title]?.color||''},
+      color:meta.groups?.[node.title]?.color||'',
+      ftags:meta.groups?.[node.title]?.ftags||[],
+      folderTags:meta.folderTags||[]},
       canNudge:BmCore.nudgeable(bar,node.id)};
   }
   const {meta={items:{},groups:{},tags:[]}}=await chrome.storage.local.get('meta');

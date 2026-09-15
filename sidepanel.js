@@ -92,6 +92,21 @@
       b.title=o.n;b.setAttribute('aria-label',o.n);
       b.onclick=()=>{[...$('fp-colors').children].forEach(x=>x.classList.toggle('on',x===b));folderPatch({color:o.c});};
       return b;}));
+    // 文件夹那套标签（老徐 260915：「标签组是标签组，文件夹自己也要有标签组」）
+    $('fp-ftags').replaceChildren(...(f.folderTags||[]).map(t=>{
+      const on=(f.ftags||[]).includes(t.id);
+      const b=document.createElement('button');
+      b.type='button';b.className='fp-ftag'+(on?' on':'');b.dataset.id=t.id;
+      b.style.setProperty('--tc',/^#[0-9a-f]{6}$/i.test(t.color||'')?t.color:'#5c6b7a');
+      b.title=t.desc||t.name;
+      b.innerHTML='<b>'+(t.glyph||t.name.slice(0,1))+'</b><span>'+t.name+'</span>';
+      b.onclick=()=>{
+        const next=on?(f.ftags||[]).filter(x=>x!==t.id):[...(f.ftags||[]),t.id];
+        folderPatch({ftags:next});
+      };
+      return b;
+    }));
+    if(!(f.folderTags||[]).length){const p=document.createElement('p');p.className='field-help';p.textContent='还没有文件夹标签。';$('fp-ftags').append(p);}
     $('fp-note').disabled=$('fp-lock').disabled=!f.uid;
     if(!f.uid)$('fp-note').placeholder='这个文件夹还没拿到稳定标识，等一次自动备份之后再写';
     $('fp-children').replaceChildren(...f.children.map(c=>{
