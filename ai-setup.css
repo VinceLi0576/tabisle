@@ -1,7 +1,7 @@
 /* AI 整理标准页 */
-.task-row{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;background:var(--card)}
+.task-row{border:1px solid var(--border);border-radius: var(--r-lg);padding:12px;margin-bottom:12px;background:var(--card)}
 .task-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.task-head .task-name{flex:1;min-width:0;height:32px;font-weight:600}
+.task-head .task-name{flex:1;min-width:0;height:32px;font-weight: var(--fw-medium)}
 .task-head button{height:30px;padding:0 10px;font-size: var(--fs-sm);flex:none}
 .task-prompt{width:100%;font-size: var(--fs-md)}
 #standard{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:1.8}
@@ -9,16 +9,16 @@
 .notice li{margin:6px 0;font-size: var(--fs-md);line-height:1.7}
 
 /* 老徐 260914：接口这段字太小，看不清 —— 整段放大一号 */
-#sec-kimi label{font-size: var(--fs-lg);font-weight:600;margin-bottom:8px}
-#sec-kimi select,#sec-kimi input{height:46px;padding:0 14px;font-size: var(--fs-lg);border-radius:10px}
+#sec-kimi label{font-size: var(--fs-lg);font-weight: var(--fw-medium);margin-bottom:8px}
+#sec-kimi select,#sec-kimi input{height:46px;padding:0 14px;font-size: var(--fs-lg);border-radius: var(--r-lg)}
 #sec-kimi select{cursor:pointer}
 #sec-kimi .footnote{font-size: var(--fs-sm)}
-.note-box{margin:14px 0 0;padding:14px 16px;border-radius:10px;background:var(--bg);font-size: var(--fs-md);line-height:1.75;color:var(--muted)}
+.note-box{margin:14px 0 0;padding:14px 16px;border-radius: var(--r-lg);background:var(--bg);font-size: var(--fs-md);line-height:1.75;color:var(--muted)}
 .note-box b{color:var(--text)}
 /* 注册入口做成两个真按钮摆在模型下面，🚫 别混在小字说明里 */
 .go-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
-.go-link{display:inline-flex;align-items:center;height:40px;padding:0 16px;border:1px solid var(--border);border-radius:999px;font-size: var(--fs-md);white-space:nowrap;background:var(--card)}
+.go-link{display:inline-flex;align-items:center;height:40px;padding:0 16px;border:1px solid var(--border);border-radius: var(--r-pill);font-size: var(--fs-md);white-space:nowrap;background:var(--card)}
 .go-link:hover{border-color:var(--accent);color:var(--accent)}
-.go-link.primary-link{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card));font-weight:600}
+.go-link.primary-link{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card));font-weight: var(--fw-medium)}
 .go-link.primary-link:hover{background:color-mix(in srgb,var(--accent) 14%,var(--card))}
-#sec-kimi .notice li code{font-size: var(--fs-md);padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--accent) 9%,var(--card));color:var(--accent)}
+#sec-kimi .notice li code{font-size: var(--fs-md);padding:1px 5px;border-radius: var(--r-xs);background:color-mix(in srgb,var(--accent) 9%,var(--card));color:var(--accent)}

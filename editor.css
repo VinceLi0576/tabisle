@@ -4,30 +4,30 @@ body.editor-page { height: 100vh; padding: 0; overflow: hidden; display: flex; f
    这个文件比 panel.css 后加载 ⇒ 这里写死 18px 会把那边的变量压掉，所以也用变量。 */
 body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 14px var(--panel-pad,14px); border-bottom: 1px solid var(--border); background: var(--card); }
 .heading-group { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.heading-mark { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; font-size: var(--fs-xl); }
-.editor-page h1 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: .02em; }
+.heading-mark { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-md); font-size: var(--fs-xl); }
+.editor-page h1 { font-size: var(--fs-lg); font-weight: var(--fw-medium); letter-spacing: .02em; }
 .editor-page .icon-button { background: transparent; border: 0; color: var(--muted); width: 30px; height: 30px; font-size: var(--fs-2xl); padding: 0; }
 .editor-page .icon-button:hover { background: var(--bg); color: var(--text); }
 .editor-page #editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .editor-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; min-height: 0; padding: 16px; flex: 1; }
 .url-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.preview-icon { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; background: var(--bg); }
+.preview-icon { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--bg); }
 .preview-icon img { width: 18px; height: 18px; object-fit: contain; }
 .editor-page .url-heading label { margin: 0; flex: none; font-size: var(--fs-md); }
 #preview-domain { color: var(--muted); font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; margin-left: auto; }
-.preview-open { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 6px; flex: none; font-size: var(--fs-xl); }
+.preview-open { display: grid; place-items: center; width: 25px; height: 25px; border-radius: var(--r-sm); flex: none; font-size: var(--fs-xl); }
 .preview-open:hover { background: var(--bg); }
-.name-preview { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 7px 9px; border-radius: 6px; background: var(--bg); min-width: 0; }
+.name-preview { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 7px 9px; border-radius: var(--r-sm); background: var(--bg); min-width: 0; }
 .name-preview>span { font-size: var(--fs-2xs); color: var(--muted); flex: none; }
-.name-preview strong { font-size: var(--fs-sm); font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.edit-section { background: var(--card); padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+.name-preview strong { font-size: var(--fs-sm); font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edit-section { background: var(--card); padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); margin-bottom: 10px; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
-.editor-page h2 { font-size: var(--fs-md); margin: 0; font-weight: 650; }
+.editor-page h2 { font-size: var(--fs-md); margin: 0; font-weight: var(--fw-medium); }
 .section-note { color: var(--muted); font-size: var(--fs-2xs); }
-.auto-badge { color: #25805a; background: #25805a10; padding: 1px 7px; border-radius: 5px; font-size: var(--fs-2xs); white-space: nowrap; }
-.editor-page label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; margin: 10px 0 5px; font-size: var(--fs-sm); font-weight: 550; }
-.label-hint { color: var(--muted); font-size: var(--fs-2xs); font-weight: 400; }
-.editor-page input, .editor-page textarea, .editor-page select { padding: 7px 9px; border-radius: 7px; font-size: var(--fs-sm); line-height: 1.6; background: color-mix(in srgb, var(--bg) 48%, var(--card)); }
+.auto-badge { color: #25805a; background: #25805a10; padding: 1px 7px; border-radius: var(--r-sm); font-size: var(--fs-2xs); white-space: nowrap; }
+.editor-page label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; margin: 10px 0 5px; font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.label-hint { color: var(--muted); font-size: var(--fs-2xs); font-weight: var(--fw-normal); }
+.editor-page input, .editor-page textarea, .editor-page select { padding: 7px 9px; border-radius: var(--r-sm); font-size: var(--fs-sm); line-height: 1.6; background: color-mix(in srgb, var(--bg) 48%, var(--card)); }
 .editor-page textarea { min-height: 39px; resize: vertical; }
 .editor-page #name, .editor-page #alias { height: 34px; }
 .editor-page .folder-fields>label { margin-top: 0; }
@@ -36,17 +36,17 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .editor-page select { text-overflow: ellipsis; }
 .folder-path { font-size: var(--fs-2xs); color: var(--muted); margin: 5px 1px 0; line-height: 1.5; }
 .editor-page fieldset { margin: 12px 0 0; }
-.editor-page legend { font-size: var(--fs-sm); font-weight: 550; padding: 0; margin-bottom: 7px; }
+.editor-page legend { font-size: var(--fs-sm); font-weight: var(--fw-medium); padding: 0; margin-bottom: 7px; }
 .editor-page .tag-options { gap: 6px; }
-.editor-page .tag-options label { margin: 0; padding: 5px 7px; border-radius: 7px; gap: 5px; font-size: var(--fs-xs); font-weight: 450; cursor: pointer; border-color: color-mix(in srgb, var(--tag-color) 25%, var(--border)); background: color-mix(in srgb, var(--tag-color) 7%, var(--card)); transition: background .12s, border-color .12s; }
+.editor-page .tag-options label { margin: 0; padding: 5px 7px; border-radius: var(--r-sm); gap: 5px; font-size: var(--fs-xs); font-weight: var(--fw-normal); cursor: pointer; border-color: color-mix(in srgb, var(--tag-color) 25%, var(--border)); background: color-mix(in srgb, var(--tag-color) 7%, var(--card)); transition: background .12s, border-color .12s; }
 .editor-page .tag-options input { margin: 0; width: 12px; height: 12px; accent-color: var(--tag-color); padding: 0; flex: none; }
-.tag-glyph { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: var(--tag-color); background: color-mix(in srgb, var(--tag-color) 12%, var(--card)); font-size: var(--fs-2xs); font-weight: 650; flex: none; }
+.tag-glyph { display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-sm); color: var(--tag-color); background: color-mix(in srgb, var(--tag-color) 12%, var(--card)); font-size: var(--fs-2xs); font-weight: var(--fw-medium); flex: none; }
 .editor-page .tag-options label:has(:checked) { border-color: var(--tag-color); background: color-mix(in srgb, var(--tag-color) 14%, var(--card)); }
 .editor-page .tag-options label:has(:checked) .tag-glyph { color: white; background: var(--tag-color); }
 .editor-page .tag-options label:has(:focus-visible) { outline: 2px solid var(--tag-color); outline-offset: 2px; }
 .editor-page .tag-options label:hover { border-color: var(--tag-color); }
-.editor-more { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
-.editor-more summary { font-size: var(--fs-sm); color: var(--muted); margin: 0; font-weight: 500; }
+.editor-more { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--card); }
+.editor-more summary { font-size: var(--fs-sm); color: var(--muted); margin: 0; font-weight: var(--fw-medium); }
 .field-help { font-size: var(--fs-2xs); color: var(--muted); margin-top: 6px; }
 .more-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .more-actions button { text-align: left; font-size: var(--fs-sm); }
@@ -72,19 +72,19 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 /* 同一个网站的收藏散在哪几个文件夹里：一行一个夹，点开看明细 */
 .dom-group{border-top:1px solid var(--border)}
 .dom-group:first-child{border-top:0}
-.dom-row{display:flex;align-items:center;gap:8px;width:100%;padding:8px 2px;border:0;background:transparent;text-align:left;font-size: var(--fs-sm);border-radius:6px}
+.dom-row{display:flex;align-items:center;gap:8px;width:100%;padding:8px 2px;border:0;background:transparent;text-align:left;font-size: var(--fs-sm);border-radius: var(--r-sm)}
 .dom-row:hover{background:var(--bg)}
 .dom-caret{flex:none;width:12px;color:var(--muted);font-size: var(--fs-md);line-height:1}
 .dom-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dom-here{flex:none;font-size: var(--fs-2xs);color:#25805a;background:#25805a10;padding:1px 6px;border-radius:5px;white-space:nowrap}
+.dom-here{flex:none;font-size: var(--fs-2xs);color:#25805a;background:#25805a10;padding:1px 6px;border-radius: var(--r-sm);white-space:nowrap}
 .dom-count{flex:none;color:var(--muted);font-size: var(--fs-xs);white-space:nowrap}
 .dom-items{padding:2px 0 8px 20px}
 .dom-item{display:flex;align-items:center;gap:8px;padding:5px 0;font-size: var(--fs-xs);min-width:0}
-.dom-item.current{font-weight:600}
+.dom-item.current{font-weight: var(--fw-medium)}
 .dom-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dom-sub{flex:none;color:var(--muted);font-size: var(--fs-2xs);max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dom-badge{flex:none;font-size: var(--fs-2xs);color:var(--muted);white-space:nowrap}
-.dom-go{flex:none;padding:2px 8px;font-size: var(--fs-xs);border-radius:6px}
+.dom-go{flex:none;padding:2px 8px;font-size: var(--fs-xs);border-radius: var(--r-sm)}
 @media(prefers-color-scheme:dark){.dom-here{color:#74cba8;background:#74cba814}}
 .dom-more{display:block;width:100%;margin-top:8px;padding:6px;font-size: var(--fs-xs);color:var(--muted);border-style:dashed}
 
@@ -93,7 +93,7 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
    跟上面的详情页对齐」⇒ 等分铺满、图标在上文字在下、居中；锁定并进这一排 */
 .detail-nudge{display:flex;align-items:stretch;gap:6px;flex:none;padding:8px var(--panel-pad,14px);border-bottom:1px solid var(--border);background:var(--card)}
 .detail-nudge .dn{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  height:46px;padding:0 4px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);
+  height:46px;padding:0 4px;border:1px solid var(--border);border-radius: var(--r-md);background:var(--bg);color:var(--text);
   font-size: var(--fs-md);line-height:1;cursor:pointer;white-space:nowrap;overflow:hidden}
 .detail-nudge .dn span{font-size: var(--fs-xs);color:var(--muted)}
 .detail-nudge .dn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
@@ -108,24 +108,24 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .folder-pane{display:flex;flex-direction:column;flex:1;min-height:0}
 .fp-ico{flex:none;font-size: var(--fs-xl);line-height:1}
 .fp-path{color:var(--muted);font-size: var(--fs-2xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:auto}
-.editor-page #fp-title{height:36px;font-size: var(--fs-md);font-weight:600}
+.editor-page #fp-title{height:36px;font-size: var(--fs-md);font-weight: var(--fw-medium)}
 .fp-stats{display:flex;gap:4px;margin-top:8px;font-size: var(--fs-sm);color:var(--muted)}
-.fp-lock{display:flex;flex-direction:row;align-items:flex-start;gap:8px;font-size: var(--fs-sm);font-weight:500;line-height:1.5}
+.fp-lock{display:flex;flex-direction:row;align-items:flex-start;gap:8px;font-size: var(--fs-sm);font-weight: var(--fw-medium);line-height:1.5}
 .fp-lock input{width:14px;height:14px;margin-top:2px;flex:none;padding:0}
 .editor-page #fp-note{min-height:84px;line-height:1.7}
-.fp-child{display:block;width:100%;text-align:left;padding:7px 9px;margin:2px 0;border:1px solid transparent;border-radius:7px;background:transparent;font-size: var(--fs-sm);color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-child{display:block;width:100%;text-align:left;padding:7px 9px;margin:2px 0;border:1px solid transparent;border-radius: var(--r-sm);background:transparent;font-size: var(--fs-sm);color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fp-child:hover{background:var(--bg);border-color:var(--border)}
-.fp-child.is-folder{font-weight:600}
+.fp-child.is-folder{font-weight: var(--fw-medium)}
 
 .detail-summary{display:flex;flex-direction:column;gap:2px;padding:10px 14px 4px;font-size: var(--fs-sm)}
-.detail-summary strong{font-size: var(--fs-md);font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail-summary strong{font-size: var(--fs-md);font-weight: var(--fw-medium);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail-summary span{color:var(--text);opacity:.85}
 .detail-summary em{font-style:normal;color:var(--muted);font-size: var(--fs-xs)}
 .editor-page #editor[hidden] ~ .detail-summary,.detail-summary:has(strong:empty){display:none}
 
 /* 自动填：从标签页选 / 按网址取 */
 .autofill{display:flex;gap:6px;margin-top:8px}.autofill button{font-size: var(--fs-sm);padding:5px 10px}
-.tab-list{margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.tab-list{margin-top:6px;border:1px solid var(--border);border-radius: var(--r-md);overflow:hidden}
 .tab-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:0;border-bottom:1px solid var(--border);background:transparent;text-align:left;cursor:pointer}
 .tab-item:last-child{border-bottom:0}.tab-item:hover{background:var(--well)}
 .tab-item img{width:16px;height:16px;flex:none}.tab-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size: var(--fs-sm)}.tab-host{flex:none;font-size: var(--fs-xs);color:var(--muted)}
