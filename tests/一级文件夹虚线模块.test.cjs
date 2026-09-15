@@ -82,7 +82,13 @@ test('右边一整条＝这个文件夹的入口，贯穿整个框（老徐 2609
   assert.match(app, /function folderStripEl\(f\)/, '没有这一条');
   assert.match(app, /card\.appendChild\(folderStripEl\(f\)\)/, '这一条没挂到文件夹框上');
   assert.doesNotMatch(app, /class="hd-detail"/, '标题栏里那颗「›」还在 ⇒ 两个入口做同一件事');
-  assert.match(app, /closest\('\.hd-detail, \.fstrip'\)/, '点这一条开不了详情');
+  assert.match(app, /closest\('\.hd-detail, \.fs-more'\)/, '点这一条开不了详情');
+  // 老徐 260915：「要在左边找一个小箭头去展开缩小，体验太差了」⇒ 上段收起展开、下段详情，两件都在右边
+  assert.match(app, /closest\('\[data-stripfold\]'\)/, '右边这条不能收起展开 ⇒ 还得跑去左边点那个小三角');
+  assert.match(css, /\.fs-fold \{/, '上段没样式');
+  // 🔴 特异性坑：光写 .fs-more 会被上面 .fstrip > button 的 flex:none 压掉，下段就只剩 17px 高
+  assert.match(css, /\.fstrip > \.fs-more \{[^}]*flex: 1 1 auto/, '下段没撑满 ⇒ 整条下半截点不到');
+  assert.match(css, /\.is-collapsed > \.fstrip \.fs-fold svg \{ transform: rotate\(-90deg\)/, '折起来时右边那颗三角不跟着转');
   const st = css.match(/^\.fstrip \{([^}]*)\}/m)[1];
   assert.match(st, /position: absolute/, '不是贯穿整框 ⇒ 展开后下半截点不到');
   assert.match(st, /top: 0; bottom: 0/, '没有从头贯到底');

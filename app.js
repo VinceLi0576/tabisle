@@ -492,6 +492,13 @@ chrome:// ⚙️`;
     section.classList.toggle('is-collapsed', collapsed);
     const body = section.querySelector(':scope > .body');
     if (body) body.hidden = collapsed;
+    // 右边竖条上那颗跟左边那颗是同一件事，状态一起画
+    const stripFold = section.querySelector(':scope > .fstrip > .fs-fold');
+    if (stripFold) {
+      stripFold.setAttribute('aria-expanded', String(!collapsed));
+      stripFold.title = collapsed ? '展开这个文件夹' : '收起这个文件夹';
+      stripFold.setAttribute('aria-label', stripFold.title);
+    }
     const button = section.querySelector(':scope > .head > .folder-toggle, :scope > .sub-head > .folder-toggle');
     if (button) {
       button.setAttribute('aria-expanded', String(!collapsed));
@@ -691,9 +698,17 @@ chrome:// ⚙️`;
         render();                                           // DOM 跟数据对不上了才退回重画
         return;
       }
+      // 整理页开着时同样别让页面跳：记下这块在屏幕上的位置，重画完把滚动补回去
+      const orgOpen2 = !$('#organize').hidden;
+      const was = orgOpen2 ? document.querySelector(`#organize .fchip[data-id="${CSS.escape(String(id))}"]`)?.getBoundingClientRect().top : null;
       await store.move(String(id), to);
       markSelfWrite();
       await refresh();
+      if (orgOpen2) {
+        const now = document.querySelector(`#organize .fchip[data-id="${CSS.escape(String(id))}"]`)?.getBoundingClientRect().top;
+        if (was != null && now != null) window.scrollBy(0, now - was);
+        return;
+      }
       // 跨层级会换爹，得让他看见挪到哪去了；同级那条上面已经 return，不会走到这儿
       document.getElementById('sec-' + (dir === 'in' ? to.parentId : String(id)))?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -717,7 +732,9 @@ chrome:// ⚙️`;
     queueNudge(hold.id, hold.level ? (e.deltaY < 0 ? 'out' : 'in') : (e.deltaY < 0 ? 'up' : 'down'));
   }, { passive: false });
   document.addEventListener('click', (e) => {
-    const hd = e.target.closest('.hd-detail, .fstrip'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
+    const sf = e.target.closest('[data-stripfold]');
+    if (sf) { e.preventDefault(); e.stopPropagation(); toggleFolder(document.getElementById('sec-' + sf.dataset.stripfold)); return; }
+    const hd = e.target.closest('.hd-detail, .fs-more'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
     if (nb) {
       e.preventDefault(); e.stopPropagation();
@@ -748,13 +765,20 @@ chrome:// ⚙️`;
   // 老徐 260915：「右边这个箭头……放在整个框的最右边，可以做宽一点。相当于整个文件夹，
   //   甚至展开子文件夹时，右边一整条都属于关于整个文件夹的定位」
   // ⇒ 跟书签卡片右边那条竖条同一个意思，只是这条管的是整个夹。箭头贴顶，折叠展开位置不变。
+  // 上段＝收起／展开（跟左边那个三角同一件事，手不用跑到左边去），下段＝这个夹的详情
   function folderStripEl(f) {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'fstrip'; b.dataset.detail = f.id;
-    b.title = `「${f.title || '这个文件夹'}」的详情：说明、颜色、锁定、挪位置`;
-    b.setAttribute('aria-label', b.title);
-    b.innerHTML = '<span class="fs-arrow">›</span>';
-    return b;
+    const box = document.createElement('span');
+    box.className = 'fstrip';
+    const fold = document.createElement('button');
+    fold.type = 'button'; fold.className = 'fs-fold'; fold.dataset.stripfold = f.id;
+    fold.innerHTML = '<svg viewBox="0 0 12 12"><path d="M3 4l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const more = document.createElement('button');
+    more.type = 'button'; more.className = 'fs-more'; more.dataset.detail = f.id;
+    more.title = `「${f.title || '这个文件夹'}」的详情：说明、颜色、锁定、挪位置`;
+    more.setAttribute('aria-label', more.title);
+    more.innerHTML = '<span class="fs-arrow">›</span>';
+    box.append(fold, more);
+    return box;
   }
   function cardEl(f, opts = {}) {
     const card = document.createElement('div');
@@ -803,12 +827,15 @@ chrome:// ⚙️`;
       +     `<u class="c-url">${direct} 条</u>`
       +     (total > direct ? `<u class="c-all">连子夹 ${total} 条</u>` : '')
       +     (subs ? `<u class="c-sub">${subs} 个子夹</u>` : '<u class="c-sub none">无子夹</u>')
-      +     (note ? `<span class="fnote" title="${esc(note)}">${esc(note)}</span>` : '<span class="fnote none">没写说明</span>')
+      +     (note ? `<span class="fnote" title="${esc(note)}">${esc(note)}</span>` : '')
       +   '</span>'
       + '</span>'
-      + `<span class="finto" title="拖到这里，放进这个文件夹" data-folder="${f.id}">↳</span>`;
+      // 老徐 260915：「既然能往上移一移、往下移一移，那左右呢？」⇒ 四个方向都给上。
+      // 🔴 类名和 data 属性跟首页那套一模一样 ⇒ 点击委托和「按住＋滚轮连着挪」直接就能用，🚫 不另写一套
+      + `<span class="fnudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']]
+          .map(([d,g,t]) => `<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}（按住我滚鼠标滚轮，能一格一格连着挪）" aria-label="${t}">${g}</button>`).join('')}</span>`;
     if (isDeprecated(f)) c.querySelector('.title').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
-    c.title = '上下拖改顺序 · 点一下跳到那一组 · 右键改名/换色';
+    c.title = '拖到别块的上下边＝改顺序，拖到别块中间＝放进那个夹 · 点一下开右边详情 · 右键改名/换色';
     return c;
   }
   function orgFoldAll(collapse) {
@@ -838,7 +865,7 @@ chrome:// ⚙️`;
     const withSubs = folders.filter((f) => orgSubs(f).length).length;
 
     const tip = document.createElement('p'); tip.className = 'forg-tip';
-    tip.textContent = '这一页直接改浏览器书签栏里的文件夹结构，改完立刻生效、也会同步到别的电脑。一级分组一行一个；子文件夹平铺，每行几个在右上角选。上下拖到某一块的上边或下边改顺序；拖到右端 ↳ 放进那个文件夹；拖回最外层那一列提升为一级。每一层最后那个虚线格是「在这儿新建一个文件夹」。';
+    tip.textContent = '这一页直接改浏览器书签栏里的文件夹结构，改完立刻生效、也会同步到别的电脑。一级分组一行一个；子文件夹平铺，每行几个在右上角选。拖到某一块的上边或下边＝改顺序，拖到它中间＝放进那个文件夹；每块右边四个方向键也能挪，按住其中一个滚鼠标滚轮可以连着挪。每一层最后那个虚线格是「在这儿新建一个文件夹」。';
 
     const head = document.createElement('div'); head.className = 'forg-h';
     head.innerHTML = `一级分组 <span class="n">${folders.length} 个 · ${withSubs} 个有子文件夹 · ${folders.length - withSubs} 个还没有</span>`;
@@ -891,6 +918,10 @@ chrome:// ⚙️`;
   $('#organize-btn').addEventListener('click', () => toggleOrganize());
   $('#organize').addEventListener('click', (e) => {
     e.stopPropagation();
+    // 🔴 这个处理器一进来就 stopPropagation ⇒ document 上那条 .nudge 委托在整理页里收不到，
+    //    方向键点了会毫无反应（260915 实测排位纹丝不动）。所以方向键必须在这儿自己接一次。
+    const nb = e.target.closest('.nudge[data-nudge]');
+    if (nb) { e.preventDefault(); if (wheelMoved) { wheelMoved = false; return; } queueNudge(nb.dataset.id, nb.dataset.nudge); return; }
     const all = e.target.closest('[data-orgall]');
     if (all) { orgFoldAll(all.dataset.orgall === 'close'); renderOrganize(); return; }
     const tw = e.target.closest('.ftwist[data-twist]');
@@ -1866,10 +1897,16 @@ chrome:// ⚙️`;
     };
     const side_ = (el) => side(el, true);
     if (drag.el.classList.contains('fchip')) {                 // 整理页：只在整理页内部动
-      const into = t.closest('.finto');
-      if (into) return { parentId: into.dataset.folder, refId: null, el: into, cls: 'drop-into' };
       const chip = t.closest('.fchip');
-      if (chip) return { parentId: chip.dataset.parent, refId: chip.dataset.id, pos: side_(chip), el: chip, cls: 'drop-' + side_(chip) };
+      if (chip) {
+        // 🔴 三段式，跟所有文件管理器一个手感：上边一条＝排它前面，下边一条＝排它后面，中间一大片＝放进它里面。
+        //    原来是「拖到右端那个 ↳ 小图标上才算放进去」—— 又窄又得先看懂那个符号（老徐 260915 当面说不懂）
+        const r = chip.getBoundingClientRect();
+        const p = (e.clientY - r.top) / r.height;
+        if (p >= 0.3 && p <= 0.7) return { parentId: chip.dataset.id, refId: null, el: chip, cls: 'drop-into' };
+        const pos = p < 0.3 ? 'before' : 'after';
+        return { parentId: chip.dataset.parent, refId: chip.dataset.id, pos, el: chip, cls: 'drop-' + pos };
+      }
       const row = t.closest('.frow');
       if (row) return { parentId: row.dataset.parent, refId: null, el: row, cls: 'drop-into' };
       return null;

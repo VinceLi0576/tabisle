@@ -189,5 +189,10 @@ test('右边那条竖条和文件夹详情箭头都加宽了（老徐 260915「�
   const hd = Number(css.match(/\.hd-detail\{[^}]*width:(\d+)px/)[1]);
   assert.ok(hd >= 32, '文件夹那颗「›」还是窄的：' + hd);
   // 「捷」得让开竖条，否则压在箭头上
-  assert.match(css, /\.pin \{[\s\S]*?right: calc\(var\(--strip-w/, '那颗「捷」没让开竖条');
+  const pin = css.match(/^\.pin \{([^}]*)\}/m)[1];
+  assert.match(pin, /right: calc\(var\(--strip-w/, '那颗「捷」没让开竖条');
+  // 🔴 必须在右【下】角：上面那行是标签徽章，放右上会跟「官/自/备」叠在一起；
+  //    而且 .tile 是 overflow:hidden，贴太近会被裁掉半颗（老徐 260915 截图指出来的）
+  assert.match(pin, /bottom: \d+px/, '又放回右上角了 ⇒ 跟标签徽章叠在一起');
+  assert.doesNotMatch(pin, /top: \d+px/, '还带着 top ⇒ 位置会打架');
 });

@@ -201,11 +201,13 @@ a { color: inherit; text-decoration: none; }
 .web-go { flex: none; height: 38px; padding: 0 18px; border: 1px solid var(--accent); border-radius: 8px;
   background: var(--accent-bg); color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer; }
 .web-go:hover { background: var(--accent); color: #fff; }
-/* 卡片右上角那颗「捷」：一点就钉进快捷方式，再点取消。老徐 260915「我点了地址就是快捷方式来」
-   没钉的平时不露（省得 800 张卡片上全是按钮），钉过的一直亮着 —— 一眼看出哪些已经钉了 */
-.pin { position: absolute; top: 3px; right: calc(var(--strip-w, 30px) + 3px); z-index: 2;
+/* 卡片上那颗「捷」：一点就钉进快捷方式，再点取消。老徐 260915「我点了地址就是快捷方式来」
+   没钉的平时不露（省得 800 张卡片上全是按钮），钉过的一直亮着 —— 一眼看出哪些已经钉了。
+   🔴 位置在右【下】角，🚫 别放右上：上面那一行是标签徽章（官/自/备…），放上面会跟它们叠在一起，
+      而且 .tile 是 overflow:hidden，贴着竖条放会被裁掉半颗（老徐 260915 截图指出来的就是这个）。 */
+.pin { position: absolute; bottom: 4px; right: calc(var(--strip-w, 30px) + 6px); z-index: 2;
   width: 20px; height: 20px; line-height: 18px; padding: 0; text-align: center;
-  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  border: 1px solid transparent; border-radius: 6px; background: var(--card);
   color: var(--muted-2); font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .tile:hover .pin, .pin:focus-visible { opacity: 1; }
 .pin:hover { border-color: #8e44ad; color: #8e44ad; background: color-mix(in srgb, #8e44ad 12%, transparent); }
@@ -508,13 +510,17 @@ dialog .palette span.on { border-color: var(--text); }
 .fchip .fmeta .c-sub.none { opacity: .8; }
 .fchip .fnote { flex: 1 1 180px; min-width: 0; color: var(--muted);
   overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.fchip .fnote.none { flex: none; opacity: .6; }
-
-.finto { flex: none; display: grid; place-items: center; width: 34px; align-self: stretch;
-  margin: calc(-1 * var(--fpy, 5px)) -12px calc(-1 * var(--fpy, 5px)) 0;
-  border-left: 1px dashed var(--border); color: var(--muted);
-  border-radius: 0 9px 9px 0; font-size: 15px; }
-.finto.drop-into { background: var(--accent-bg); color: var(--accent); outline: 2px solid var(--accent); }
+/* 🔄 260915：那个 ↳ 去掉了 —— 又窄又得先看懂符号。现在拖到块中间就是放进去（老徐当面说不懂它）。
+   块自己承担 drop-into 的高亮 */
+.fchip.drop-into { background: var(--accent-bg); outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 每块右边四个方向键（老徐 260915：「既然能往上移一移，那左右呢？」）—— 平时淡，鼠标到这块才亮 */
+.fnudge { flex: none; display: grid; grid-template-columns: repeat(2, 24px); gap: 2px; align-self: center; margin-left: auto; }
+.fnudge .nudge { height: 20px; padding: 0; border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--muted-2); font-size: 11px; line-height: 1; cursor: pointer;
+  opacity: .35; transition: opacity .12s, color .12s, border-color .12s; }
+.fchip:hover .fnudge .nudge { opacity: 1; }
+.fnudge .nudge:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.fnudge .nudge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
 
 /* 落点提示改成上下两条横线 —— 顺序是上下的，🚫 不再是左右 */
 .fchip.dragging { opacity: .35; }
@@ -687,15 +693,26 @@ dialog .palette span.on { border-color: var(--text); }
 /* ── 右边一整条＝这个文件夹的入口（老徐 260915）──
    贯穿整个框：折叠时就是一小条，展开时一直到底。箭头贴顶，两种状态下位置不变。 */
 .card[data-kind="folder"], .card.inbox { position: relative; padding-right: 46px; }
+/* 上段收起展开 ｜ 下段详情 —— 两件都在右边，手不用跑到左边那个小三角去 */
 .fstrip { position: absolute; right: 0; top: 0; bottom: 0; width: 38px; z-index: 1;
-  display: flex; align-items: flex-start; justify-content: center; padding-top: 11px;
-  border: 0; border-left: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, transparent);
+  display: flex; flex-direction: column; align-items: stretch;
+  border-left: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, transparent);
   border-radius: 0 9px 9px 0;
-  background: color-mix(in srgb, var(--gc, var(--muted-2)) 5%, transparent);
+  background: color-mix(in srgb, var(--gc, var(--muted-2)) 5%, transparent); }
+.fstrip > button { flex: none; display: flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; padding: 0;
   color: color-mix(in srgb, var(--gc, var(--muted-2)) 70%, var(--muted));
-  font-size: 17px; line-height: 1; cursor: pointer; transition: background .12s, color .12s; }
-.fstrip:hover { background: color-mix(in srgb, var(--gc, var(--accent)) 14%, transparent); color: var(--gc, var(--accent)); }
-.fstrip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  line-height: 1; cursor: pointer; transition: background .12s, color .12s; }
+.fs-fold { height: 34px; border-bottom: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 18%, transparent) !important; }
+.fs-fold svg { width: 13px; height: 13px; transition: transform .15s; }
+.is-collapsed > .fstrip .fs-fold svg { transform: rotate(-90deg); }
+/* 🔴 要写成 .fstrip > .fs-more：光写 .fs-more 特异性低于上面那条 .fstrip > button，
+   flex:none 会赢，下段就只剩文字那点高（实测 17px），整条下面 600px 点不到 */
+.fstrip > .fs-more { flex: 1 1 auto; align-items: flex-start; padding-top: 9px; font-size: 17px; }
+.fstrip > button:hover { background: color-mix(in srgb, var(--gc, var(--accent)) 16%, transparent); color: var(--gc, var(--accent)); }
+.fstrip > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 折起来时整条只有一行高：下段让给上段，别把箭头挤没了 */
+.is-collapsed > .fstrip .fs-more { min-height: 0; padding-top: 0; align-items: center; }
 /* 折叠行整行可点：点空白处开侧栏 */
 .card > .head { cursor: pointer; }
 .card > .head:hover { background: color-mix(in srgb, var(--gc, var(--muted-2)) 9%, transparent); }

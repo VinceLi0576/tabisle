@@ -51,7 +51,13 @@ test('① 一块里要能看见五样：名字 · 几条书签 · 几个子夹 �
   assert.match(chip, /class="c-url">\$\{direct\} 条/, '没显示几条书签');
   assert.match(chip, /const subs = orgSubs\(f\)\.length/, '没数子夹');
   assert.match(chip, /const note = folderNote\(f\.id\)/, '没读文件夹说明');
-  assert.match(chip, /class="fnote"[\s\S]*?class="fnote none">没写说明/, '没说明的那块没标出来');
+  // 🔄 260915：没写说明就不显示了 —— 那四个字在 163 个块上重复，占地方还没信息量
+  assert.match(chip, /note \? `<span class="fnote"/, '有说明的那块没显示出来');
+  assert.doesNotMatch(chip, /没写说明/, '又在每块上重复那四个字了');
+  // 四个方向键：类名和 data 跟首页同一套，「按住＋滚轮连着挪」才会自动生效
+  assert.match(chip, /class="fnudge"/, '块上没有方向键');
+  for (const d of ['up', 'down', 'out', 'in']) assert.match(chip, new RegExp(`'${d}'`), '少了方向 ' + d);
+  assert.match(chip, /class="nudge" data-nudge="\$\{d\}" data-id="\$\{f\.id\}"/, '方向键没沿用首页那套属性 ⇒ 点击委托和滚轮都接不上');
   assert.match(chip, /folderLockedByTitle\(f\.title\) \? '<em class="lk"/, '锁没显示');
 });
 
@@ -94,8 +100,28 @@ test('④ 落点提示是上下两条横线，判 before/after 也按纵向中�
   assert.match(css, /\.fchip\.drop-after::after \{ bottom:/, '后插提示没画在下边');
   const branch = app.match(/if \(drag\.el\.classList\.contains\('fchip'\)\) \{([\s\S]*?)\n    \}/)[1];
   assert.ok(!/side\(chip, false\)/.test(branch), '还在按左右判落点 ⇒ 上下拖会插错位置');
-  assert.match(branch, /pos: side_\(chip\)/, '没改成按纵向中线判 before/after');
   assert.match(branch, /const row = t\.closest\('\.frow'\)/, '拖到空白处没有兜底的「放进这一层」');
+});
+
+test('🔴 方向键在整理页里必须自己接一次点击', () => {
+  // 整理页的点击处理器开头就 stopPropagation ⇒ document 上那条 .nudge 委托根本收不到，
+  // 方向键点了毫无反应（260915 实测排位纹丝不动）。这条钉住那次实撞。
+  const fn = app.match(/\$\('#organize'\)\.addEventListener\('click'[\s\S]*?\n  \}\);/)[0];
+  assert.match(fn, /stopPropagation/, '前提变了：它不再拦冒泡的话这条可以撤');
+  assert.match(fn, /closest\('\.nudge\[data-nudge\]'\)/, '整理页里点方向键没人接 ⇒ 点了没反应');
+  const nudgeIdx = fn.indexOf("closest('.nudge[data-nudge]')"), chipIdx = fn.indexOf("closest('.fchip')");
+  assert.ok(nudgeIdx > 0 && nudgeIdx < chipIdx, '方向键排在「点块开侧栏」后面 ⇒ 点了只会弹侧栏');
+});
+
+test('🔴 落点三段：上边排前 · 下边排后 · 中间放进去（老徐 260915）', () => {
+  // 他原话：「一个灰色箭头拖到这里放进文件夹，我就有点不太懂了。按理说我应该直接叠到别的文件夹上面」
+  const branch = app.match(/if \(drag\.el\.classList\.contains\('fchip'\)\) \{([\s\S]*?)\n    \}/)[1];
+  assert.match(branch, /const p = \(e\.clientY - r\.top\) \/ r\.height/, '没按纵向比例分段');
+  assert.match(branch, /p >= 0\.3 && p <= 0\.7/, '中间那一段不是「放进去」 ⇒ 又得去瞄那个小图标');
+  assert.match(branch, /parentId: chip\.dataset\.id, refId: null[^}]*drop-into/, '中间没落到「放进这个夹」');
+  assert.doesNotMatch(branch, /\.finto/, '那个 ↳ 还在');
+  assert.doesNotMatch(app, /class="finto"/, '块上还画着 ↳');
+  assert.match(css, /\.fchip\.drop-into \{/, '压在中间时整块没有高亮 ⇒ 看不出会放进哪');
 });
 
 test('④ 拖拽仍然只认 .fchip、仍然只调 store.move —— 数据那头一点没动', () => {
