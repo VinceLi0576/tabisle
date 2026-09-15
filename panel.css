@@ -18,11 +18,13 @@
   border-color:color-mix(in srgb,var(--pt,var(--accent)) 55%,transparent);border-bottom-color:var(--pt,var(--accent));font-weight:600}
 /* 🔴 侧栏设计基准宽度 380px（Chrome 侧边栏的宽度由用户拖，扩展改不了 ⇒ 我们只能让内容按这个宽度排、
    窄了自动降级）。以后所有右侧栏统一按这个来。 */
-:root{--panel-base:380px;--panel-pad:14px}
+/* 🔴 侧栏一把尺子：左右内边距全用它。值＝ .editor-scroll 的 padding，改一处三处跟着走
+   （老徐 260915 指出第一段的框比下面几个宽 —— 病根就是我给新框又加了一层左右 margin）*/
+:root{--panel-base:380px;--panel-pad:16px}
 /* 顶上标签行、下面那排操作、每个框：左右一律用同一个内边距，否则边一错就显得歪 */
 .page-head{padding-left:var(--panel-pad);padding-right:var(--panel-pad)}
 /* 每一段单独框起来（老徐 260915：「类似于快捷方式、搜索、最近访问那种，一个一个框起来」）*/
-.fp-box{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 var(--panel-pad) 10px;background:var(--card)}
+/* .edit-section 本来就带框和间距 ⇒ 这里🚫 别再加 margin／border，加了就比别的段窄一圈 */
 .fp-box>h2,.fp-box .section-heading{margin-top:0}
 /* 颜色：色块＋名字＋编码，编码点一下复制 */
 /* 一行一个色 —— 两列会把「克莱因蓝」折成上下两行，挤（老徐 260915 当场指出来的）*/
