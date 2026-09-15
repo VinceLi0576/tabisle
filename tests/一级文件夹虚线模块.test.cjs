@@ -31,7 +31,8 @@ test('折叠行分两段：数量跟在名字层级后面，说明在右段，�
 
 test('说明是标题栏底下自己一个小框，折叠展开都在', () => {
   // 老徐 260914 复议：「如果有备注就显示备注」⇒ 展开后那一行也留着
-  const box = css.match(/\.card > \.note-card, #recent > \.note-card \{([^}]*)\}/)[1];
+  // 选择器列表会随着新框加长（#recent、#pinned…），只锚住开头那一段
+  const box = css.match(/\.card > \.note-card[^{]*\{([^}]*)\}/)[1];
   assert.match(box, /display: flex/, '说明小框没显示出来');
   assert.match(box, /border:/, '不是一个框，只是一行字');
   const inner = css.match(/\.note-card-btn \{([^}]*)\}/)[1];
@@ -76,6 +77,7 @@ test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不
   // 老徐 260914：「你不能自动给我写进去啊，那别人用的时候没有 AI 怎么写？不能直接写到代码里面去」
   assert.match(app, /const DEFAULT_NOTES = \{/, '没有默认文案这一层');
   assert.match(app, /recentNote: undefined, inboxNote: undefined/, '这两个键没进 DEFAULTS ⇒ 写得进读不回来');
+  // 🔄 260915 三块合成一个工作台 ⇒ 说明的空壳从每块一个变成整块共用一个，内容跟着当前那一页换
   const set = app.match(/function setFolderNote\(id, text\) \{([\s\S]*?)\n  \}/)[1];
   assert.match(set, /prefs\[k\] = String\(text/, '这两块的说明存不回去 ⇒ 等于还是写死的');
   const get = app.match(/const folderNote = \(id\) => \{([\s\S]*?)\n  \};/)[1];
@@ -83,8 +85,9 @@ test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不
   assert.match(app, /pseudoNote = \(id\) =>/, '收集箱拿不到稳定标识，说明得另找地方存');
   assert.ok(!/inbox-hint/.test(app), '标题行上那句灰字还在');
   const html = fs.readFileSync(p('newtab.html'), 'utf8');
-  assert.match(html, /id="recent-note"><\/div>/, '最近访问的说明还硬写在 HTML 里');
-  assert.match(html, /<span class="title">最近访问<\/span><span class="level-label">/, '最近访问标题后面该接层级标');
+  assert.match(html, /id="deck-note"><\/div>/, '工作台的说明还硬写在 HTML 里');
+  // 🔄 260915：最近访问的标题变成工作台里的一个标签按钮了，层级标只留在下面每个文件夹上
+  assert.match(html, /<span class="deck-tabs" id="deck-tabs"/, '工作台没有标签行');
   assert.ok(!/inbox-hint/.test(html), '最近访问标题行上那句灰字还在');
   assert.match(html, /<span class="hd-toggle"><\/span>/,
     '最近访问标题那行少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
@@ -99,12 +102,12 @@ test('标题栏点空白处＝展开收起，跟下面每个文件夹一样，�
   assert.ok(!/openDetail\(/.test(h[1]), '点一行就弹侧栏 ⇒ 跟下面的文件夹不一致');
 });
 
-test('最近访问和收集箱的标题结构跟下面的文件夹一样，只有颜色不同', () => {
+test('工作台的标题结构跟下面的文件夹一样，只有颜色不同', () => {
+  // 🔄 260915：最近访问／快捷方式／收集箱三块合成一个带标签行的工作台，标题栏还是那一套壳
   const html = fs.readFileSync(p('newtab.html'), 'utf8');
-  const head = html.match(/<div class="recent-head"[\s\S]*?<\/div>/)[0];
-  assert.match(head, /class="folder-toggle"/, '最近访问还在用自己那套箭头');
-  assert.match(head, /class="level-mark"/, '最近访问没有层级条');
-  assert.match(head, /class="level-label"/, '最近访问没有层级标');
+  const head = html.match(/<div class="recent-head deck-head"[\s\S]*?<\/div>/)[0];
+  assert.match(head, /class="folder-toggle"/, '工作台还在用自己那套箭头');
+  assert.match(head, /class="level-mark"/, '工作台没有层级条');
   assert.ok(!/class="chev"/.test(head), '旧的 chev 还留着');
   // 收集箱走 headEl，层级条和层级标不能再被 fixed 跳过
   assert.match(app, /^\s*levelMark\(opts\.level \|\| 1\) \+ \(`<button class="folder-toggle"/m, '收集箱还是没有层级条');

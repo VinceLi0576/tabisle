@@ -21,7 +21,14 @@
     { id: 'G', glyph: '官', name: '官网', desc: '产品或服务的官方入口', color: '#2f6fdb' },
     { id: 'Z', glyph: '自', name: '自建', desc: '自己搭的站、服务、后台', color: '#1f9d55' },
     { id: 'B', glyph: '备', name: '备份', desc: '资料存放、备份所在', color: '#d08700' },
+    { id: 'K', glyph: '捷', name: '快捷方式', desc: '钉在首页最上面那一组，一组最多 16 个', color: '#8e44ad' },
   ];
+  // 老徐 260915：「这快捷方式这四个字也属于标签，然后我们打上这快捷方式的标签的地址 就会显示在这新的组」
+  // ⇒ 它就是一个普通标签，只是首页专门给它开一组。
+  // 🔴 只认书签自己身上的标签，🚫 不走 effectiveTags —— 那个会把文件夹的标签继承给里面每一条，
+  //    一个夹打一下就能把几十条一起塞进来，那就不叫快捷方式了。
+  const PINNED_TAG = 'K';
+  const PINNED_MAX = 16;
   const MAX_TAGS = 9;
   const DEFAULT_EMOJI_RULES = `github 🐙
 gitlab 🦊
@@ -113,7 +120,19 @@ chrome:// ⚙️`;
   // ── 本机偏好 ──
   // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
   //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, foldDefault: 'auto', orgCols: 3 };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, pinnedNote: undefined, foldDefault: 'auto', orgCols: 3, pinnedCollapsed: false, deckTab: 'recent', deckCollapsed: false, webEngine: 'baidu' };
+  // 工作台这一块的四页。老徐 260915：「在这个区域顶部横排一列标签，把这些功能都整合到这一整块里面」
+  const DECK_TABS = [
+    { k: 'recent', t: '最近访问', note: '__recent' },
+    { k: 'pinned', t: '快捷方式', note: '__pinned' },
+    { k: 'inbox',  t: '收集箱',   note: 'bar' },
+    { k: 'web',    t: '搜网页',   note: '' },
+  ];
+  const WEB_ENGINES = [
+    { k: 'baidu',  t: '百度', u: 'https://www.baidu.com/s?wd=' },
+    { k: 'bing',   t: '必应', u: 'https://www.bing.com/search?q=' },
+    { k: 'google', t: '谷歌', u: 'https://www.google.com/search?q=' },
+  ];
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
   try { if (chrome?.storage?.local) chrome.storage.local.remove('undefined'); } catch {}
@@ -127,14 +146,19 @@ chrome:// ⚙️`;
   if (!Number.isInteger(prefs.inboxIndex) || prefs.inboxIndex < 0) prefs.inboxIndex = 0;
   const viewName = (v) => ({ card: '紧凑', detail: '详细', list: '列表' })[v] || '紧凑';
   function applyPrefs() {
-    for (const el of $$('.card, #recent')) el.dataset.view = viewFor(el.dataset.id || '__recent');
+    for (const el of $$('.card, #deck')) el.dataset.view = viewFor(el.dataset.id || '__deck');
     for (const b of $$('.hd-view')) b.textContent = viewName(viewFor(b.dataset.viewof));
     $$('.seg').forEach((seg) => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.val === String(prefs[seg.dataset.key]))));
-    const rc = !!prefs.recentCollapsed;
-    $('#recent').classList.toggle('collapsed', rc);
-    $('#recent').classList.toggle('is-collapsed', rc);   // 跟下面的文件夹同一套类名，样式一份就够
-    $('#recent-head .folder-toggle')?.setAttribute('aria-expanded', String(!rc));
-    $('#recent-body').hidden = rc;
+    // 工作台整块一个折叠状态（老徐 260915：「这一整块同样是可以折叠的」）
+    const dc = !!prefs.deckCollapsed, deck = $('#deck');
+    if (deck) {
+      deck.classList.toggle('collapsed', dc);
+      deck.classList.toggle('is-collapsed', dc);   // 跟下面的文件夹同一套类名，样式一份就够
+      $('#deck-head .folder-toggle')?.setAttribute('aria-expanded', String(!dc));
+      $('#deck-body').hidden = dc;
+      // 🔴 这儿不能调 deckTab()：applyPrefs 在它声明之前就被调用了，一调就撞暂时性死区、整页白屏
+      $('#deck-note').hidden = dc || prefs.deckTab === 'web';
+    }
   }
   const savePrefs = () => { const { folderCollapsed, ...display } = prefs; return store.prefs.set(display); };
   applyPrefs();
@@ -189,12 +213,21 @@ chrome:// ⚙️`;
     const j = JSON.stringify(fresh);
     if (j === lastMetaJson || j === JSON.stringify(meta)) return;   // 自己写的回声
     meta = fresh; meta.items ||= {}; meta.groups ||= {}; meta.tags ||= DEFAULT_TAGS.map((t) => ({ ...t }));
+    ensurePinnedTag();   // 只补内存这一份，🚫 别在这儿存盘：会跟另一台来回写
     if (typeof meta.emojiRules !== 'string') meta.emojiRules = DEFAULT_EMOJI_RULES;
     emojiRules = parseEmojiRules(meta.emojiRules);
     if (typeof render === 'function' && bar) render();
   });
   const itemMeta = (u) => meta.items[key(u)] || {};
   function setItemMeta(u, patch) { BmCore.applyItemMeta(meta, u, patch); saveMeta(); }
+  // 老数据里 meta.tags 早就有了，上面那个 ||= 不会补新标签 ⇒ 缺了就补一条。
+  // 🔴 只补不改：他要是自己把这个标签改了名或换了色，照他的来。
+  function ensurePinnedTag() {
+    if (meta.tags.some((t) => t.id === PINNED_TAG)) return false;
+    meta.tags.push({ ...DEFAULT_TAGS.find((t) => t.id === PINNED_TAG) });
+    return true;
+  }
+  if (ensurePinnedTag()) saveMeta();
   const groupColor = (title) => (meta.groups[title] || {}).color || '';
   // ── 锁定：锁在文件夹的稳定身份（uid）上，不再认名字 ──
   // 🔴 原先按文件夹名记（meta.groups[title].locked）有三个后果：同名夹互相串；
@@ -211,11 +244,14 @@ chrome:// ⚙️`;
   // 最近访问和收集箱不是普通文件夹：前者根本不是夹，后者是书签栏根目录、拿不到稳定标识
   // ⇒ 这两块的说明存在本机偏好里；代码里只给一句默认文案，他改了就用他的、清空了就真的空着。
   const RECENT_NOTE = '__recent';
-  const pseudoNote = (id) => (String(id) === RECENT_NOTE ? 'recentNote' : String(id) === String(bar?.id) ? 'inboxNote' : '');
+  const PINNED_NOTE = '__pinned';
+  const pseudoNote = (id) => (String(id) === RECENT_NOTE ? 'recentNote' : String(id) === PINNED_NOTE ? 'pinnedNote' : String(id) === String(bar?.id) ? 'inboxNote' : '');
   const DEFAULT_NOTES = {
     recentNote: '最近访问：这台浏览器最近打开过的几个网页，按时间排。已经收藏的就是那条书签本身，点右边箭头能进详情；没收藏过的是影子卡，只能点开。',
     inboxNote: '收集箱：在别处点星号收藏、没归类的网址都落在这里。整理完点「归入」挪进文件夹，这里就空了。',
+    pinnedNote: '快捷方式：鼠标移到任意一条书签上、点右上角那颗「捷」就钉到这里，最多 16 个。它不是副本 —— 书签还在自己原来的文件夹里，这儿只是多一个入口；再点一次那颗「捷」就取消。',
   };
+  const deckTab = () => DECK_TABS.find((x) => x.k === prefs.deckTab) || DECK_TABS[0];
   const folderNote = (id) => {
     const k = pseudoNote(id);
     if (k) return typeof prefs[k] === 'string' ? prefs[k] : DEFAULT_NOTES[k];
@@ -388,6 +424,7 @@ chrome:// ⚙️`;
     a.title = `${label(n)}${m.name ? '（书签名：' + rawLabel(n) + '）' : ''}\n${n.url}${m.desc ? '\n' + m.desc : ''}`;
     a.dataset.dom = domainParts(n.url).root;
     a.appendChild(copyLogo(n));
+    a.appendChild(pinBtn(n));
     const txt = document.createElement('span'); txt.className = 'txt';
     const line1 = document.createElement('span'); line1.className = 'line1';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = label(n); line1.appendChild(name);
@@ -456,6 +493,9 @@ chrome:// ⚙️`;
     paintFold(section, folderCollapsed(f));
   }
   async function toggleFolder(section) {
+    // 🔴 顶上那一整块不是 .card／.sub ⇒ 点它的三角时 main 那条委托拿到的 box 是 null。
+    //    这就是运行错误里长期挂着的那条 Cannot read properties of null (reading 'dataset')。
+    if (!section) return;
     const f = section.dataset.id === bar.id ? bar : findNode(section.dataset.id); if (!f) return;
     const key = foldKey(f), previous = prefs.folderCollapsed[key];
     const collapsed = !section.classList.contains('is-collapsed');
@@ -613,19 +653,9 @@ chrome:// ⚙️`;
     return sub;
   }
 
-  function inboxCard(loose) {
-    const c = cardEl({ id: bar.id, title: '收集箱', children: loose, dateAdded: bar.dateAdded }, { fixed: true });
-    c.classList.add('inbox');
-    return c;
-  }
-  async function moveInbox(dir) {
-    const total = (bar.children || []).filter((k) => !k.url).length;
-    const cur = Math.min(prefs.inboxIndex, total);
-    const next = dir === 'top' ? 0 : dir === 'up' ? Math.max(0, cur - 1) : Math.min(total, cur + 1);
-    if (next === cur) { toast(dir === 'down' ? '收集箱已经在最底下' : '收集箱已经在最顶上'); return; }
-    prefs.inboxIndex = next; savePrefs(); render();
-    document.querySelector('.card.inbox')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
+  // 🔄 老徐 260915 把收集箱收进了顶上那一整块 ⇒ 它不再排在下面这一排里，
+  //    原来那三颗上移／下移／复位按钮没有落脚点了，一起退场。
+  //    偏好 inboxIndex 留着不删：万一要退回旧排法，位置还在。
   function cardEl(f, opts = {}) {
     const card = document.createElement('div');
     card.className = 'card'; card.id = 'sec-' + f.id;
@@ -751,7 +781,7 @@ chrome:// ⚙️`;
     const show = on === undefined ? box.hidden : on;
     box.hidden = !show;
     $('#groups').hidden = show;
-    $('#recent').hidden = show;
+    $('#deck').hidden = show;
     if (show) { clearDomHl(); renderOrganize(); }
     else $('#empty').hidden = (bar.children || []).length > 0;
     $('#organize-btn').classList.toggle('on', show);
@@ -815,12 +845,7 @@ chrome:// ⚙️`;
     const ordered = [...folders.filter(f => !isDeprecated(f)), ...folders.filter(f => isDeprecated(f))];
     // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失。
     // 它排第几由 prefs.inboxIndex 定（默认最顶上），头上的 ▲▼⇱ 只改这个数
-    prefs.inboxIndex = Math.min(prefs.inboxIndex, ordered.length);
-    ordered.forEach((f, i) => {
-      if (loose.length && i === prefs.inboxIndex) groups.appendChild(inboxCard(loose));
-      groups.appendChild(cardEl(f));
-    });
-    if (loose.length && prefs.inboxIndex >= ordered.length) groups.appendChild(inboxCard(loose));
+    ordered.forEach((f) => groups.appendChild(cardEl(f)));
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
     domHl = '';
@@ -830,7 +855,9 @@ chrome:// ⚙️`;
     renderSide(folders, loose.length ? bar.id : null, loose);
     noticeInbox(loose);
     if (search.value.trim()) renderSearch();
-    renderRecent();
+    renderDeck();       // 先用手上这份最近访问画出来
+    renderRecent();     // 历史记录是异步的，来了再重画一次
+
     paintSince(); refreshLastVisits();
   }
 
@@ -1009,36 +1036,149 @@ chrome:// ⚙️`;
   $('#filter-mode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; prefs.filterMode = b.dataset.val; $$('#filter-mode button').forEach((x) => x.classList.toggle('on', x === b)); savePrefs(); applyFilters(); });
   $$('#filter-mode button').forEach((x) => x.classList.toggle('on', x.dataset.val === prefs.filterMode));
 
-  // ── 最近访问 ──
+  // ── 工作台：四页合一 ──
+  // 老徐 260915：「在这个区域顶部横排一列标签（Tab）……把这些功能都整合到这一整块里面，
+  //   而且这一整块同样是可以折叠的」⇒ 原来的「最近访问」「快捷方式」两块 ＋ 从下面收上来的「收集箱」
+  //   ＋ 一个能换引擎的搜网页框，合成这一个块。顶上省掉大约三分之二的地方。
   let recentRender = 0;
-  async function renderRecent() {
+  let recentCache = [];
+  async function loadRecent() {
     const request = ++recentRender;
     const items = deprecatedLast(await store.recent(8));   // 老徐 260914：「最多就显示 8 个好了，不要 16 个」
-    if (request !== recentRender) return;
-    const box = $('#recent-body'); box.innerHTML = '';
-    // 🔴 整理页开着时别把「最近访问」放出来盖在上面：拖一次就触发 render → renderRecent，
-    //    它原来不看整理页开没开，把 toggleOrganize 刚藏起来的那块又显出来了（260914 子 agent 查出）
-    $('#recent').hidden = !!search.value.trim() || !items.length || !$('#organize').hidden;
-    $('#recent-count').textContent = items.length;
-    $('#recent').replaceChild(noteCardEl({ id: RECENT_NOTE }), $('#recent-note'));
-    $('#recent').querySelector('.note-card').id = 'recent-note';
-    // 老徐 260914「最近访问我不要列表」：跟收集箱一样用卡片。已收藏的就是那条书签本身（能进详情、能挪）；
-    // 没收藏过的是「影子卡」——只能点开，没有箭头、不能拖
+    if (request !== recentRender) return false;
+    recentCache = items;
+    return true;
+  }
+  const looseNodes = () => deprecatedLast((bar.children || []).filter((k) => k.url));
+  const deckCount = (k) => k === 'recent' ? recentCache.length : k === 'pinned' ? pinnedItems().length : k === 'inbox' ? looseNodes().length : null;
+
+  // 最近访问：已收藏的就是那条书签本身（能进详情、能挪）；没收藏过的是「影子卡」，只能点开
+  function deckRecentBody() {
     const body = document.createElement('div'); body.className = 'body';
-    for (const it of items) {
-      const node = flat.find((b) => key(b.url) === key(it.url));
+    if (!recentCache.length) { body.appendChild(deckHint('这台浏览器还没有最近打开的记录，或者没给历史记录权限。')); return body; }
+    for (const it of recentCache) {
+      const node = flat.find((x) => key(x.url) === key(it.url));
       if (node) { body.appendChild(tileEl(node)); continue; }
       const ghost = tileEl({ id: '', url: it.url, title: it.title || host(it.url), parentId: null });
       ghost.classList.add('ghost'); ghost.draggable = false; ghost.dataset.kind = 'ghost'; delete ghost.dataset.id;
-      ghost.querySelector('.strip3')?.remove(); ghost.title = `${it.title || host(it.url)}\n${it.url}\n（还没收藏）`;
+      ghost.querySelector('.strip3')?.remove(); ghost.querySelector('.pin')?.remove();
+      ghost.title = `${it.title || host(it.url)}\n${it.url}\n（还没收藏）`;
       body.appendChild(ghost);
     }
-    box.appendChild(body); paintSince();
+    return body;
   }
-  $('#recent-head').addEventListener('click', (e) => {
+  // 快捷方式：打了「捷」标签的。🔴 只认书签自己的标签，🚫 不用 effectiveTags（它会把文件夹标签继承给里面每一条）
+  const pinnedItems = () => flat.filter((n) => (itemMeta(n.url).tags || []).includes(PINNED_TAG));
+  function deckPinnedBody() {
+    const all = deprecatedLast(pinnedItems());
+    const body = document.createElement('div'); body.className = 'body';
+    if (!all.length) { body.appendChild(deckHint('还没有快捷方式。鼠标移到任意一条书签上，点它右上角那颗「捷」，它就会排到这里来。')); return body; }
+    for (const n of all.slice(0, PINNED_MAX)) body.appendChild(tileEl(n));
+    if (all.length > PINNED_MAX) {
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'pinned-more'; more.dataset.pinnedmore = '1';
+      more.textContent = `还有 ${all.length - PINNED_MAX} 个 · 点这里在下面只看这个标签`;
+      body.appendChild(more);
+    }
+    return body;
+  }
+  // 收集箱＝书签栏根目录里散着的网址。老徐 260915 把它从下面那一排收进这一块
+  function deckInboxBody() {
+    const loose = looseNodes();
+    const body = document.createElement('div'); body.className = 'body'; body.dataset.folder = bar.id;
+    if (!loose.length) { body.appendChild(deckHint('收集箱是空的 —— 根目录不放具体网址，这正是它该有的样子。')); return body; }
+    for (const n of loose) body.appendChild(tileEl(n));
+    body.appendChild(addTile(bar.id));
+    return body;
+  }
+  // 搜网页：地址栏只认默认引擎，想临时换一个得进设置 ⇒ 这里放一排能一键切的。🚫 不要任何新权限，只是拼个网址
+  function deckWebBody() {
+    const body = document.createElement('div'); body.className = 'websearch';
+    const seg = document.createElement('span'); seg.className = 'seg eng-seg';
+    for (const e of WEB_ENGINES) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.dataset.eng = e.k; b.textContent = e.t;
+      b.className = prefs.webEngine === e.k ? 'on' : '';
+      seg.appendChild(b);
+    }
+    const form = document.createElement('form'); form.className = 'web-form';
+    const input = document.createElement('input');
+    input.type = 'search'; input.id = 'web-q'; input.autocomplete = 'off';
+    input.placeholder = `用${(WEB_ENGINES.find((e) => e.k === prefs.webEngine) || WEB_ENGINES[0]).t}搜网页（上面那个搜索框搜的是书签）`;
+    const go = document.createElement('button'); go.type = 'submit'; go.className = 'web-go'; go.textContent = '搜';
+    form.append(input, go);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = input.value.trim(); if (!q) return;
+      const eng = WEB_ENGINES.find((x) => x.k === prefs.webEngine) || WEB_ENGINES[0];
+      location.href = eng.u + encodeURIComponent(q);
+    });
+    body.append(seg, form);
+    return body;
+  }
+  function deckHint(text) {
+    const d = document.createElement('div'); d.className = 'pinned-hint'; d.textContent = text; return d;
+  }
+
+  function renderDeck() {
+    const deck = $('#deck'); if (!deck) return;
+    // 整理页开着时别把这一块放出来盖在上面（最近访问撞过一次：拖一下就冒出来）
+    deck.hidden = !!search.value.trim() || !$('#organize').hidden;
+    const cur = deckTab();
+    // 标签行。折叠时它变成一行摘要，但照样能点 —— 点了直接展开并切到那一页
+    const tabs = $('#deck-tabs'); tabs.innerHTML = '';
+    for (const t of DECK_TABS) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'deck-tab' + (t.k === cur.k ? ' on' : '');
+      b.dataset.deck = t.k; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(t.k === cur.k));
+      b.innerHTML = `<span class="dt-name">${esc(t.t)}</span>` + (deckCount(t.k) === null ? '' : `<span class="dt-n">${deckCount(t.k)}</span>`);
+      tabs.appendChild(b);
+    }
+    // 说明跟着当前那一页走；搜网页那页没有说明
+    const noteId = cur.note === 'bar' ? bar.id : cur.note;
+    const note = noteId ? noteCardEl({ id: noteId }) : document.createElement('div');
+    if (!noteId) { note.className = 'note-card fixed'; note.hidden = true; }
+    note.id = 'deck-note';
+    deck.replaceChild(note, $('#deck-note'));
+    $('#deck-note').hidden = !!prefs.deckCollapsed || !noteId;
+    const box = $('#deck-body'); box.innerHTML = '';
+    box.appendChild(cur.k === 'recent' ? deckRecentBody() : cur.k === 'pinned' ? deckPinnedBody() : cur.k === 'inbox' ? deckInboxBody() : deckWebBody());
+    paintSince();
+  }
+  async function renderRecent() { if (await loadRecent()) renderDeck(); }
+
+  $('#deck-head').addEventListener('click', (e) => {
     if (e.target.closest('.hd-view')) return;
-    prefs.recentCollapsed = !prefs.recentCollapsed; applyPrefs(); savePrefs();
+    const tab = e.target.closest('[data-deck]');
+    if (tab) {
+      e.stopPropagation();
+      // 折叠着点标签 ＝ 展开并切过去；已经展开时点当前这页 ＝ 收起（跟文件夹标题栏一个手感）
+      if (prefs.deckCollapsed) { prefs.deckCollapsed = false; prefs.deckTab = tab.dataset.deck; }
+      else if (tab.dataset.deck === prefs.deckTab) prefs.deckCollapsed = true;
+      else prefs.deckTab = tab.dataset.deck;
+      savePrefs(); applyPrefs(); renderDeck();
+      if (prefs.deckTab === 'web' && !prefs.deckCollapsed) $('#web-q')?.focus();
+      return;
+    }
+    prefs.deckCollapsed = !prefs.deckCollapsed; applyPrefs(); savePrefs();
   });
+  $('#deck-body').addEventListener('click', (e) => {
+    const eng = e.target.closest('[data-eng]');
+    if (eng) {
+      e.preventDefault(); e.stopPropagation();
+      prefs.webEngine = eng.dataset.eng; savePrefs(); renderDeck(); $('#web-q')?.focus();
+      return;
+    }
+    // 🔴 卡片本身是个 <a>，先拦住默认跳转，否则点一下就把网页打开了
+    const more = e.target.closest('[data-pinnedmore]');
+    if (more) {
+      e.preventDefault(); e.stopPropagation();
+      globalFilter.clear(); globalFilter.add(PINNED_TAG); applyFilters();
+      $('#groups').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  // 钉上去之后自动切到快捷方式那一页，让他看见东西确实进去了
+  const showDeckTab = (k) => { prefs.deckTab = k; prefs.deckCollapsed = false; savePrefs(); applyPrefs(); renderDeck(); };
 
   // ── 搜索 ──
   const search = $('#search');
@@ -1046,7 +1186,8 @@ chrome:// ⚙️`;
     const q = search.value.trim().toLowerCase();
     const results = $('#results');
     const showing = !!q;
-    $('#groups').hidden = showing; $('#recent').hidden = showing || !$('#recent-body').children.length || !$('#organize').hidden; results.hidden = !showing;
+    $('#groups').hidden = showing; results.hidden = !showing;
+    $('#deck').hidden = showing || !$('#organize').hidden;
     if (!showing) { results.innerHTML = ''; return; }
     const terms = q.split(/\s+/);
     const hits = deprecatedLast(flat.filter((b) => {
@@ -1106,7 +1247,7 @@ chrome:// ⚙️`;
       const f = s.dataset.id === bar.id ? bar : findNode(s.dataset.id);
       if (f) prefs.folderCollapsed[foldKey(f)] = collapsed;
     }
-    prefs.recentCollapsed = collapsed;
+    prefs.deckCollapsed = collapsed;
     try { await store.prefs.set({ folderCollapsed: prefs.folderCollapsed }); await savePrefs(); }
     catch { toast('折叠状态没存下来'); }
     applyPrefs(); render();
@@ -1195,8 +1336,6 @@ chrome:// ⚙️`;
   main.addEventListener('click', async (e) => {
     if (dragJustHappened) { dragJustHappened = false; return; }
     const box = e.target.closest('.card, .sub');
-    const ib = e.target.closest('[data-inbox]');
-    if (ib) { e.preventDefault(); e.stopPropagation(); await moveInbox(ib.dataset.inbox); return; }
     // 折叠状态下点这一行的空白处 ⇒ 展开/收起，跟下面每个文件夹一模一样（老徐 260914）。
     // 🚫 别在这儿弹侧栏 —— 侧栏走标题栏最右边那个 ›。
     const rowHead = e.target.closest('.card > .head');
@@ -1208,7 +1347,7 @@ chrome:// ⚙️`;
       e.preventDefault(); e.stopPropagation();
       const id = hv.dataset.viewof, next = viewFor(id) === 'detail' ? 'card' : 'detail';
       prefs.folderView[id] = next; savePrefs();
-      const holder = hv.closest('.card, #recent'); if (holder) holder.dataset.view = next;
+      const holder = hv.closest('.card, #deck'); if (holder) holder.dataset.view = next;
       hv.textContent = viewName(next); return;
     }
     if (e.target.closest('.folder-toggle')) { e.preventDefault(); await toggleFolder(box); return; }
@@ -1226,6 +1365,8 @@ chrome:// ⚙️`;
     if (more) { e.preventDefault(); openMenu(folderMenu(box), e.clientX, e.clientY); return; }
     const mv = e.target.closest('.tile-move');
     if (mv) { e.preventDefault(); e.stopPropagation(); openMenu(moveMenu(mv.dataset.id), e.clientX, e.clientY); return; }
+    const pin = e.target.closest('[data-pin]');
+    if (pin) { e.preventDefault(); e.stopPropagation(); togglePin(pin.dataset.pin); return; }
     const strip = e.target.closest('.strip');
     if (strip) { e.preventDefault(); e.stopPropagation(); openDetail(strip.closest('.tile').dataset.id, null, true); return; }
     const add = e.target.closest('.tile.add');
@@ -1296,7 +1437,7 @@ chrome:// ⚙️`;
     try { localStorage.setItem('inboxSeen', JSON.stringify(loose.map((n) => n.id))); } catch {}
     if (!fresh.length || (seen.length === 0 && loose.length > 3)) return;   // 第一次装上、根目录本来就一堆：别一上来就吼
     const first = label(fresh[0]);
-    toast(fresh.length === 1 ? `收集箱多了一条：${first}` : `收集箱多了 ${fresh.length} 条：${first} 等`, { t: '去看看', f: () => $('.card.inbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) });
+    toast(fresh.length === 1 ? `收集箱多了一条：${first}` : `收集箱多了 ${fresh.length} 条：${first} 等`, { t: '去看看', f: () => { showDeckTab('inbox'); $('#deck')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
   }
   function urlMenu(id) {
     const n = findNode(id); if (!n) return [];
@@ -1421,6 +1562,30 @@ chrome:// ⚙️`;
     b.textContent = { up: '▲', down: '▼', out: '⇤', in: '⇥' }[dir];
     return b;
   }
+  // 老徐 260915：「我点了地址就是快捷方式来」⇒ 每张卡片右上角就有这颗，点一下钉上／再点取消，
+  // 🚫 不用绕进右边详情侧栏去勾标签。钉过的一直亮着，没钉的鼠标移上去才露。
+  function pinBtn(n) {
+    const b = document.createElement('button');
+    const on = (itemMeta(n.url).tags || []).includes(PINNED_TAG);
+    b.type = 'button'; b.className = 'pin' + (on ? ' on' : ''); b.textContent = '捷';
+    b.dataset.pin = n.url;
+    b.title = on ? '从快捷方式里去掉 —— 只取消这个标签，书签留在原来的文件夹' : '钉进上面的「快捷方式」那一组';
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', String(on));
+    return b;
+  }
+  function togglePin(url) {
+    const cur = itemMeta(url).tags || [];
+    const on = cur.includes(PINNED_TAG);
+    setItemMeta(url, { tags: on ? cur.filter((x) => x !== PINNED_TAG) : [...cur, PINNED_TAG] });
+    render();
+    if (on) toast('已从快捷方式里去掉 —— 书签还在原来的文件夹里');
+    else {
+      showDeckTab('pinned');   // 切过去，让他当场看见东西确实进去了
+      const n = pinnedItems().length;
+      toast(n > PINNED_MAX ? `已钉上 —— 超过 ${PINNED_MAX} 个了，上面只露前 ${PINNED_MAX} 个` : '已钉进快捷方式');
+    }
+  }
   function strip3(id) {
     const box = document.createElement('span'); box.className = 'strip3';
     box.append(nudgeBtn(id, 'up'), detailArrow(id), nudgeBtn(id, 'down'));
@@ -1496,7 +1661,7 @@ chrome:// ⚙️`;
           }
         }
         let changed = false;
-        for (const k of ['view', 'recentCollapsed', 'filterMode']) if (changes[k]) { prefs[k] = changes[k].newValue; changed = true; }
+        for (const k of ['view', 'deckCollapsed', 'deckTab', 'filterMode']) if (changes[k]) { prefs[k] = changes[k].newValue; changed = true; }
         if (changed) { applyPrefs(); render(); }
       }
     });
