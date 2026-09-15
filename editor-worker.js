@@ -29,8 +29,9 @@ async function editorAction(m) {
         fresh.groups=fresh.groups||{};
         if(Object.keys(g).length)fresh.groups[name]=g;else delete fresh.groups[name];
       }
-      // 文件夹自己那套标签（跟书签标签是两套名单，老徐 260915 拍的）—— 跟颜色一样按夹名存
-      if(m.ftags!==undefined){
+      // 文件夹自己那套标签（跟书签标签是两套名单，老徐 260915 拍的）—— 跟颜色一样按夹名存。
+      // 🔴 只有一级分组有「确定／待定」这回事（老徐 260915：「我们只针对根目录操作」）⇒ 子夹一律不收
+      if(m.ftags!==undefined&&String(node.parentId)===String((await bookmarkBar()).id)){
         const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
         const known=new Set((fresh.folderTags||[]).map(t=>t.id));
         const ids=[...new Set((Array.isArray(m.ftags)?m.ftags:[]).map(String).filter(x=>known.has(x)))];
@@ -102,7 +103,8 @@ async function editorAction(m) {
       locked:!!(uid&&meta.locks?.[uid])||!!meta.groups?.[node.title]?.locked,
       color:meta.groups?.[node.title]?.color||'',
       ftags:meta.groups?.[node.title]?.ftags||[],
-      folderTags:meta.folderTags||[]},
+      folderTags:meta.folderTags||[],
+      isTop:String(node.parentId)===String(bar.id),},
       canNudge:BmCore.nudgeable(bar,node.id)};
   }
   const {meta={items:{},groups:{},tags:[]}}=await chrome.storage.local.get('meta');

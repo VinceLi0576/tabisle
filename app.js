@@ -246,14 +246,15 @@ chrome:// ⚙️`;
     }
     return [...ids];
   }
-  // 只有文件夹会被标成「待整理」；一条书签算不算，看它所在的夹（includeParents 时）
+  // 🔴 只有一级分组能被标成「待定」（老徐 260915：「我们只针对根目录操作」）。
+  //    一条书签或一个子夹算不算，看它头顶那个一级分组（includeParents 时）。
+  const isTopFolder = (n) => !!n && !n.url && String(n.parentId) === String(bar?.id);
   function isDeprecated(n, includeParents = false) {
     const ids = new Set(deprecatedTags().map((t) => t.id));
     if (!ids.size) return false;
-    for (let node = n; node; node = node.parentId ? findNode(node.parentId) : null) {
-      if (!node.url && (meta.groups[node.title]?.ftags || []).some((id) => ids.has(id))) return true;
-      if (!includeParents && node === n) { if (n.url) continue; return false; }
-    }
+    const marked = (node) => isTopFolder(node) && (meta.groups[node.title]?.ftags || []).some((id) => ids.has(id));
+    if (!includeParents) return marked(n);
+    for (let node = n; node; node = node.parentId ? findNode(node.parentId) : null) if (marked(node)) return true;
     return false;
   }
   // 徽章上写标签自己的名字（他改成「待整理」就显示「待整理」），🚫 别写死

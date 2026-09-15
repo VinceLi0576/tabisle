@@ -108,6 +108,8 @@
         [...$('fp-colors').children].forEach(x=>x.classList.toggle('on',x===b));folderPatch({color:o.c});};
       return b;}));
     // 文件夹那套标签（老徐 260915：「标签组是标签组，文件夹自己也要有标签组」）
+    // 🔴 「确定／待定」只有一级分组才有（他 260915：「我们只针对根目录操作」）⇒ 子夹整段藏起来
+    $('fp-state-box').hidden = !f.isTop;
     $('fp-ftags').replaceChildren(...(f.folderTags||[]).map(t=>{
       const on=(f.ftags||[]).includes(t.id);
       const b=document.createElement('button');

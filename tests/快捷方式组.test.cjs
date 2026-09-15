@@ -63,7 +63,15 @@ test('🔴 文件夹有自己一套标签，跟书签那套完全分开（老徐
   assert.match(app, /const deprecatedTags = \(\) => fTagList\(\)\.filter\(\(t\) => t\.dim\)/, '还在从书签标签里找');
   const isDep = app.match(/function isDeprecated\(n, includeParents = false\) \{[\s\S]*?\n  \}/)[0];
   assert.match(isDep, /ftags/, '判断还在看书签标签');
-  assert.doesNotMatch(isDep, /itemMeta\(node\.url\)/, '一条书签自己不该能被标成「待整理」');
+  assert.doesNotMatch(isDep, /itemMeta\(node\.url\)/, '一条书签自己不该能被标成「待定」');
+  // 🔴 只有一级分组有「确定／待定」（老徐 260915：「我们只针对根目录操作」）
+  assert.match(app, /const isTopFolder = \(n\) => .*String\(n\.parentId\) === String\(bar\?\.id\)/, '没限定一级');
+  assert.match(isDep, /isTopFolder\(node\)/, '子夹也能被标成待定 ⇒ 它会把整棵子树压淡');
+  const ew = nocomment(fs.readFileSync(p('editor-worker.js'), 'utf8'));
+  assert.match(ew, /m\.ftags!==undefined&&String\(node\.parentId\)===String\(\(await bookmarkBar\(\)\)\.id\)/, '后台没拦子夹');
+  assert.match(ew, /isTop:String\(node\.parentId\)===String\(bar\.id\)/, '侧栏拿不到「是不是一级」');
+  const sp = nocomment(fs.readFileSync(p('sidepanel.js'), 'utf8'));
+  assert.match(sp, /\$\('fp-state-box'\)\.hidden = !f\.isTop/, '子夹的侧栏还露着这一段');
   // 老数据：他之前拿书签标签标过文件夹 ⇒ 得搬过来，🚫 别让标记凭空消失
   assert.match(app, /function migrateFolderTags\(\)/, '没有迁移');
   assert.match(app, /g\.ftags = \[\.\.\.new Set\(\[\.\.\.\(g\.ftags \|\| \[\]\), dimId\]\)\]/, '老标记没搬到文件夹标签上');
