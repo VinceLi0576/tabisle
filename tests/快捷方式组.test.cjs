@@ -30,12 +30,18 @@ test('一组最多 16 个，多出来的不是丢掉而是能点开看', () => {
 });
 
 test('🔴 新偏好两处都要登记，少一处就是「存得进、换台机器读不回来」', () => {
-  const defaults = app.match(/const DEFAULTS = \{(.*)\};/)[1];   // 🔴 别用 [^}]*：DEFAULTS 里嵌着 folderCollapsed: {}，一遇到就截断
-  for (const k of ['pinnedNote', 'pinnedCollapsed']) assert.match(defaults, new RegExp(k), k + ' 没进 DEFAULTS');
+  // 🔴 原来这条是逐个点名的 ⇒ 后来新增的 deckTab／deckCollapsed／webEngine 根本没人查，
+  //    我自己就这么漏了一轮（260915）。改成自动发现：DEFAULTS 里的键，除了下面这张
+  //    「故意不跟着走」的名单，全都必须在 PREF_KEYS 里。以后再加偏好，漏了当场报。
+  const ONLY_LOCAL = new Set([
+    'folderCollapsed',   // 每台机器自己的折叠状态，另有 folderState 通道，🚫 不进这份名单
+  ]);
+  const defaults = app.match(/const DEFAULTS = \{(.*)\};/)[1];   // 🔴 别用 [^}]*：里面嵌着 folderCollapsed: {}，一遇到就截断
+  const declared = [...defaults.matchAll(/(\w+):/g)].map((m) => m[1]);
+  assert.ok(declared.length >= 10, 'DEFAULTS 没解析出来：' + declared.length);
   const keys = backup.match(/const PREF_KEYS=\[([^\]]*)\]/)[1];
-  for (const k of ['pinnedNote', 'pinnedCollapsed', 'foldDefault', 'orgCols']) {
-    assert.match(keys, new RegExp("'" + k + "'"), k + ' 没进 PREF_KEYS ⇒ 备份还原后它会消失');
-  }
+  const missing = declared.filter((k) => !ONLY_LOCAL.has(k) && !new RegExp("'" + k + "'").test(keys));
+  assert.deepEqual(missing, [], '这些偏好存得进、换台机器读不回来（要么补进 PREF_KEYS，要么写进 ONLY_LOCAL 说明为什么不跟着走）：' + missing.join(' '));
 });
 
 test('🔴 applyPrefs 里不许引用那几个伪 id 常量 —— 它在声明之前就被调用了', () => {
