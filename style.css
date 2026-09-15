@@ -722,6 +722,17 @@ dialog .palette span.on { border-color: var(--text); }
 /* ── 右边一整条＝这个文件夹的入口（老徐 260915）──
    贯穿整个框：折叠时就是一小条，展开时一直到底。箭头贴顶，两种状态下位置不变。 */
 .card[data-kind="folder"], .card.inbox { position: relative; padding-right: 46px; }
+/* 二级同样一条，窄一点、颜色用它自己那一层的（老徐 260915：「二级这一列在右边显示这个颜色」）*/
+.sub { position: relative; padding-right: 34px; }
+.sub > .fstrip { width: 28px; border-radius: 0 7px 7px 0;
+  border-left-color: color-mix(in srgb, var(--level-color, var(--gc, var(--muted-2))) 30%, transparent);
+  background: color-mix(in srgb, var(--level-color, var(--gc, var(--muted-2))) 7%, transparent); }
+.sub > .fstrip > button { color: color-mix(in srgb, var(--level-color, var(--gc, var(--muted-2))) 75%, var(--muted)); }
+.sub > .fstrip .fs-fold { height: 28px; }
+.sub > .fstrip > button:hover { background: color-mix(in srgb, var(--level-color, var(--accent)) 18%, transparent);
+  color: var(--level-color, var(--accent)); }
+.sub > .fstrip.on { background: color-mix(in srgb, var(--level-color, var(--accent)) 26%, transparent);
+  border-left-color: var(--level-color, var(--accent)); }
 /* 上段收起展开 ｜ 下段详情 —— 两件都在右边，手不用跑到左边那个小三角去 */
 .fstrip { position: absolute; right: 0; top: 0; bottom: 0; width: 38px; z-index: 1;
   display: flex; flex-direction: column; align-items: stretch;

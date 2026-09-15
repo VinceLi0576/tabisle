@@ -506,7 +506,7 @@ chrome:// ⚙️`;
     const body = section.querySelector(':scope > .body');
     if (body) body.hidden = collapsed;
     // 右边竖条上那颗跟左边那颗是同一件事，状态一起画
-    const stripFold = section.querySelector(':scope > .fstrip > .fs-fold');
+    const stripFold = section.querySelector(':scope > .fstrip > .fs-fold');   // 一级二级同一套
     if (stripFold) {
       stripFold.setAttribute('aria-expanded', String(!collapsed));
       stripFold.title = collapsed ? '展开这个文件夹' : '收起这个文件夹';
@@ -734,6 +734,7 @@ chrome:// ⚙️`;
     const color = groupColor(f.title); if (color) sub.style.setProperty('--gc', color);
     sub.appendChild(headEl(f, 'sub-head', { level }));
     sub.appendChild(bodyEl(f, false, level));
+    sub.appendChild(folderStripEl(f));   // 二级也有自己那一条：上段收起展开、下段开详情
     initFold(sub, f);
     return sub;
   }
@@ -1772,7 +1773,7 @@ chrome:// ⚙️`;
       tile.querySelector('.strip3')?.classList.toggle('on', open);
     });
     // 文件夹那条（整理页里的块也算一份）
-    for (const el of $$('.card[data-id] > .fstrip')) {
+    for (const el of $$('.card[data-id] > .fstrip, .sub[data-id] > .fstrip')) {
       const open = detailPanelOpen && el.parentElement.dataset.id === selectedId;
       el.classList.toggle('on', open);
     }

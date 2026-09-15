@@ -85,6 +85,10 @@ test('右边一整条＝这个文件夹的入口，贯穿整个框（老徐 2609
   //   相当于整个文件夹，甚至展开子文件夹时，右边一整条都属于关于整个文件夹的定位」
   assert.match(app, /function folderStripEl\(f\)/, '没有这一条');
   assert.match(app, /card\.appendChild\(folderStripEl\(f\)\)/, '这一条没挂到文件夹框上');
+  // 老徐 260915：「二级文件夹……其实也需要有这个箭头出现，二级这一列在右边显示这个颜色」
+  assert.match(app, /sub\.appendChild\(folderStripEl\(f\)\)/, '二级没有这一条');
+  assert.match(css, /\.sub > \.fstrip \{/, '二级那条没样式 ⇒ 会套用一级的宽度，把二级挤变形');
+  assert.match(css, /\.sub \{ position: relative; padding-right/, '二级框没给这一条让位');
   assert.doesNotMatch(app, /class="hd-detail"/, '标题栏里那颗「›」还在 ⇒ 两个入口做同一件事');
   assert.match(app, /closest\('\.hd-detail, \.fs-more'\)/, '点这一条开不了详情');
   // 老徐 260915：「要在左边找一个小箭头去展开缩小，体验太差了」⇒ 上段收起展开、下段详情，两件都在右边
