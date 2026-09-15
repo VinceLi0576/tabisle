@@ -72,11 +72,17 @@ a { color: inherit; text-decoration: none; }
 .weather .w-txt { display: flex; flex-direction: column; line-height: 1.15; }
 .weather .w-temp { font-size: var(--fs-lg); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; }
 .weather .w-city { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
-.clock { display: flex; align-items: center; gap: var(--sp-5); }
+/* 🔄 260915：右上角只剩天气 ＋ 时分，日期周年挪到左下（见 .side-foot） */
+.clock { display: flex; align-items: center; }
 .clock .time { font-size: var(--fs-clock); font-weight: var(--fw-normal); letter-spacing: .5px; font-variant-numeric: tabular-nums; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif; line-height: 1; }
-.clock-sub { display: flex; flex-direction: column; line-height: 1.2; }
-.clock .date { font-size: var(--fs-sm); color: var(--text); }
-.clock .week { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 左下角那条：日期 · 周数 · 第几天。侧栏底部固定，列表在它上面滚 */
+.side { display: flex; flex-direction: column; min-height: 0; }
+#side-list { flex: 1; min-height: 0; overflow-y: auto; }
+.side-foot { flex: none; display: flex; flex-direction: column; gap: var(--sp-0);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3); border-top: 1px solid var(--border);
+  background: var(--bg); line-height: 1.35; user-select: none; }
+.side-foot .sf-date { font-size: var(--fs-sm); color: var(--text); }
+.side-foot .sf-week { font-size: var(--fs-xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--card); }
 .seg button { height: 30px; padding: 0 12px; border: 0; background: transparent; cursor: pointer; color: var(--muted); }
 .seg button + button { border-left: 1px solid var(--border); }

@@ -40,7 +40,7 @@
   </div>
   <div class="topright">
     <div class="weather" id="weather" title="点一下刷新天气"><span class="w-ico" id="w-ico"></span><div class="w-txt"><span class="w-temp" id="w-temp"></span><span class="w-city" id="w-city"></span></div></div>
-    <div class="clock" id="clock"><span class="time" id="clock-time"></span><div class="clock-sub"><span class="date" id="clock-date"></span><span class="week" id="clock-week"></span></div></div>
+    <div class="clock" id="clock"><span class="time" id="clock-time"></span></div>
   </div>
 </header>
 
@@ -62,7 +62,16 @@
   </div>
 </div>
 <div class="layout">
-<nav id="side" class="side"><div id="side-list"></div></nav>
+<nav id="side" class="side">
+  <div id="side-list"></div>
+  <!-- 日期这一摊从右上角挪到这儿（老徐 260915）：右上角那四组信息把顶栏右边那排功能按钮压得看不清了。
+       高频看的（时间、天气）留右上，低频看的（日期、周数）沉到左下。
+       🔴 它是侧栏的固定底条 —— 文件夹列表在它上面滚，🚫 不会被盖住。 -->
+  <div class="side-foot" id="side-foot">
+    <span class="sf-date" id="clock-date"></span>
+    <span class="sf-week" id="clock-week"></span>
+  </div>
+</nav>
 <main id="main">
   <!-- 工作台：最近访问 / 快捷方式 / 收集箱 / 搜网页 四页合一，整块折叠（老徐 260915：
        「这三个组显示下来占的地方太多了，在顶部直接长期占用了三栏」⇒ 做成浏览器书签页那样的横排标签）-->
