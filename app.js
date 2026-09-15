@@ -35,8 +35,8 @@
   //   存在 meta.folderTags，打在 meta.groups[名字].ftags 上。
   //   带 dim 的那个＝排到最后＋整组压淡。
   const DEFAULT_FOLDER_TAGS = [
-    { id: 'F1', glyph: '线', name: '已上线', desc: '正式在用的分组', color: '#2f6fdb' },
-    { id: 'F0', glyph: '整', name: '待整理', desc: '还没归位，排到最后并压淡', color: '#5c6b7a', dim: true },
+    { id: 'F1', glyph: '定', name: '确定', desc: '定下来的分组，排在上面', color: '#002FA7' },
+    { id: 'F0', glyph: '待', name: '待定', desc: '还没定，排到最后并整组压淡', color: '#8A8F98', dim: true },
   ];
   const MAX_TAGS = 9;
   const DEFAULT_EMOJI_RULES = `github 🐙
@@ -120,9 +120,17 @@ chrome:// ⚙️`;
   const segLen = (s) => { try { return [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(s)].length; } catch { return s.length; } };
   const isEmoji = (s) => !!s && !/^https?:|^data:|^chrome/.test(s) && segLen(s.trim()) <= 2 && /\p{Extended_Pictographic}/u.test(s);
   // 文件夹颜色：8 个带名字的固定色（老徐 260914）。🔴 改颜色走详情侧栏，🚫 不再点那根细色条 —— 太难点。
+  // 老徐 260915 给的一套颜色标准。🔴 值以他给的为准，🚫 别自己调。
+  // 普鲁士蓝那条他备注「笔记目前无内容」⇒ 这里先用该颜料的通行值 #003153，等他给了再换。
   const FOLDER_COLORS = [
-    { c: '#2f6fdb', n: '蓝' }, { c: '#1f9d55', n: '绿' }, { c: '#d08700', n: '黄' }, { c: '#d64545', n: '红' },
-    { c: '#8e44ad', n: '紫' }, { c: '#0e9aa7', n: '青' }, { c: '#e07a2f', n: '橙' }, { c: '#5c6b7a', n: '灰' },
+    { c: '#002FA7', n: '克莱因蓝', rgb: '0,47,167' },
+    { c: '#81D8D0', n: '蒂芙尼蓝', rgb: '129,216,208' },   // 🔴 他给的是 #81D8CF ＋ RGB(129,216,208)，两者差 1：CF＝207。按 RGB 反推是 D0，也是这颜色的通行值 ⇒ 取 #81D8D0
+    { c: '#003153', n: '普鲁士蓝', rgb: '0,49,83' },
+    { c: '#B05923', n: '提香红', rgb: '176,89,35' },
+    { c: '#E60000', n: '中国红', rgb: '230,0,0' },
+    { c: '#900021', n: '勃艮第红', rgb: '144,0,33' },
+    { c: '#FBD26A', n: '申布伦黄', rgb: '251,210,106' },
+    { c: '#8F4B28', n: '凡戴克棕', rgb: '143,75,40' },
   ];
   const PALETTE = FOLDER_COLORS.map((x) => x.c);   // 标签那边还按这个挑默认色
 
@@ -210,6 +218,14 @@ chrome:// ⚙️`;
   function migrateFolderTags() {
     let changed = false;
     if (!meta.folderTags) { meta.folderTags = DEFAULT_FOLDER_TAGS.map((t) => ({ ...t })); changed = true; }
+    // 上一版默认叫「已上线／待整理」，老徐 260915 改口叫「确定／待定」并给了配色 ⇒ 他没自己改过的就跟着换
+    for (const d of DEFAULT_FOLDER_TAGS) {
+      const cur = meta.folderTags.find((t) => t.id === d.id);
+      if (!cur) { meta.folderTags.push({ ...d }); changed = true; continue; }
+      if (['已上线', '待整理'].includes(cur.name?.trim()) && cur.name !== d.name) {
+        Object.assign(cur, { name: d.name, glyph: d.glyph, desc: d.desc, color: d.color }); changed = true;
+      }
+    }
     const dimId = meta.folderTags.find((t) => t.dim)?.id;
     const oldIds = new Set((meta.tags || []).filter((t) => t.dim || ['废弃', '待整理'].includes(t.name?.trim())).map((t) => t.id));
     if (dimId && oldIds.size) {

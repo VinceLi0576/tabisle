@@ -16,6 +16,28 @@
 .panel-tab:hover{background:color-mix(in srgb,var(--pt,var(--accent)) 14%,transparent);color:var(--pt,var(--accent))}
 .panel-tab[aria-selected="true"]{background:color-mix(in srgb,var(--pt,var(--accent)) 12%,var(--card));color:var(--pt,var(--accent));
   border-color:color-mix(in srgb,var(--pt,var(--accent)) 55%,transparent);border-bottom-color:var(--pt,var(--accent));font-weight:600}
+/* 🔴 侧栏设计基准宽度 380px（Chrome 侧边栏的宽度由用户拖，扩展改不了 ⇒ 我们只能让内容按这个宽度排、
+   窄了自动降级）。以后所有右侧栏统一按这个来。 */
+:root{--panel-base:380px;--panel-pad:14px}
+/* 顶上标签行、下面那排操作、每个框：左右一律用同一个内边距，否则边一错就显得歪 */
+.page-head{padding-left:var(--panel-pad);padding-right:var(--panel-pad)}
+/* 每一段单独框起来（老徐 260915：「类似于快捷方式、搜索、最近访问那种，一个一个框起来」）*/
+.fp-box{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 var(--panel-pad) 10px;background:var(--card)}
+.fp-box>h2,.fp-box .section-heading{margin-top:0}
+/* 颜色：色块＋名字＋编码，编码点一下复制 */
+/* 一行一个色 —— 两列会把「克莱因蓝」折成上下两行，挤（老徐 260915 当场指出来的）*/
+.fp-colors{display:flex;flex-direction:column;gap:5px}
+.fp-color{display:flex;align-items:center;gap:10px;min-width:0;height:36px;padding:0 10px;
+  border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;text-align:left}
+.fp-color .fc-chip{flex:none;width:18px;height:18px;border-radius:5px;background:var(--fc,transparent);
+  border:1px solid color-mix(in srgb,var(--fc,var(--border)) 60%,var(--border))}
+.fp-color .fc-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--text)}
+.fp-color .fc-hex{flex:none;font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;
+  padding:3px 6px;border-radius:5px;background:var(--well);letter-spacing:.02em}
+.fp-color .fc-hex:hover{color:var(--accent);background:var(--accent-bg)}
+.fp-color:hover{border-color:var(--fc,var(--accent))}
+.fp-color.on{border-color:var(--fc,var(--accent));box-shadow:0 0 0 2px color-mix(in srgb,var(--fc,var(--accent)) 22%,transparent)}
+.fp-color.none .fc-chip{background:repeating-linear-gradient(45deg,var(--border),var(--border) 3px,transparent 3px,transparent 6px)}
 .fp-ftags{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
 .fp-ftag{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 8px;
   border:1px solid color-mix(in srgb,var(--tc,var(--border)) 32%,transparent);border-radius:8px;

@@ -19,11 +19,11 @@
   <p id="panel-toast" class="panel-toast" hidden></p>
   <div id="pane-detail" role="tabpanel" aria-labelledby="tab-detail">
   <div id="detail-nudge" class="detail-nudge" hidden>
-    <button type="button" class="dn" data-nudge="up" title="把这一条往前挪一格">▲ 上移</button>
-    <button type="button" class="dn" data-nudge="down" title="把这一条往后挪一格">▼ 下移</button>
-    <span class="dn-sep"></span>
-    <button type="button" class="dn" data-nudge="out" title="移出当前文件夹，升一层">⇤ 移出</button>
-    <button type="button" class="dn" data-nudge="in" title="收进上面紧挨着的文件夹，降一层">⇥ 收进</button>
+    <button type="button" class="dn" data-nudge="up" title="往前挪一格">▲<span>上移</span></button>
+    <button type="button" class="dn" data-nudge="down" title="往后挪一格">▼<span>下移</span></button>
+    <button type="button" class="dn" data-nudge="out" title="移出当前文件夹，升一层">◀<span>移出</span></button>
+    <button type="button" class="dn" data-nudge="in" title="收进上面紧挨着的文件夹，降一层">▶<span>收进</span></button>
+    <button type="button" class="dn dn-lock" id="dn-lock" hidden title="锁定：连同里面所有内容只读，AI 不会提任何改动">🔒<span>锁定</span></button>
   </div>
   <p id="error" class="error" role="alert"></p>
   <p id="empty" class="empty-note">点击书签卡片右侧的箭头，开始编辑。<br>再点同一个箭头，即可收起侧栏。</p>
@@ -35,25 +35,26 @@
         <p class="field-help">改完按回车或点别处就生效。</p>
         <div class="fp-stats"><span id="fp-count"></span><span id="fp-subs"></span></div>
       </section>
-      <section class="edit-section">
-        <div class="section-heading"><h2>这个文件夹该放什么</h2><span class="auto-badge">自动保存</span></div>
-        <label>颜色 <span class="label-hint">首页上这一夹的色条和底色</span></label>
-        <div id="fp-colors" class="fp-colors"></div>
-        <label>这个分组的状态 <span class="label-hint">文件夹自己的标签，跟书签那套分开</span></label>
+      <section class="edit-section fp-box">
+        <div class="section-heading"><h2>这个分组定了没有</h2><span class="auto-badge">自动保存</span></div>
         <div id="fp-ftags" class="fp-ftags"></div>
+        <p class="field-help">选「待定」的会排到首页最后一段，整组压淡。</p>
+      </section>
+      <section class="edit-section fp-box">
+        <div class="section-heading"><h2>这个文件夹该放什么</h2><span class="auto-badge">自动保存</span></div>
         <textarea id="fp-note" rows="4" placeholder="一两句话写清楚这里放哪类内容、哪类不放。例：只放能直接打开用的在线工具，教程和文章不放这儿"></textarea>
-        <p class="field-help">写下来之后它就是规矩——归类时照它办。首页文件夹标题栏上的「说明」也是这一条。</p>
+        <p class="field-help">写下来之后它就是规矩——归类时照它办。首页那一夹的说明框显示的就是这一条。</p>
       </section>
-      <section class="edit-section">
-        <h2>操作</h2>
-        <label class="fp-lock"><input id="fp-lock" type="checkbox">锁定这个文件夹（连同里面所有内容只读，AI 不会提任何改动）</label>
-        <p class="field-help">挪位置用顶上那一排：上移、下移、移出、收进。</p>
+      <section class="edit-section fp-box">
+        <div class="section-heading"><h2>颜色</h2><span class="auto-badge">自动保存</span></div>
+        <div id="fp-colors" class="fp-colors"></div>
+        <p class="field-help">点一下选中；再点一下那个色块上的编码可以复制。</p>
       </section>
-      <section class="edit-section">
-        <h2>里面有什么</h2>
-        <div id="fp-children"></div>
-        <button type="button" id="fp-newsub" class="btn ghost">＋ 在这里面新建子文件夹</button>
+      <section class="edit-section fp-box">
+        <h2>子文件夹</h2>
+        <button type="button" id="fp-newsub" class="btn ghost">＋ 在这里面新建一个</button>
       </section>
+      <input id="fp-lock" type="checkbox" hidden>
     </div>
   </section>
   <form id="editor" hidden>

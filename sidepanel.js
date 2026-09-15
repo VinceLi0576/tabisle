@@ -27,7 +27,7 @@
       }));
       $('tags').closest('fieldset').hidden=!data.tags.length;
       $('name-help').textContent=draft.id?'收藏时网页自己带过来的标题。保持原样就行，想改首页上的叫法请改下面的「显示名」。':'通常使用网页标题，也可以自己填写。';
-      currentId=draft.id;$('detail-nudge').hidden=!draft.id;
+      currentId=draft.id;$('detail-nudge').hidden=!draft.id;$('dn-lock').hidden=true;
       $('from-tabs').hidden=!!draft.id;$('tab-list').hidden=true;$('autofill-state').hidden=true;
       for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
       $('delete').hidden=!draft.id;$('promote').disabled=!draft.fields.alias;$('use-title').disabled=!draft.fields.alias;$('discard').hidden=!data.hasDraft;
@@ -85,12 +85,27 @@
     $('fp-title').value=f.title;$('fp-path').textContent=f.path;$('fp-path').title=f.path;
     $('fp-count').textContent=f.count+' 条书签';$('fp-subs').textContent=f.subfolders?' · '+f.subfolders+' 个子文件夹':'';
     $('fp-note').value=f.note||'';$('fp-lock').checked=!!f.locked;
+    // 锁定并进顶上那一排（老徐 260915：「直接融合到上移、下移、左移、右移那个位置」）
+    const lk=$('dn-lock'); lk.hidden=false; lk.disabled=!f.uid;
+    lk.classList.toggle('on',!!f.locked);
+    lk.innerHTML=(f.locked?'🔒':'🔓')+'<span>'+(f.locked?'已锁':'锁定')+'</span>';
+    lk.title=f.locked?'已锁定：连同里面所有内容只读。点一下解锁':'锁定：连同里面所有内容只读，AI 不会提任何改动';
     // 颜色：8 个固定色 ＋ 一个「不上色」。老徐 260914：改颜色走这儿，首页那根细色条太难点
     $('fp-colors').replaceChildren(...[...(f.colors||[]),{c:'',n:'不上色'}].map(o=>{
-      const b=document.createElement('button');b.type='button';b.className='fp-color'+(String(f.color||'')===o.c?' on':'')+(o.c?'':' none');
+      const b=document.createElement('button');b.type='button';
+      b.className='fp-color'+(String(f.color||'').toLowerCase()===o.c.toLowerCase()?' on':'')+(o.c?'':' none');
       if(o.c)b.style.setProperty('--fc',o.c);
-      b.title=o.n;b.setAttribute('aria-label',o.n);
-      b.onclick=()=>{[...$('fp-colors').children].forEach(x=>x.classList.toggle('on',x===b));folderPatch({color:o.c});};
+      b.title=o.c?`${o.n}　${o.c}　RGB(${o.rgb||''})`:'不上色';
+      b.setAttribute('aria-label',b.title);
+      b.innerHTML='<i class="fc-chip"></i><span class="fc-name">'+o.n+'</span>'
+        + (o.c?'<code class="fc-hex" role="button" tabindex="0" title="点一下复制这个编码">'+o.c+'</code>':'');
+      b.onclick=(e)=>{
+        const hex=e.target.closest('.fc-hex');
+        if(hex){ e.stopPropagation();
+          navigator.clipboard.writeText(o.c).then(()=>{const was=hex.textContent;hex.textContent='已复制';
+            setTimeout(()=>{hex.textContent=was;},1200);}).catch(()=>{});
+          return; }
+        [...$('fp-colors').children].forEach(x=>x.classList.toggle('on',x===b));folderPatch({color:o.c});};
       return b;}));
     // 文件夹那套标签（老徐 260915：「标签组是标签组，文件夹自己也要有标签组」）
     $('fp-ftags').replaceChildren(...(f.folderTags||[]).map(t=>{
@@ -109,12 +124,7 @@
     if(!(f.folderTags||[]).length){const p=document.createElement('p');p.className='field-help';p.textContent='还没有文件夹标签。';$('fp-ftags').append(p);}
     $('fp-note').disabled=$('fp-lock').disabled=!f.uid;
     if(!f.uid)$('fp-note').placeholder='这个文件夹还没拿到稳定标识，等一次自动备份之后再写';
-    $('fp-children').replaceChildren(...f.children.map(c=>{
-      const row=document.createElement('button');row.type='button';row.className='fp-child'+(c.url?'':' is-folder');
-      row.textContent=(c.url?'· ':'📁 ')+(c.title||'（未命名）')+(c.url?'':'  '+c.count+' 条');row.title=c.url||'';
-      row.onclick=async()=>{try{await pending;await ask('EDITOR_SELECT',{id:c.id});}catch(e){error(e);}};   // 点子项就跳到它的详情
-      return row;}));
-    if(!f.children.length){const p=document.createElement('p');p.className='field-help';p.textContent='空的。';$('fp-children').append(p);}
+    // 🔄 260915：「里面有什么」那张清单去掉了（老徐：「不太需要了，名字也不太好」）—— 首页上就看得见
     $('detail-nudge').hidden=false;
     for(const b of $('detail-nudge').querySelectorAll('[data-nudge]'))b.disabled=!(data.canNudge||{})[b.dataset.nudge];
   }
@@ -138,6 +148,7 @@
   $('fp-title').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('fp-title').blur();}});
   let noteTimer=null;$('fp-note').addEventListener('input',()=>{clearTimeout(noteTimer);noteTimer=setTimeout(()=>folderPatch({note:$('fp-note').value}),500);});
   $('fp-lock').addEventListener('change',()=>folderPatch({locked:$('fp-lock').checked}));
+  $('dn-lock').addEventListener('click',()=>{ if($('dn-lock').disabled)return; folderPatch({locked:!$('fp-lock').checked}); });
   function renderDuplicates(data){
     const entries=data.duplicates||[];
     $('duplicate-summary').textContent=draft.id?'这个完整网址收藏了 '+entries.length+' 次。可保留多份，也可以删除不需要的那一份。':'保存书签后可查看相同网址的其他收藏。';

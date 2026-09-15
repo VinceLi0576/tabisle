@@ -1,4 +1,5 @@
-const FOLDER_COLORS=[{c:'#2f6fdb',n:'蓝'},{c:'#1f9d55',n:'绿'},{c:'#d08700',n:'黄'},{c:'#d64545',n:'红'},{c:'#8e44ad',n:'紫'},{c:'#0e9aa7',n:'青'},{c:'#e07a2f',n:'橙'},{c:'#5c6b7a',n:'灰'}];
+// 🔴 老徐 260915 给的颜色标准，跟 app.js 那份必须一字不差（两处都校验颜色合法性）
+const FOLDER_COLORS=[{c:'#002FA7',n:'克莱因蓝',rgb:'0,47,167'},{c:'#81D8D0',n:'蒂芙尼蓝',rgb:'129,216,208'},{c:'#003153',n:'普鲁士蓝',rgb:'0,49,83'},{c:'#B05923',n:'提香红',rgb:'176,89,35'},{c:'#E60000',n:'中国红',rgb:'230,0,0'},{c:'#900021',n:'勃艮第红',rgb:'144,0,33'},{c:'#FBD26A',n:'申布伦黄',rgb:'251,210,106'},{c:'#8F4B28',n:'凡戴克棕',rgb:'143,75,40'}];
 function draftKey(windowId,selection) { return 'editorDraft:'+windowId+':'+(selection.id||'new:'+selection.parentId); }
 async function editorAction(m) {
   const windowId=Number(m.windowId);if(!Number.isInteger(windowId))throw Error('找不到当前窗口');
@@ -22,7 +23,7 @@ async function editorAction(m) {
         // 颜色仍按夹名存（meta.groups[title].color）—— 首页读的就是这个键。
         // ⚠️ 按名字存 ⇒ 在别处改名会丢色、同名夹会串色；跟锁和说明一样搬到 uid 是后话，老徐还没拍。
         const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
-        const ok=FOLDER_COLORS.some(x=>x.c===m.color);
+        const ok=FOLDER_COLORS.some(x=>x.c.toLowerCase()===String(m.color).toLowerCase());
         const g={...(fresh.groups?.[name]||{})};
         if(m.color&&ok)g.color=m.color;else delete g.color;
         fresh.groups=fresh.groups||{};

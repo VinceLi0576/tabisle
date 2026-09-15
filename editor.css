@@ -1,6 +1,8 @@
 /* Native editor only. Shared backup-page styles remain in panel.css. */
 body.editor-page { height: 100vh; padding: 0; overflow: hidden; display: flex; flex-direction: column; font-size: 13px; background: var(--bg); }
-body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--card); }
+/* 🔴 顶上标签行、下面那排操作、每个框：左右一律 var(--panel-pad)，三处对齐（老徐 260915「跟上面的详情页对齐」）。
+   这个文件比 panel.css 后加载 ⇒ 这里写死 18px 会把那边的变量压掉，所以也用变量。 */
+body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 14px var(--panel-pad,14px); border-bottom: 1px solid var(--border); background: var(--card); }
 .heading-group { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .heading-mark { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--card)); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; font-size: 18px; }
 .editor-page h1 { font-size: 16px; font-weight: 650; letter-spacing: .02em; }
@@ -87,11 +89,19 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .dom-more{display:block;width:100%;margin-top:8px;padding:6px;font-size:11.5px;color:var(--muted);border-style:dashed}
 
 /* 详情页顶上那排挪动按钮 —— 老徐说卡片上那个点太小怕误触，这里给大的 */
-.detail-nudge{display:flex;align-items:center;gap:6px;flex:none;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--card)}
-.detail-nudge .dn{height:32px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap}
+/* 老徐 260915：「上移、下移、移出、移进这里，跟详情页一样分成四块，像搜索、快捷方式那样居中弄，
+   跟上面的详情页对齐」⇒ 等分铺满、图标在上文字在下、居中；锁定并进这一排 */
+.detail-nudge{display:flex;align-items:stretch;gap:6px;flex:none;padding:8px var(--panel-pad,14px);border-bottom:1px solid var(--border);background:var(--card)}
+.detail-nudge .dn{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  height:46px;padding:0 4px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);
+  font-size:13px;line-height:1;cursor:pointer;white-space:nowrap;overflow:hidden}
+.detail-nudge .dn span{font-size:11px;color:var(--muted)}
 .detail-nudge .dn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.detail-nudge .dn:hover:not(:disabled) span{color:var(--accent)}
 .detail-nudge .dn:disabled{opacity:.35;cursor:default}
-.dn-sep{width:1px;height:18px;background:var(--border);flex:none;margin:0 2px}
+.detail-nudge .dn-lock.on{border-color:#B05923;background:color-mix(in srgb,#B05923 12%,transparent);color:#B05923}
+.detail-nudge .dn-lock.on span{color:#B05923}
+.dn-sep{display:none}
 .editor-page #note{min-height:80px;line-height:1.7}
 
 /* ── 文件夹详情页 ── */
@@ -120,10 +130,6 @@ body.editor-page .page-head { position: static; flex: none; margin: 0; padding: 
 .tab-item:last-child{border-bottom:0}.tab-item:hover{background:var(--well)}
 .tab-item img{width:16px;height:16px;flex:none}.tab-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.tab-host{flex:none;font-size:11px;color:var(--muted)}
 /* 文件夹颜色：8 个固定色 ＋ 不上色 */
-.fp-colors{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 14px}
-.fp-color{width:26px;height:26px;padding:0;border:2px solid transparent;border-radius:8px;background:var(--fc);cursor:pointer}
-.fp-color:hover{transform:scale(1.08)}
-.fp-color.on{border-color:var(--text);box-shadow:0 0 0 2px var(--card) inset}
-.fp-color.none{background:var(--card);border:1px dashed var(--border-2);position:relative}
-.fp-color.none::after{content:"";position:absolute;left:4px;right:4px;top:11px;height:1.5px;background:var(--muted-2);transform:rotate(-45deg)}
+/* 🔄 260915：颜色改成「色块＋名字＋编码」的格子，样式在 panel.css。
+   🔴 这个文件比 panel.css 后加载 ⇒ 旧的 26×26 小方块留在这儿会把新样式整个压掉（实测每格只剩 26px）。 */
 .fp-color.none.on{border:2px solid var(--text)}
