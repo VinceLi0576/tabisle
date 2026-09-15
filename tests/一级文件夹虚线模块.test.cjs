@@ -75,7 +75,10 @@ test('🔴 说明框只显示、不接编辑 —— 要改走右边那一整条�
   const fn = app.match(/function noteCardEl\(f\) \{([\s\S]*?)\n  \}/)[1];
   assert.doesNotMatch(fn, /box\.dataset\.note/, '说明框还挂着编辑入口 ⇒ 点一下又弹框了');
   assert.doesNotMatch(app, /closest\('\.hd-note-btn, \.note-card'\)/, '点说明框还会开编辑器');
-  assert.match(fn, /点右边那一条/, '没说明时得指出该去哪写');
+  // 🔄 260915 再改：没写说明时整条不画了 —— 空框跟标题一样高、一屏重复六遍、
+  //   而且说明框已经只读，那句引导点不动 ⇒ 纯占地方。要写说明只剩一条路：右边那一整条 → 侧栏。
+  assert.match(fn, /box\.classList\.add\('is-empty'\)/, '空说明还在占一整行');
+  assert.match(css, /\.note-card\.is-empty \{ display: none/, '空说明没被藏掉');
   // 条数标题栏右边已经有一份，这儿不重复报数
   assert.doesNotMatch(fn, /个文件夹 · /, '又在说明框里报了一遍条数');
 });

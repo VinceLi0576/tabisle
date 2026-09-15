@@ -1,6 +1,6 @@
 /* AI 整理标准页 */
-.task-row{border:1px solid var(--border);border-radius: var(--r-lg);padding:12px;margin-bottom:12px;background:var(--card)}
-.task-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.task-row{border:1px solid var(--border);border-radius: var(--r-lg);padding: var(--sp-5);margin-bottom:12px;background:var(--card)}
+.task-head{display:flex;align-items:center;gap: var(--sp-3);margin-bottom:8px}
 .task-head .task-name{flex:1;min-width:0;height:32px;font-weight: var(--fw-medium)}
 .task-head button{height:30px;padding:0 10px;font-size: var(--fs-sm);flex:none}
 .task-prompt{width:100%;font-size: var(--fs-md)}
@@ -16,7 +16,7 @@
 .note-box{margin:14px 0 0;padding:14px 16px;border-radius: var(--r-lg);background:var(--bg);font-size: var(--fs-md);line-height:1.75;color:var(--muted)}
 .note-box b{color:var(--text)}
 /* 注册入口做成两个真按钮摆在模型下面，🚫 别混在小字说明里 */
-.go-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.go-links{display:flex;flex-wrap:wrap;gap: var(--sp-4);margin-top:14px}
 .go-link{display:inline-flex;align-items:center;height:40px;padding:0 16px;border:1px solid var(--border);border-radius: var(--r-pill);font-size: var(--fs-md);white-space:nowrap;background:var(--card)}
 .go-link:hover{border-color:var(--accent);color:var(--accent)}
 .go-link.primary-link{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card));font-weight: var(--fw-medium)}
