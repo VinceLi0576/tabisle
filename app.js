@@ -120,18 +120,24 @@ chrome:// ⚙️`;
   // ── 本机偏好 ──
   // 🔴 chrome.storage.local.get(对象) 只返回对象里列出的键 ⇒ 不在这张表里的偏好写得进去、读不回来，
   //    每开一个新标签页就退回默认。folderView / inboxIndex 曾经漏在这儿（260914 核实官查出）。
-  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, pinnedNote: undefined, foldDefault: 'auto', orgCols: 3, pinnedCollapsed: false, deckTab: 'recent', deckCollapsed: false, webEngine: 'baidu' };
+  const DEFAULTS = { view: 'card', recentCollapsed: false, filterMode: 'and', folderCollapsed: {}, folderView: {}, inboxIndex: 0, recentNote: undefined, inboxNote: undefined, pinnedNote: undefined, foldDefault: 'auto', orgCols: 3, pinnedCollapsed: false, deckTab: 'web', deckCollapsed: false, webEngine: 'baidu' };
   // 工作台这一块的四页。老徐 260915：「在这个区域顶部横排一列标签，把这些功能都整合到这一整块里面」
+  // 老徐 260915 定的顺序：搜索最左 → 快捷方式 → 收集箱 → 最近访问，四段各一个颜色、铺满一整行
   const DECK_TABS = [
-    { k: 'recent', t: '最近访问', note: '__recent' },
-    { k: 'pinned', t: '快捷方式', note: '__pinned' },
-    { k: 'inbox',  t: '收集箱',   note: 'bar' },
-    { k: 'web',    t: '搜网页',   note: '' },
+    { k: 'web',    t: '搜索',     note: '',          c: '#2f6fdb' },
+    { k: 'pinned', t: '快捷方式', note: '__pinned',  c: '#8e44ad' },
+    { k: 'inbox',  t: '收集箱',   note: 'bar',       c: '#e07a2f' },
+    { k: 'recent', t: '最近访问', note: '__recent',  c: '#1f9d55' },
   ];
   const WEB_ENGINES = [
-    { k: 'baidu',  t: '百度', u: 'https://www.baidu.com/s?wd=' },
-    { k: 'bing',   t: '必应', u: 'https://www.bing.com/search?q=' },
-    { k: 'google', t: '谷歌', u: 'https://www.google.com/search?q=' },
+    { k: 'baidu',  t: '百度',  u: 'https://www.baidu.com/s?wd=' },
+    { k: 'bing',   t: '必应',  u: 'https://www.bing.com/search?q=' },
+    { k: 'google', t: '谷歌',  u: 'https://www.google.com/search?q=' },
+    { k: 'sogou',  t: '搜狗',  u: 'https://www.sogou.com/web?query=' },
+    { k: 'ddg',    t: 'DuckDuckGo', u: 'https://duckduckgo.com/?q=' },
+    { k: 'zhihu',  t: '知乎',  u: 'https://www.zhihu.com/search?type=content&q=' },
+    { k: 'bili',   t: 'B站',   u: 'https://search.bilibili.com/all?keyword=' },
+    { k: 'github', t: 'GitHub', u: 'https://github.com/search?q=' },
   ];
   let prefs = await store.prefs.get(DEFAULTS);
   // 老版本那个 bug 留下的字面量 'undefined' 键，清掉；它还会被带进备份文件
@@ -1130,7 +1136,8 @@ chrome:// ⚙️`;
     for (const t of DECK_TABS) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'deck-tab' + (t.k === cur.k ? ' on' : '');
-      b.dataset.deck = t.k; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(t.k === cur.k));
+      b.dataset.deck = t.k; b.style.setProperty('--tc', t.c);
+      b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(t.k === cur.k));
       b.innerHTML = `<span class="dt-name">${esc(t.t)}</span>` + (deckCount(t.k) === null ? '' : `<span class="dt-n">${deckCount(t.k)}</span>`);
       tabs.appendChild(b);
     }

@@ -72,6 +72,39 @@ test('三块合成一个工作台，四页横排（老徐 260915）', () => {
   assert.doesNotMatch(app, /inboxCard\(/, '收集箱还在下面那一排里画一份 ⇒ 会出现两个收集箱');
 });
 
+test('🔴 四段顺序是老徐定的：搜索最左 → 快捷方式 → 收集箱 → 最近访问', () => {
+  const raw = fs.readFileSync(p('app.js'), 'utf8');
+  const tabs = raw.match(/const DECK_TABS = \[([\s\S]*?)\];/)[1];
+  const order = [...tabs.matchAll(/k: '(\w+)'/g)].map((m) => m[1]);
+  assert.deepEqual(order, ['web', 'pinned', 'inbox', 'recent'], '顺序被改了');
+  assert.match(app, /deckTab: 'web'/, '默认没停在第一页');
+});
+
+test('四段各一个颜色、铺满一整行（老徐 260915「不是缩起来这么短」）', () => {
+  const raw = fs.readFileSync(p('app.js'), 'utf8');
+  const tabs = raw.match(/const DECK_TABS = \[([\s\S]*?)\];/)[1];
+  const colors = [...tabs.matchAll(/c: '(#[0-9a-f]{6})'/gi)].map((m) => m[1].toLowerCase());
+  assert.equal(colors.length, 4, '有的段没给颜色');
+  assert.equal(new Set(colors).size, 4, '四段撞色了 ⇒ 分不出来');
+  assert.match(app, /b\.style\.setProperty\('--tc', t\.c\)/, '颜色没传进样式');
+  const tab = css.match(/^\.deck-tab \{([^}]*)\}/m)[1];
+  assert.match(tab, /flex: 1 1 0/, '标签还是按内容宽 ⇒ 缩在左边一小截');
+  assert.match(tab, /var\(--tc/, '样式里没用那个颜色');
+  // 折起来也得留着颜色，否则折着就认不出是哪四块
+  assert.match(css, /\.deck\.collapsed \.deck-tab \{[^}]*--tc/, '折叠后丢了颜色');
+});
+
+test('搜索引擎不止三个，且每个都有能用的地址', () => {
+  const raw = fs.readFileSync(p('app.js'), 'utf8');   // 🔴 读原文：剥注释会把网址里的 // 削掉
+  const eng = raw.match(/const WEB_ENGINES = \[([\s\S]*?)\];/)[1];
+  const us = [...eng.matchAll(/u: '(https:\/\/[^']+)'/g)].map((m) => m[1]);
+  assert.ok(us.length >= 6, '引擎太少：' + us.length);
+  assert.equal(new Set(us).size, us.length, '有两个引擎地址一样');
+  for (const u of us) assert.match(u, /[?&][a-z]+=$/i, '地址末尾不是待拼关键词的形态：' + u);
+  const seg = css.match(/\.eng-seg button \{([^}]*)\}/)[1];
+  assert.match(seg, /flex: 1 1 0/, '引擎排没铺开（老徐：「也可以再宽一点」）');
+});
+
 test('折起来时标签行退成一行摘要，但照样点得动', () => {
   assert.match(css, /\.deck\.collapsed \.deck-tab \{/, '折叠后标签还是按钮样 ⇒ 占一行还不止');
   const fn = app.match(/\$\('#deck-head'\)\.addEventListener[\s\S]*?\n  \}\);/)[0];

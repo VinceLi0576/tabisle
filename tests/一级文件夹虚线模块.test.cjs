@@ -89,8 +89,10 @@ test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不
   // 🔄 260915：最近访问的标题变成工作台里的一个标签按钮了，层级标只留在下面每个文件夹上
   assert.match(html, /<span class="deck-tabs" id="deck-tabs"/, '工作台没有标签行');
   assert.ok(!/inbox-hint/.test(html), '最近访问标题行上那句灰字还在');
-  assert.match(html, /<span class="hd-toggle"><\/span>/,
-    '最近访问标题那行少一个撑开的空档 ⇒「紧凑」会贴到标题旁边，右边按钮排不齐');
+  // 🔄 260915：撑开右边按钮这件事改由标签行自己 flex:1 干（老徐要「一整行排到头」），
+  //    弹性占位反而会跟标签行平分空间 ⇒ 这里改钉标签行铺满
+  const deckTab = css.match(/^\.deck-tab \{([^}]*)\}/m)[1];
+  assert.match(deckTab, /flex: 1 1 0/, '标签不铺满 ⇒ 缩在左边一小截，右边按钮也排不齐');
 });
 
 test('标题栏点空白处＝展开收起，跟下面每个文件夹一样，🚫 不许弹侧栏', () => {

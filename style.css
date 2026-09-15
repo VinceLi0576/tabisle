@@ -161,27 +161,38 @@ a { color: inherit; text-decoration: none; }
 .recent-head .level-label { color: var(--accent); }
 #deck > .level-mark, .recent-head > .level-mark { --level-color: var(--accent); }
 /* ── 工作台的标签行（老徐 260915：「在这个区域顶部横排一列标签」）── */
-.deck-tabs { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.deck-tabs::-webkit-scrollbar { display: none; }
-.deck-tab { display: inline-flex; align-items: center; gap: 5px; flex: none; height: 28px; padding: 0 12px;
-  border: 1px solid transparent; border-radius: 7px 7px 0 0; background: transparent;
-  color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.deck-tab:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.deck-tab.on { color: var(--accent); background: var(--card);
-  border-color: color-mix(in srgb, var(--accent) 34%, transparent); border-bottom-color: transparent; }
-.deck-tab .dt-n { min-width: 18px; height: 17px; line-height: 17px; padding: 0 5px; text-align: center;
-  border-radius: 9px; background: color-mix(in srgb, var(--accent) 13%, transparent);
-  color: var(--accent); font-size: 11px; font-weight: 600; }
-.deck-tab:not(.on) .dt-n { background: var(--muted-bg, color-mix(in srgb, var(--muted) 12%, transparent)); color: var(--muted); }
-/* 折起来时这一行就是摘要：标签退成纯文字、中间点分隔，点一下照样能展开并切过去 */
-.deck.collapsed .deck-tab { height: 24px; padding: 0 4px; border-color: transparent; background: transparent; font-weight: 500; }
-.deck.collapsed .deck-tab.on { color: var(--accent); }
-.deck.collapsed .deck-tab + .deck-tab::before { content: '·'; margin-right: 7px; color: var(--muted-2); }
+/* 老徐 260915：「在顶部应该给它分成四段不同的颜色，一整行排到头，而并不是缩起来这么短」
+   ⇒ 四段等分铺满（flex:1），每段自己一个颜色，靠 --tc 传进来 */
+.deck-tabs { display: flex; align-items: stretch; gap: 6px; flex: 1; min-width: 0; }
+.deck-tab { display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 1 1 0; min-width: 0; height: 32px; padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--tc, var(--accent)) 28%, transparent);
+  border-radius: 8px 8px 0 0; border-bottom-width: 3px;
+  border-bottom-color: color-mix(in srgb, var(--tc, var(--accent)) 40%, transparent);
+  background: color-mix(in srgb, var(--tc, var(--accent)) 6%, transparent);
+  color: color-mix(in srgb, var(--tc, var(--accent)) 72%, var(--muted));
+  font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; cursor: pointer; }
+.deck-tab .dt-name { overflow: hidden; text-overflow: ellipsis; }
+.deck-tab:hover { background: color-mix(in srgb, var(--tc, var(--accent)) 14%, transparent);
+  color: var(--tc, var(--accent)); }
+.deck-tab.on { background: color-mix(in srgb, var(--tc, var(--accent)) 12%, var(--card));
+  color: var(--tc, var(--accent)); border-color: color-mix(in srgb, var(--tc, var(--accent)) 55%, transparent);
+  border-bottom-color: var(--tc, var(--accent)); }
+.deck-tab .dt-n { flex: none; min-width: 18px; height: 17px; line-height: 17px; padding: 0 5px; text-align: center;
+  border-radius: 9px; background: color-mix(in srgb, var(--tc, var(--accent)) 16%, transparent);
+  color: var(--tc, var(--accent)); font-size: 11px; font-weight: 600; }
+/* 折起来时这一行就是摘要：矮一点、去掉底下那条粗线，四段颜色留着 —— 折着也一眼看出是哪四块 */
+.deck.collapsed .deck-tab { height: 26px; border-radius: 8px; border-bottom-width: 1px;
+  border-bottom-color: color-mix(in srgb, var(--tc, var(--accent)) 28%, transparent); font-weight: 500; }
+.deck.collapsed .deck-tab.on { border-bottom-color: color-mix(in srgb, var(--tc, var(--accent)) 55%, transparent); }
 .deck-head { align-items: flex-end; height: auto; min-height: 40px; padding-bottom: 0; gap: 6px; }
 .deck.collapsed .deck-head { align-items: center; }
 /* ── 搜网页那一页 ── */
-.websearch { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px 4px; }
-.eng-seg { align-self: flex-start; }
+.websearch { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px 4px; }
+/* 引擎排铺满整行、等分 —— 老徐 260915：「百度、Bing、Google 这一个也一样，也可以再宽一点」 */
+.eng-seg { display: flex; align-self: stretch; }
+.eng-seg button { flex: 1 1 0; min-width: 0; height: 34px; padding: 0 6px; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .web-form { display: flex; gap: 8px; }
 .web-form input { flex: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--card); color: inherit; font-size: 14px; }
