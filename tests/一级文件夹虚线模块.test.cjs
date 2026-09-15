@@ -65,12 +65,31 @@ test('没写说明那一行的类名不许叫 .empty —— 全局有个 .empty 
   assert.match(css, /\.note-card-btn\.note-blank \{/, '样式没跟着改名');
 });
 
-test('没写说明时这一行说清楚这夹由什么构成，点一下就能写', () => {
+test('🔴 说明框只显示、不接编辑 —— 要改走右边那一整条开侧栏（老徐 260915）', () => {
+  // 他原话：「点每一个文件夹上面的备注名，它就直接跳出一个框……其实这些都不需要，
+  //   下面这一段不能直接操作；要操作的话，肯定是通过右边那个箭头打开侧边栏才能操作」
   const fn = app.match(/function noteCardEl\(f\) \{([\s\S]*?)\n  \}/)[1];
-  assert.match(fn, /个文件夹 · /, '没说明时没有给出构成');
-  assert.match(fn, /条书签/, '没说明时没有给出条数');
-  assert.match(fn, /点这里写一句/, '没说明时没有写说明的入口');
-  assert.match(app, /closest\('\.hd-note-btn, \.note-card'\)/, '点说明框打不开编辑器');
+  assert.doesNotMatch(fn, /box\.dataset\.note/, '说明框还挂着编辑入口 ⇒ 点一下又弹框了');
+  assert.doesNotMatch(app, /closest\('\.hd-note-btn, \.note-card'\)/, '点说明框还会开编辑器');
+  assert.match(fn, /点右边那一条/, '没说明时得指出该去哪写');
+  // 条数标题栏右边已经有一份，这儿不重复报数
+  assert.doesNotMatch(fn, /个文件夹 · /, '又在说明框里报了一遍条数');
+});
+
+test('右边一整条＝这个文件夹的入口，贯穿整个框（老徐 260915）', () => {
+  // 他原话：「右边这个箭头你也得设计一下，放在整个框的最右边，可以做宽一点。
+  //   相当于整个文件夹，甚至展开子文件夹时，右边一整条都属于关于整个文件夹的定位」
+  assert.match(app, /function folderStripEl\(f\)/, '没有这一条');
+  assert.match(app, /card\.appendChild\(folderStripEl\(f\)\)/, '这一条没挂到文件夹框上');
+  assert.doesNotMatch(app, /class="hd-detail"/, '标题栏里那颗「›」还在 ⇒ 两个入口做同一件事');
+  assert.match(app, /closest\('\.hd-detail, \.fstrip'\)/, '点这一条开不了详情');
+  const st = css.match(/^\.fstrip \{([^}]*)\}/m)[1];
+  assert.match(st, /position: absolute/, '不是贯穿整框 ⇒ 展开后下半截点不到');
+  assert.match(st, /top: 0; bottom: 0/, '没有从头贯到底');
+  const w = Number(st.match(/width: (\d+)px/)[1]);
+  assert.ok(w >= 34, '还是窄的（他要「做宽一点」）：' + w);
+  // 框要给这一条让出位置，否则卡片会压在它底下
+  assert.match(css, /\.card\[data-kind="folder"\], \.card\.inbox \{[^}]*padding-right: 46px/, '框没给这一条让位');
 });
 
 test('收集箱和最近访问的说明常驻，但内容是可改的，🚫 不许写死在代码里', () => {

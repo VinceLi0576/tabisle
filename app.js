@@ -319,16 +319,20 @@ chrome:// ⚙️`;
     walk(n); return c;
   };
   function buildFlat() { flat = BmCore.flatten(bar); }
-  async function refresh() {
+  // 🔴 挪一格不该重建两万个节点：数据和重画拆开，挪位置只要前半截
+  async function refreshData() {
     bar = await store.bar();
     if (store.kind === 'chrome') {
       try { const r = await BG.askBg({ type: 'IDENTITY_MAP' }, { ms: 10000, retry: false }); if (r?.ok && r.data) { uidById = r.data; migrateLocks(); } }
       catch { /* 后台没起来：这次先用旧的按名锁，🚫 别因此卡住整页 */ }
     }
     buildFlat();
+    if (selectedId && !findNode(selectedId)) selectedId = null;
+  }
+  async function refresh() {
+    await refreshData();
     render();
     if ($('#search').value.trim()) renderSearch();
-    if (selectedId && !findNode(selectedId)) selectedId = null;
   }
 
   // ── 渲染 ──
@@ -561,7 +565,6 @@ chrome:// ⚙️`;
         : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
       (cls === 'head' ? `<button class="hd-view" type="button" data-viewof="${f.id}" title="这一组怎么显示：点一下在紧凑 / 详细之间切；顶栏那组是管全部的">${viewName(viewFor(f.id))}</button>` : '') +
       `<span class="n">${countUrls(f)}</span>` +
-      (opts.fixed ? '' : `<button class="hd-detail" type="button" data-detail="${f.id}" title="文件夹详情：说明、锁定、挪位置">›</button>`) +
       `<button class="more" type="button" title="更多">⋯</button>`;
     return head;
   }
@@ -588,15 +591,10 @@ chrome:// ⚙️`;
     // 换成 span，点击交给外框那一层，高度就跟着文字走了。
     const btn = document.createElement('span');
     btn.className = 'note-card-btn' + (t ? '' : ' note-blank');   // 🔴 别叫 .empty：全局有个 .empty{margin-top:80px} 会把这个框撑到 116px
-    box.dataset.note = f.id;
+    // 🚫 这里不再挂 data-note —— 老徐 260915 定：说明只显示，要改走右边那一整条开侧栏。
+    //    条数标题栏右边已经有一份，这儿不重复报数，只留一句「怎么写」。
     if (t) { btn.textContent = t; btn.title = t; }
-    else {
-      const node = findNode(String(f.id));
-      const subs = node ? (node.children || []).filter((c) => !c.url).length : 0;
-      const urls = node ? countUrls(node) : 0;
-      btn.textContent = (subs ? subs + ' 个文件夹 · ' : '') + urls + ' 条书签　·　点这里写一句：这个夹是干什么的';
-      btn.title = '还没写说明，点一下写一句';
-    }
+    else { btn.textContent = '还没写说明　·　点右边那一条「›」，在侧栏里写一句：这个夹是干什么的'; btn.title = btn.textContent; }
     box.appendChild(btn);
     return box;
   }
@@ -631,6 +629,46 @@ chrome:// ⚙️`;
     const label = { up: '↑ 上移一格', down: '↓ 下移一格', out: '⇤ 移出当前文件夹（升一层）', in: '⇥ 收进上面那个文件夹（降一层）' };
     return ['up', 'down', 'out', 'in'].filter((d) => can[d]).map((d) => ({ t: label[d], f: () => nudge(id, d) }));
   }
+  // ── 挪位置：只动两个节点，别推倒重来 ──
+  // 老徐 260915：「我一点，整个页面都在刷新、跳动和滚动……能不能做成像鼠标滚轮那样直接平滑地滑上去」
+  // 实测旧做法一次点击：整棵树全量重画 2 次（23920 个节点 ×2）、耗时 1.5～1.8 秒、页面被拽着跳 125～186 像素。
+  // 三个病根：① render() 是全量的 ② nudge 自己刷一次、书签事件又刷一次 ③ revealFolder 强行 scrollIntoView。
+  // 现在：同级上下移只换 DOM 顺序 ＋ FLIP 滑动；跨层级才重画；两种都不再滚动页面。
+  let selfWriteUntil = 0;
+  const markSelfWrite = () => { selfWriteUntil = Date.now() + 1200; };
+  // FLIP：先记位置 → 改 DOM → 反向偏移回原处 → 动画归零，看起来就是两块互相错身滑过去
+  function flipCapture(nodes) {
+    const m = new Map();
+    for (const el of nodes) m.set(el, el.getBoundingClientRect().top);
+    return m;
+  }
+  function flipPlay(m, ms = 220) {
+    const moved = [];
+    for (const [el, was] of m) {
+      const d = was - el.getBoundingClientRect().top;
+      if (!d) continue;
+      el.style.transition = 'none'; el.style.transform = `translateY(${d}px)`;
+      moved.push(el);
+    }
+    if (!moved.length) return;
+    requestAnimationFrame(() => {
+      for (const el of moved) { el.style.transition = `transform ${ms}ms cubic-bezier(.2,.7,.3,1)`; el.style.transform = ''; }
+    });
+    setTimeout(() => { for (const el of moved) { el.style.transition = ''; el.style.transform = ''; } }, ms + 60);
+  }
+  // 按 bar 里的新顺序，把 #groups 那一排重新串一遍 —— 只调 insertBefore，一个节点都不重建
+  function resyncTopOrder() {
+    const groups = $('#groups');
+    const want = deprecatedLast((bar.children || []).filter((f) => !f.url));
+    const ordered = [...want.filter((f) => !isDeprecated(f)), ...want.filter((f) => isDeprecated(f))];
+    let ok = true;
+    for (const f of ordered) {
+      const el = document.getElementById('sec-' + f.id);
+      if (!el || el.parentElement !== groups) { ok = false; break; }
+      groups.appendChild(el);
+    }
+    return ok;
+  }
   async function nudge(id, dir) {
     const node = findNode(String(id));
     if (!node) { toast('这一条已经不在了，刷新一下'); return; }
@@ -638,14 +676,56 @@ chrome:// ⚙️`;
     const to = BmCore.nudgeTarget(bar, String(id), dir);
     if (!to) { toast({ up: '已经是第一个了', down: '已经是最后一个了', out: '已经在最外层了', in: '上面紧挨着的不是文件夹，没法收进去' }[dir]); return; }
     if (isLocked(to.parentId)) { toast('目标文件夹已锁定'); return; }
-    try { await store.move(String(id), to); await refresh(); revealFolder(dir === 'in' ? to.parentId : String(id)); }
+    // 一级夹同级上下移＝最常用那条路：走轻量通道
+    const card = document.getElementById('sec-' + id);
+    const light = (dir === 'up' || dir === 'down')
+      && String(node.parentId) === String(bar.id)
+      && card && card.parentElement === $('#groups') && $('#organize').hidden && !search.value.trim();
+    try {
+      if (light) {
+        const snap = flipCapture([...$('#groups').children]);
+        await store.move(String(id), to);
+        markSelfWrite();
+        await refreshData();
+        if (resyncTopOrder()) { flipPlay(snap); return; }   // 🚫 页面一步都不滚：动的是块，不是视口
+        render();                                           // DOM 跟数据对不上了才退回重画
+        return;
+      }
+      await store.move(String(id), to);
+      markSelfWrite();
+      await refresh();
+      // 跨层级会换爹，得让他看见挪到哪去了；同级那条上面已经 return，不会走到这儿
+      document.getElementById('sec-' + (dir === 'in' ? to.parentId : String(id)))?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
     catch (err) { toast('没挪动：' + (err.message || err)); }
   }
+  // 按住任一个方向键 ＋ 滚轮 ＝ 一格一格连着挪（老徐 260915：「点住，然后用鼠标滚轮往上滚一层、往下滚一层」）
+  // 两种方式都在：点一下走一格，按住滚轮连着走。按住 ▲▼ 滚的是同级顺序，按住 ⇤⇥ 滚的是层级深浅。
+  let hold = null, nudgeChain = Promise.resolve(), wheelMoved = false;
+  const queueNudge = (id, dir) => { nudgeChain = nudgeChain.then(() => nudge(id, dir)).catch(() => {}); return nudgeChain; };
+  document.addEventListener('mousedown', (e) => {
+    const nb = e.target.closest('.nudge[data-nudge]');
+    hold = nb ? { id: nb.dataset.id, level: nb.dataset.nudge === 'in' || nb.dataset.nudge === 'out' } : null;
+    wheelMoved = false;
+  });
+  document.addEventListener('mouseup', () => { hold = null; });
+  window.addEventListener('blur', () => { hold = null; });
+  document.addEventListener('wheel', (e) => {
+    if (!hold) return;
+    e.preventDefault();          // 按住时滚轮归我用，🚫 别让页面跟着滚
+    wheelMoved = true;
+    queueNudge(hold.id, hold.level ? (e.deltaY < 0 ? 'out' : 'in') : (e.deltaY < 0 ? 'up' : 'down'));
+  }, { passive: false });
   document.addEventListener('click', (e) => {
-    const hd = e.target.closest('.hd-detail'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
+    const hd = e.target.closest('.hd-detail, .fstrip'); if (hd) { e.preventDefault(); e.stopPropagation(); openDetail(hd.dataset.detail); return; }
     const nb = e.target.closest('.nudge');
-    if (nb) { e.preventDefault(); e.stopPropagation(); nudge(nb.dataset.id, nb.dataset.nudge); return; }
-    const b = e.target.closest('.hd-note-btn, .note-card'); if (b && b.dataset.note) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
+    if (nb) {
+      e.preventDefault(); e.stopPropagation();
+      // 刚用滚轮连着挪过 ⇒ 松手这下的 click 不算数，否则平白多走一格
+      if (wheelMoved) { wheelMoved = false; return; }
+      queueNudge(nb.dataset.id, nb.dataset.nudge); return;
+    }
+    const b = e.target.closest('.hd-note-btn'); if (b && b.dataset.note) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
     const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
 
@@ -665,6 +745,17 @@ chrome:// ⚙️`;
   // 🔄 老徐 260915 把收集箱收进了顶上那一整块 ⇒ 它不再排在下面这一排里，
   //    原来那三颗上移／下移／复位按钮没有落脚点了，一起退场。
   //    偏好 inboxIndex 留着不删：万一要退回旧排法，位置还在。
+  // 老徐 260915：「右边这个箭头……放在整个框的最右边，可以做宽一点。相当于整个文件夹，
+  //   甚至展开子文件夹时，右边一整条都属于关于整个文件夹的定位」
+  // ⇒ 跟书签卡片右边那条竖条同一个意思，只是这条管的是整个夹。箭头贴顶，折叠展开位置不变。
+  function folderStripEl(f) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'fstrip'; b.dataset.detail = f.id;
+    b.title = `「${f.title || '这个文件夹'}」的详情：说明、颜色、锁定、挪位置`;
+    b.setAttribute('aria-label', b.title);
+    b.innerHTML = '<span class="fs-arrow">›</span>';
+    return b;
+  }
   function cardEl(f, opts = {}) {
     const card = document.createElement('div');
     card.className = 'card'; card.id = 'sec-' + f.id;
@@ -676,6 +767,7 @@ chrome:// ⚙️`;
     card.appendChild(noteCardEl(f));
     if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
+    card.appendChild(folderStripEl(f));
     initFold(card, f);   // 收集箱也能折（老徐 260914「收件箱也可以折叠嘛」）
     return card;
   }
@@ -1889,7 +1981,11 @@ chrome:// ⚙️`;
 
   // ── 起 ──
   let refreshTimer = null;
-  store.onChange(() => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 120); });
+  // 🔴 自己刚挪完、DOM 已经就位 ⇒ 浏览器回来的那声 onMoved 别再重画一遍（实测就是它让一次点击重画了两次）
+  store.onChange(() => {
+    if (Date.now() < selfWriteUntil) return;
+    clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 120);
+  });
   await refresh();
   // 给 ai.js 的接口（同页其它脚本用）
   window.BM = {

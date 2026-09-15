@@ -684,6 +684,18 @@ dialog .palette span.on { border-color: var(--text); }
 .is-collapsed > .head .hd-view,
 .is-collapsed > .head .hd-detail,
 .is-collapsed > .head .more { order: 3; }
+/* ── 右边一整条＝这个文件夹的入口（老徐 260915）──
+   贯穿整个框：折叠时就是一小条，展开时一直到底。箭头贴顶，两种状态下位置不变。 */
+.card[data-kind="folder"], .card.inbox { position: relative; padding-right: 46px; }
+.fstrip { position: absolute; right: 0; top: 0; bottom: 0; width: 38px; z-index: 1;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 11px;
+  border: 0; border-left: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, transparent);
+  border-radius: 0 9px 9px 0;
+  background: color-mix(in srgb, var(--gc, var(--muted-2)) 5%, transparent);
+  color: color-mix(in srgb, var(--gc, var(--muted-2)) 70%, var(--muted));
+  font-size: 17px; line-height: 1; cursor: pointer; transition: background .12s, color .12s; }
+.fstrip:hover { background: color-mix(in srgb, var(--gc, var(--accent)) 14%, transparent); color: var(--gc, var(--accent)); }
+.fstrip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* 折叠行整行可点：点空白处开侧栏 */
 .card > .head { cursor: pointer; }
 .card > .head:hover { background: color-mix(in srgb, var(--gc, var(--muted-2)) 9%, transparent); }
@@ -697,7 +709,7 @@ dialog .palette span.on { border-color: var(--text); }
 /* 收集箱那句「这是什么」是写死的模块说明，折叠展开都在（老徐 260914 就是对着展开态说的「再框一个小框」）*/
 
 .card > .note-card, #recent > .note-card, #deck > .note-card {
-  display: flex; cursor: text; margin: 2px 16px 6px 58px; padding: 7px 12px;
+  display: flex; cursor: default; margin: 2px 16px 6px 58px; padding: 7px 12px;   /* 260915 起只显示、不接编辑 ⇒ 不再是文本光标 */
   border: 1px solid color-mix(in srgb, var(--gc, var(--muted-2)) 22%, var(--border));
   border-radius: 8px; background: var(--card);
   color: var(--muted); font-size: 13px; line-height: 1.7;
