@@ -185,7 +185,14 @@ chrome:// ⚙️`;
   const { esc, key, host, domainParts, countUrls } = BmCore;   // 派生逻辑跟侧栏共用一份
   const tagList = () => meta.tags;
   const tagDef = (id) => meta.tags.find((t) => t.id === id);
-  const deprecatedTags = () => meta.tags.filter((t) => t.name?.trim() === '废弃');
+  // 🔴 原来这儿是硬匹配名字叫不叫「废弃」—— 他把标签改名成「待整理」，排到最后和变灰就静默失效了。
+  //    改成标签自己带一个开关（dim），叫什么名字都不影响；老数据里名叫「废弃」的仍然认，并在下面补上这个开关。
+  const deprecatedTags = () => meta.tags.filter((t) => t.dim || t.name?.trim() === '废弃' || t.name?.trim() === '待整理');
+  function migrateDimTag() {
+    let changed = false;
+    for (const t of meta.tags) if (!t.dim && ['废弃', '待整理'].includes(t.name?.trim())) { t.dim = true; changed = true; }
+    return changed;
+  }
   function effectiveTags(n) {
     const ids = new Set(n.url ? itemMeta(n.url).tags || [] : []);
     for (let node = n.url ? findNode(n.parentId) : n; node; node = node.parentId ? findNode(node.parentId) : null) {
@@ -200,6 +207,12 @@ chrome:// ⚙️`;
       if (tags.some((id) => ids.has(id))) return true;
     }
     return false;
+  }
+  // 徽章上写标签自己的名字（他改成「待整理」就显示「待整理」），🚫 别写死
+  function dimLabel(n) {
+    const ids = new Set(deprecatedTags().map((t) => t.id));
+    const own = ((n.url ? itemMeta(n.url) : meta.groups[n.title])?.tags || []).find((id) => ids.has(id));
+    return (own && tagDef(own)?.name) || deprecatedTags()[0]?.name || '待整理';
   }
   function deprecatedLast(nodes, includeParents = false) {
     const current = [], deprecated = [];
@@ -222,7 +235,7 @@ chrome:// ⚙️`;
     const j = JSON.stringify(fresh);
     if (j === lastMetaJson || j === JSON.stringify(meta)) return;   // 自己写的回声
     meta = fresh; meta.items ||= {}; meta.groups ||= {}; meta.tags ||= DEFAULT_TAGS.map((t) => ({ ...t }));
-    ensurePinnedTag();   // 只补内存这一份，🚫 别在这儿存盘：会跟另一台来回写
+    ensurePinnedTag(); migrateDimTag();   // 只补内存这一份，🚫 别在这儿存盘：会跟另一台来回写
     if (typeof meta.emojiRules !== 'string') meta.emojiRules = DEFAULT_EMOJI_RULES;
     emojiRules = parseEmojiRules(meta.emojiRules);
     if (typeof render === 'function' && bar) render();
@@ -236,7 +249,7 @@ chrome:// ⚙️`;
     meta.tags.push({ ...DEFAULT_TAGS.find((t) => t.id === PINNED_TAG) });
     return true;
   }
-  if (ensurePinnedTag()) saveMeta();
+  if (ensurePinnedTag() | migrateDimTag()) saveMeta();
   const groupColor = (title) => (meta.groups[title] || {}).color || '';
   // ── 锁定：锁在文件夹的稳定身份（uid）上，不再认名字 ──
   // 🔴 原先按文件夹名记（meta.groups[title].locked）有三个后果：同名夹互相串；
@@ -562,7 +575,7 @@ chrome:// ⚙️`;
       `<span class="level-label">${opts.level || 1}级</span>` +
       (isInbox(f) ? '<span class="inbox-badge">收纳</span>' : '') +
 
-      (isDeprecated(f) ? '<span class="deprecated-badge">废弃</span>' : '') +
+      (isDeprecated(f) ? `<span class="deprecated-badge">${esc(dimLabel(f))}</span>` : '') +
       (opts.tags && opts.level > 1 ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags && opts.level > 1 ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
@@ -832,9 +845,11 @@ chrome:// ⚙️`;
       + '</span>'
       // 老徐 260915：「既然能往上移一移、往下移一移，那左右呢？」⇒ 四个方向都给上。
       // 🔴 类名和 data 属性跟首页那套一模一样 ⇒ 点击委托和「按住＋滚轮连着挪」直接就能用，🚫 不另写一套
-      + `<span class="fnudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']]
-          .map(([d,g,t]) => `<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}（按住我滚鼠标滚轮，能一格一格连着挪）" aria-label="${t}">${g}</button>`).join('')}</span>`;
-    if (isDeprecated(f)) c.querySelector('.title').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
+      // 老徐 260915：「把它变成像游戏手柄一样的上下左右」⇒ 十字排布，方向即含义：
+      //   上下＝在同一个爹里往前往后挪 · 左＝移出去升一层 · 右＝收进上面那个夹降一层
+      + `<span class="fnudge">${[['up','▲','往上排一格'],['out','◀','往左：移出去，升一层'],['in','▶','往右：收进上面那个夹，降一层'],['down','▼','往下排一格']]
+          .map(([d,g,t]) => `<button type="button" class="nudge n-${d}" data-nudge="${d}" data-id="${f.id}" title="${t}（按住我滚鼠标滚轮，能一格一格连着挪）" aria-label="${t}">${g}</button>`).join('')}</span>`;
+    if (isDeprecated(f)) c.querySelector('.title').insertAdjacentHTML('afterend', `<span class="deprecated-badge">${esc(dimLabel(f))}</span>`);
     c.title = '拖到别块的上下边＝改顺序，拖到别块中间＝放进那个夹 · 点一下开右边详情 · 右键改名/换色';
     return c;
   }
@@ -1022,7 +1037,7 @@ chrome:// ⚙️`;
       d.innerHTML = levelMark(depth + 1)
         + (depth === 0 && kids ? `<button type="button" class="side-fold${sideOpen.has(f.id) ? ' on' : ''}" data-fold="${f.id}" title="展开 / 收起子文件夹" aria-expanded="${sideOpen.has(f.id)}">▸</button>` : '<span class="side-fold ph"></span>')
         + `<span class="nm">${esc(f.title || '（未命名）')}${folderLocked(f) ? ' 🔒' : ''}</span><span class="ct">${countUrls(f)}</span>`;
-      if (isDeprecated(f)) d.querySelector('.nm').insertAdjacentHTML('afterend', '<span class="deprecated-badge">废弃</span>');
+      if (isDeprecated(f)) d.querySelector('.nm').insertAdjacentHTML('afterend', `<span class="deprecated-badge">${esc(dimLabel(f))}</span>`);
       d.title = f.title; d.dataset.name = (f.title || '').toLowerCase();
       list.appendChild(d);
       if (depth < 1 && sideOpen.has(f.id)) for (const c of deprecatedLast(f.children || [])) if (!c.url) add(c, depth + 1, f.id);
@@ -1118,6 +1133,7 @@ chrome:// ⚙️`;
     return new Promise((resolve) => {
       $('#dlg-tag-title').textContent = existing ? '编辑标签' : '新标签';
       $('#tag-glyph').value = cur.glyph; $('#tag-name').value = cur.name; $('#tag-desc').value = cur.desc || '';
+      $('#tag-dim').checked = !!cur.dim;
       let color = cur.color;
       const pal = $('#tag-palette'); pal.innerHTML = '';
       for (const c of PALETTE) { const s = document.createElement('span'); s.style.background = c; s.classList.toggle('on', c === color); s.onclick = () => { color = c; $$('span', pal).forEach((x) => x.classList.toggle('on', x === s)); }; pal.appendChild(s); }
@@ -1128,7 +1144,7 @@ chrome:// ⚙️`;
         e.preventDefault();
         const glyph = $('#tag-glyph').value.trim().slice(0, 2), name = $('#tag-name').value.trim();
         if (!glyph || !name) { toast('「一个字」和「名称」都要填'); return; }
-        done({ glyph, name, desc: $('#tag-desc').value.trim(), color });
+        done({ glyph, name, desc: $('#tag-desc').value.trim(), color, dim: $('#tag-dim').checked });
       };
       $('#tag-cancel').onclick = () => done(null);
       $('#tag-delete').onclick = () => done({ delete: true });
@@ -1341,7 +1357,7 @@ chrome:// ⚙️`;
       const txt = document.createElement('span'); txt.className = 'txt';
       const l1 = document.createElement('span'); l1.className = 'line1';
       l1.innerHTML = `<span class="name">${esc(label(b))}</span>`; l1.appendChild(tagChips(itemMeta(b.url).tags)); txt.appendChild(l1);
-      if (!isDeprecated(b) && isDeprecated(b, true)) l1.insertAdjacentHTML('beforeend', '<span class="deprecated-badge" title="所属文件夹已标记废弃">废弃</span>');
+      if (!isDeprecated(b) && isDeprecated(b, true)) l1.insertAdjacentHTML('beforeend', '<span class="deprecated-badge" title="所在文件夹被标成了排到最后的那一类">↓</span>');
       txt.innerHTML += `<span class="desc">${esc(b.path || '收集箱')} · ${esc(host(b.url))}</span>`;
       a.appendChild(txt);
       a.appendChild(detailArrow(b.id));
@@ -1412,6 +1428,20 @@ chrome:// ⚙️`;
   // 老徐 260914：「检查云端之后，其实还是需要能让我进到设置页。我现在进不到」
   // ⇒ 药丸只负责显示状态，点它一律进「同步与备份」页；同步本身每分钟自动跑，不需要人点。
   $('#sync-pill').addEventListener('click', () => { window.open('backup.html', '_blank'); });
+  // 老徐 260915：「我改了，马上就能点同步；再改了，我自己还能点」⇒ 同步按钮直接摆在状态条旁边，
+  // 🚫 不用再「先点云端最新版、进去、再点同步」三步
+  $('#sync-go').addEventListener('click', async () => {
+    const b = $('#sync-go');
+    if (b.disabled) return;
+    b.disabled = true; const was = b.textContent; b.textContent = '⟳ 同步中…';
+    try {
+      const r = await BG.askBg({ type: 'SYNC_NOW' }, { ms: 120000, retry: false });
+      if (r?.ok) { toast('同步完成'); await refresh(); }
+      else toast('没同步成：' + (r?.error || '云端没应答') , { t: '去备份页看看', f: () => window.open('backup.html', '_blank') });
+    } catch (err) {
+      toast('没同步成：' + (err?.message || err), { t: '去备份页看看', f: () => window.open('backup.html', '_blank') });
+    } finally { b.disabled = false; b.textContent = was; updateSyncPill(); }
+  });
   $('#more-btn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     openMenu([
@@ -2040,6 +2070,7 @@ chrome:// ⚙️`;
     const pill=$('#sync-pill');
     pill.dataset.state=state;pill.textContent=text;pill.hidden=false;
     pill.title=title||text;
+    const go=$('#sync-go'); if(go) go.hidden=false;   // 状态条露出来＝云端配好了 ⇒ 同步按钮也跟着露
   }
   async function updateSyncPill(retry=true) {
     if (store.kind !== 'chrome') return;

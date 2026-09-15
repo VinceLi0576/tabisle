@@ -385,6 +385,10 @@ dialog .palette span.on { border-color: var(--text); }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; padding: 8px 14px; border-radius: 10px; background: var(--text); color: var(--bg); font-size: 12.5px; box-shadow: var(--shadow-hover); }
 .toast button { margin-left: 10px; border: 0; background: transparent; color: var(--accent); cursor: pointer; font-weight: 600; }
 
+.tag-dim-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.tag-dim-row input { margin-top: 2px; flex: none; }
+.tag-dim-row b { color: var(--text); font-weight: 600; }
+
 /* ── 段标题拖柄 ── */
 .grip { color: var(--muted-2); font-size: 12px; letter-spacing: -2px; cursor: grab; padding: 0 2px 0 4px; user-select: none; }
 .grip:active { cursor: grabbing; }
@@ -496,8 +500,8 @@ dialog .palette span.on { border-color: var(--text); }
 .ftwist svg { width: 12px; height: 12px; transition: transform .12s ease; }
 .fnode.open > .fchip .ftwist svg { transform: rotate(90deg); }
 .ftwist:hover { background: var(--accent-bg); color: var(--accent); }
+/* 🔄 260915：没有子夹时原来占位画一个灰点，老徐说「不好看」⇒ 留空位不画东西 */
 .ftwist.none { cursor: default; }
-.ftwist.none::after { content: "·"; color: var(--muted-2); }
 
 .fchip .fmain { display: flex; flex-direction: column; justify-content: center; gap: 3px; flex: 1 1 auto; min-width: 0; }
 .fchip .fline { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -513,14 +517,22 @@ dialog .palette span.on { border-color: var(--text); }
 /* 🔄 260915：那个 ↳ 去掉了 —— 又窄又得先看懂符号。现在拖到块中间就是放进去（老徐当面说不懂它）。
    块自己承担 drop-into 的高亮 */
 .fchip.drop-into { background: var(--accent-bg); outline: 2px solid var(--accent); outline-offset: -2px; }
-/* 每块右边四个方向键（老徐 260915：「既然能往上移一移，那左右呢？」）—— 平时淡，鼠标到这块才亮 */
-.fnudge { flex: none; display: grid; grid-template-columns: repeat(2, 24px); gap: 2px; align-self: center; margin-left: auto; }
-.fnudge .nudge { height: 20px; padding: 0; border: 1px solid transparent; border-radius: 5px;
-  background: transparent; color: var(--muted-2); font-size: 11px; line-height: 1; cursor: pointer;
-  opacity: .35; transition: opacity .12s, color .12s, border-color .12s; }
+/* 四个方向键摆成游戏手柄的十字（老徐 260915：「把它变成像游戏手柄一样的上下左右」）——
+   方向本身就是含义：上下＝同一个爹里往前往后排 · 左＝移出去升一层 · 右＝收进上面那个夹。
+   平时淡，鼠标到这块才亮。 */
+.fnudge { flex: none; align-self: center; margin-left: auto; display: grid;
+  grid-template-areas: ". up ." "out mid in" ". down ."; grid-template-columns: repeat(3, 19px);
+  grid-template-rows: repeat(3, 15px); gap: 1px; }
+.fnudge .nudge { padding: 0; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--muted-2); font-size: 9px; line-height: 1; cursor: pointer;
+  opacity: .32; transition: opacity .12s, color .12s, border-color .12s, background .12s; }
+.fnudge .n-up { grid-area: up; } .fnudge .n-down { grid-area: down; }
+.fnudge .n-out { grid-area: out; } .fnudge .n-in { grid-area: in; }
 .fchip:hover .fnudge .nudge { opacity: 1; }
-.fnudge .nudge:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.fnudge .nudge:hover { color: #fff; border-color: var(--accent); background: var(--accent); }
 .fnudge .nudge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+/* 中间那格留空 —— 手柄本来就是这个样子，也让四个方向一眼分得开 */
+.fnudge::after { content: ''; grid-area: mid; }
 
 /* 落点提示改成上下两条横线 —— 顺序是上下的，🚫 不再是左右 */
 .fchip.dragging { opacity: .35; }

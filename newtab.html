@@ -23,6 +23,7 @@
     </span>
     <!-- 备份和同步本来就是同一页，合成一个药丸：没配同步时显示「备份与恢复」，配了就显示云端状态 -->
     <button class="pill" id="sync-pill" type="button" title="备份、恢复与多设备同步">☁ 备份与恢复</button>
+    <button class="pill sync-go" id="sync-go" type="button" hidden title="立刻同步一次：把本机改动传上去、把云端新东西拉下来">⟳ 同步</button>
   </div>
   <!-- 🔴 顶栏不再摆输入框（AI 全部走右侧栏），但这一块不能删：ai.js 按 id 直接抓这些元素 -->
   <div class="ai-bar" id="ai-bar" hidden>
@@ -113,6 +114,7 @@
     </div>
     <label>一句说明<input id="tag-desc" autocomplete="off" placeholder="产品或服务的官方入口"></label>
     <div class="dlg-tags"><span class="lbl">颜色</span><span class="palette" id="tag-palette"></span></div>
+    <label class="tag-dim-row"><input type="checkbox" id="tag-dim"><span>打了这个标签的<b>排到最后</b>，而且显示成灰的（用来标「待整理」这类还没归位的）</span></label>
     <div class="dlg-actions">
       <button type="button" class="btn ghost danger-text" id="tag-delete" hidden>删除这个标签</button>
       <span style="flex:1"></span>

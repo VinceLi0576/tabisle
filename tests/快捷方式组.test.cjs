@@ -51,7 +51,18 @@ test('老数据要补上这个标签，而且只补不改', () => {
   assert.match(fn, /some\(\(t\) => t\.id === PINNED_TAG\)/, '没判断已存在 ⇒ 每次打开都塞一个重复标签');
   assert.match(fn, /push/, '不补 ⇒ 老数据里 meta.tags 已经存在，||= 走不到，界面上永远勾不上');
   // 外部 meta 变更重载那处只补内存，别存盘：两台机器会互相写个没完
-  assert.match(app, /ensurePinnedTag\(\);\s*$/m, '重载路径没补');
+  assert.match(app, /ensurePinnedTag\(\); migrateDimTag\(\);/, '重载路径没补');
+});
+
+test('🔴 「排到最后＋变灰」按标签自己的开关走，🚫 别硬匹配名字', () => {
+  // 原来是 t.name === '废弃' 硬匹配 ⇒ 他一把标签改名成「待整理」，排序和变灰就静默失效。
+  // 老徐 260915 要的正是「待整理」这个名字，所以这条必须先立住。
+  assert.match(app, /const deprecatedTags = \(\) => meta\.tags\.filter\(\(t\) => t\.dim/, '还在按名字硬匹配');
+  assert.match(app, /function migrateDimTag\(\)/, '老数据里那个标签没补上开关');
+  assert.match(app, /\$\('#tag-dim'\)\.checked/, '标签编辑框里没有这个开关 ⇒ 用户打不开它');
+  assert.match(app, /dim: \$\('#tag-dim'\)\.checked/, '开关没存回标签');
+  assert.match(app, /function dimLabel\(n\)/, '徽章还写死一个词');
+  assert.doesNotMatch(app, /class="deprecated-badge">废弃</, '徽章上还硬写着「废弃」');
 });
 
 test('说明那一句不写死在代码里，他能自己改', () => {

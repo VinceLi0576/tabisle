@@ -56,8 +56,12 @@ test('① 一块里要能看见五样：名字 · 几条书签 · 几个子夹 �
   assert.doesNotMatch(chip, /没写说明/, '又在每块上重复那四个字了');
   // 四个方向键：类名和 data 跟首页同一套，「按住＋滚轮连着挪」才会自动生效
   assert.match(chip, /class="fnudge"/, '块上没有方向键');
+  // 老徐 260915：「把它变成像游戏手柄一样的上下左右」⇒ 十字排布，方向本身就是含义
+  assert.match(css, /grid-template-areas: "\. up \." "out mid in" "\. down \."/, '方向键不是十字排布');
+  for (const d of ['up', 'down', 'out', 'in']) assert.match(css, new RegExp(`\\.n-${d} \\{ grid-area: ${d}`), d + ' 没定位到十字上');
+  assert.doesNotMatch(css, /\.ftwist\.none::after \{ content: "·"/, '没有子夹时那个灰点还在（他说不好看）');
   for (const d of ['up', 'down', 'out', 'in']) assert.match(chip, new RegExp(`'${d}'`), '少了方向 ' + d);
-  assert.match(chip, /class="nudge" data-nudge="\$\{d\}" data-id="\$\{f\.id\}"/, '方向键没沿用首页那套属性 ⇒ 点击委托和滚轮都接不上');
+  assert.match(chip, /class="nudge n-\$\{d\}" data-nudge="\$\{d\}" data-id="\$\{f\.id\}"/, '方向键没沿用首页那套属性 ⇒ 点击委托和滚轮都接不上');
   assert.match(chip, /folderLockedByTitle\(f\.title\) \? '<em class="lk"/, '锁没显示');
 });
 
