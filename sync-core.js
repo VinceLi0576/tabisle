@@ -3,6 +3,13 @@
   const BK=root.BookmarkCore||(typeof require==='function'?require('./bookmark-core.js'):null);
   const equal=(a,b)=>BK.stableStringify(a)===BK.stableStringify(b);
   // 后来才加进 meta 的键。老版本浏览器写云端时不会带它们 —— 见 merge 里的 newerKey
+  // 🔴🔴 260915 实撞：下面那个 meta={...} 是**硬写死键名的对象字面量** ⇒ 凡是没列进去的 meta 子键，
+  //   每同步一次就被整键删掉一次，而且删掉的版本还会被上传 ⇒ 两台一起丢，全程不报错。
+  //   folderTags（文件夹那套标签）和 emojiRules（emoji 兜底库）就是这么丢的。
+  //   ⇒ 以后往 meta 里加任何新键，**必须同时加进下面那个字面量**，光加进 NEW_META_KEYS 不够。
+  //   tests/同步不许吞掉meta新键.test.cjs 会拿 app.js 里实际用到的 meta 子键来对，漏了当场报。
+  // 🔴 这张单只用来判「对面是不是旧版浏览器写的」⇒ 只放那些「所有在用版本都该带」的键。
+  //   folderTags／emojiRules 是新加的，绝大多数现存快照都没有，放进来会让页面永远提示「有旧版」。
   const NEW_META_KEYS=['locks','folderNotes'];
   const clone=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
   const flat=s=>BK.flatten(s?.children||[]);
@@ -116,6 +123,7 @@
       return conflict('meta:'+path,path,'附属字段',l,r);
     }
     const tagMap=s=>Object.fromEntries((s?.meta.tags||[]).map(t=>[t.id,t]));
+    const fTagMap=s=>Object.fromEntries((s?.meta.folderTags||[]).map(t=>[t.id,t]));
     // 🔴 「那一份里根本没有这个键」≠「用户把它清空了」。
     // 前者说明写它的那台浏览器还不认识这个键（旧版本）；把它当成一次删除，
     // 就是拿旧版的无知去覆盖新版的数据 —— 悄悄丢，而且三方合并下次会把删除传播开，救不回来。
@@ -124,6 +132,15 @@
     // 判据能成立不靠对方配合 —— 这很要紧，因为闸门装不进已经发出去的旧版本。
     const hasKey=(s,k)=>!!s&&!!s.meta&&Object.prototype.hasOwnProperty.call(s.meta,k);
     const laggards=[base,remote].filter(s=>s&&NEW_META_KEYS.some(k=>!hasKey(s,k))).length;
+    // 标量键（一整串文本那种）：我改过就用我的，没改过就跟着云端；两边都没有就不写这个键
+    function scalarKey(k){
+      const b=hasKey(base,k)?base.meta[k]:undefined;
+      const l=hasKey(local,k)?local.meta[k]:undefined;
+      const r=hasKey(remote,k)?remote.meta[k]:undefined;
+      if(l!==undefined&&!equal(b,l))return l;      // 我动过 ⇒ 用我的
+      if(r!==undefined)return r;                   // 我没动过 ⇒ 跟云端
+      return l!==undefined?l:b;
+    }
     function newerKey(k,label){
       const b=hasKey(base,k)?base.meta[k]:undefined;
       const l=hasKey(local,k)?local.meta[k]:(b===undefined?{}:clone(b));
@@ -133,7 +150,11 @@
     const meta={items:object(base?.meta.items,local.meta.items,remote?.meta.items||{},'备注')||{},groups:object(base?.meta.groups,local.meta.groups,remote?.meta.groups||{},'分组')||{},tags:Object.values(object(base?tagMap(base):undefined,tagMap(local),tagMap(remote),'标签')||{}),
       // 🔴 这两个键是后来才加的：还没升级的那台浏览器写云端时根本不会带上它们。
       // 用 newerKey 而不是 object，就是为了把「它不认识」和「用户清空了」分开。
-      locks:newerKey('locks','锁定'),folderNotes:newerKey('folderNotes','文件夹说明')};
+      locks:newerKey('locks','锁定'),folderNotes:newerKey('folderNotes','文件夹说明'),
+      // 文件夹那套标签是数组，跟 tags 一样按 id 合并；🚫 别用 newerKey（它按对象合并，会把数组拍成对象）
+      folderTags:Object.values(object(base?fTagMap(base):undefined,fTagMap(local),fTagMap(remote),'文件夹标签')||{}),
+      // emoji 兜底库是一整串文本，谁改过用谁的
+      emojiRules:scalarKey('emojiRules')};
     const snapshot={...clone(local),children:order(''),meta};
     // Display and folding preferences stay per-device during sync; full backups still migrate them.
     BK.validate(snapshot);

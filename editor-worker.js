@@ -10,7 +10,18 @@ async function editorAction(m) {
   if(m.type==='EDITOR_FOLDER_UPDATE') {
     const id=String(m.id||'');const node=(await chrome.bookmarks.get(id))[0];
     if(!node||node.url)throw Error('不是文件夹');
-    if(typeof m.title==='string'&&m.title.trim()&&m.title!==node.title)await chrome.bookmarks.update(id,{title:m.title.trim()});
+    if(typeof m.title==='string'&&m.title.trim()&&m.title!==node.title){
+      const from=node.title,to=m.title.trim();
+      await chrome.bookmarks.update(id,{title:to});
+      // 🔴 260915 实撞：颜色和文件夹标签是按夹名存的（meta.groups[夹名]）⇒ 改名不搬就当场丢，
+      //   而说明和锁按稳定身份码存、改名不受影响 ⇒ 同一次改名，一半的东西没了一半还在。
+      //   首页右键改名本来就有这段搬家（app.js 的 inlineRename），侧栏这条路一直没有。
+      const mv=(await chrome.storage.local.get('meta')).meta;
+      if(mv&&mv.groups&&mv.groups[from]&&!mv.groups[to]){
+        mv.groups[to]=mv.groups[from];delete mv.groups[from];
+        await chrome.storage.local.set({meta:mv});
+      }
+    }
     if(m.note!==undefined||m.locked!==undefined||m.color!==undefined||m.ftags!==undefined){
       // 🔴 只动这个夹的那几个键，其余原样 —— 跟附属数据合并写同一条纪律，别整包盖
       const fresh=(await chrome.storage.local.get('meta')).meta||{items:{},groups:{},tags:[]};
@@ -34,6 +45,10 @@ async function editorAction(m) {
       if(m.ftags!==undefined&&String(node.parentId)===String((await bookmarkBar()).id)){
         const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
         const known=new Set((fresh.folderTags||[]).map(t=>t.id));
+        // 🔴 260915 实撞：名单空着的时候，下面那句过滤会把传来的 id 全滤掉 ⇒ 直接 delete g.ftags，
+        //   等于「点一下状态，反而把这个夹已有的状态清了」，而且不报错。名单空＝数据出了问题，
+        //   这时候该停下来说清楚，🚫 别顺手删。（名单被同步吞掉那个根因已在 sync-core 修掉。）
+        if(!known.size)throw Error('文件夹标签名单是空的，先刷新一下页面（它会自动补回默认的两个）再试');
         const ids=[...new Set((Array.isArray(m.ftags)?m.ftags:[]).map(String).filter(x=>known.has(x)))];
         const g={...(fresh.groups?.[name]||{})};
         if(ids.length)g.ftags=ids;else delete g.ftags;

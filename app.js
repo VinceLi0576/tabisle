@@ -382,8 +382,15 @@ chrome:// ⚙️`;
   };
   function buildFlat() { flat = BmCore.flatten(bar); }
   // 🔴 挪一格不该重建两万个节点：数据和重画拆开，挪位置只要前半截
+  // 树的指纹：只认「顺序＋名字＋网址」这些看得见的东西，🚫 别把 dateAdded 这类每次都变的算进来
+  let lastTreeSig = '';
+  const treeSig = (n) => {
+    const walk = (x) => `${x.id}|${x.title}|${x.url || ''}[${(x.children || []).map(walk).join(',')}]`;
+    return (n?.children || []).map(walk).join(';');
+  };
   async function refreshData() {
     bar = await store.bar();
+    lastTreeSig = treeSig(bar);
     if (store.kind === 'chrome') {
       try { const r = await BG.askBg({ type: 'IDENTITY_MAP' }, { ms: 10000, retry: false }); if (r?.ok && r.data) { uidById = r.data; migrateLocks(); } }
       catch { /* 后台没起来：这次先用旧的按名锁，🚫 别因此卡住整页 */ }
@@ -395,6 +402,21 @@ chrome:// ⚙️`;
     await refreshData();
     render();
     if ($('#search').value.trim()) renderSearch();
+  }
+  // 🔴 260915 实撞：原来这儿是「自己刚写过就忽略 1200 毫秒」，两头都不对 ——
+  //   ① 浏览器的 onMoved 事件比 chrome.bookmarks.move 的 promise 还早到（实测 1.2ms vs 1.3ms）
+  //      ⇒ 标记还没来得及设，自己那次照样触发了一轮全量重画，省不掉；
+  //   ② 而标记设上之后的那 1.2 秒里，**别人**（另一台机器／同步／浏览器账号同步）的改动被整个吞掉，
+  //      而且 return 了就没人再排一次 ⇒ 页面一直显示旧树，不自愈。
+  //   改成按内容比对：树真变了才重画，没变就跳过。自己挪完 bar 已经是新的 ⇒ 指纹一致 ⇒ 天然跳过；
+  //   别人改的 ⇒ 指纹不同 ⇒ 照常重画。🚫 别再加时间窗口。
+  async function refreshIfChanged() {
+    const before = lastTreeSig;
+    await refreshData();
+    if (lastTreeSig === before) return false;   // 树没变（多半是自己刚写完那一声回声）⇒ 不重画
+    render();
+    if ($('#search').value.trim()) renderSearch();
+    return true;
   }
 
   // ── 渲染 ──
@@ -672,8 +694,7 @@ chrome:// ⚙️`;
   // 实测旧做法一次点击：整棵树全量重画 2 次（23920 个节点 ×2）、耗时 1.5～1.8 秒、页面被拽着跳 125～186 像素。
   // 三个病根：① render() 是全量的 ② nudge 自己刷一次、书签事件又刷一次 ③ revealFolder 强行 scrollIntoView。
   // 现在：同级上下移只换 DOM 顺序 ＋ FLIP 滑动；跨层级才重画；两种都不再滚动页面。
-  let selfWriteUntil = 0;
-  const markSelfWrite = () => { selfWriteUntil = Date.now() + 1200; };
+
   // FLIP：先记位置 → 改 DOM → 反向偏移回原处 → 动画归零，看起来就是两块互相错身滑过去
   function flipCapture(nodes) {
     const m = new Map();
@@ -699,13 +720,19 @@ chrome:// ⚙️`;
     const groups = $('#groups');
     const want = deprecatedLast((bar.children || []).filter((f) => !f.url));
     const ordered = [...want.filter((f) => !isDeprecated(f)), ...want.filter((f) => isDeprecated(f))];
-    let ok = true;
+    // 🔴 260915 实撞：原来只把卡片一个个 appendChild ⇒ 「待定 · N 个」那条分隔条被留在原地，
+    //   卡片全排到它后面 ⇒ 它瞬间跑到整页最上面，要等下一次全量重画才被修回来。
+    //   现在把分隔条当成序列里的一员一起排。
+    const divider = groups.querySelector(':scope > .dim-divider');
+    const firstDim = ordered.find((f) => isDeprecated(f));
     for (const f of ordered) {
       const el = document.getElementById('sec-' + f.id);
-      if (!el || el.parentElement !== groups) { ok = false; break; }
+      if (!el || el.parentElement !== groups) return false;
+      if (divider && f === firstDim) groups.appendChild(divider);
       groups.appendChild(el);
     }
-    return ok;
+    if (divider && !firstDim) divider.remove();   // 一个待定的都没了 ⇒ 分隔条也该走
+    return true;
   }
   async function nudge(id, dir) {
     const node = findNode(String(id));
@@ -723,7 +750,6 @@ chrome:// ⚙️`;
       if (light) {
         const snap = flipCapture([...$('#groups').children]);
         await store.move(String(id), to);
-        markSelfWrite();
         await refreshData();
         if (resyncTopOrder()) { flipPlay(snap); return; }   // 🚫 页面一步都不滚：动的是块，不是视口
         render();                                           // DOM 跟数据对不上了才退回重画
@@ -733,7 +759,6 @@ chrome:// ⚙️`;
       const orgOpen2 = !$('#organize').hidden;
       const was = orgOpen2 ? document.querySelector(`#organize .fchip[data-id="${CSS.escape(String(id))}"]`)?.getBoundingClientRect().top : null;
       await store.move(String(id), to);
-      markSelfWrite();
       await refresh();
       if (orgOpen2) {
         const now = document.querySelector(`#organize .fchip[data-id="${CSS.escape(String(id))}"]`)?.getBoundingClientRect().top;
@@ -1694,16 +1719,20 @@ chrome:// ⚙️`;
     ];
     if (!isBar && !bodyOnly) {
       items.push(null,
-        { t: isDeprecated(f) ? '取消废弃标记' : '标记为废弃（排到底部）', f: async () => {
+        // 🔴 260915 实撞：这一项原来写的是 group.tags（书签标签），而判断读的是 group.ftags（文件夹标签）
+        //   ⇒ 点了界面毫无变化，每点一次还往 tags 里多塞一个没定义的 id，
+        //     而 effectiveTags 会把夹的 tags 并给里面每条书签 ⇒ 整夹书签都被挂上一个空标签。
+        //   现在跟侧栏走同一条路：文件夹标签名单里带「排到最后」开关的那个，打在 ftags 上。
+        ...(isTopFolder(f) ? [{ t: isDeprecated(f) ? `取消「${deprecatedTags()[0]?.name || '待定'}」` : `标记为「${deprecatedTags()[0]?.name || '待定'}」（排到底部）`, f: async () => {
           const definitions = deprecatedTags();
-          if (!definitions.length) { toast('请先添加一个名称为「废弃」的标签'); return; }
+          if (!definitions.length) { toast('文件夹标签名单是空的，刷新一下页面再试'); return; }
           const group = { ...(meta.groups[f.title] || {}) };
-          const tags = group.tags || [];
-          group.tags = isDeprecated(f) ? tags.filter(id => !definitions.some(t => t.id === id)) : [...tags, definitions[0].id];
-          if (!group.tags.length) delete group.tags;
+          const cur = group.ftags || [];
+          const next = isDeprecated(f) ? cur.filter((id) => !definitions.some((t) => t.id === id)) : [...new Set([...cur, definitions[0].id])];
+          if (next.length) group.ftags = next; else delete group.ftags;
           if (Object.keys(group).length) meta.groups[f.title] = group; else delete meta.groups[f.title];
           await saveMeta(); render();
-        } },
+        } }] : []),
         { t: '改名', f: () => inlineRename(box.querySelector('.title')) },
         { t: '颜色…', f: () => { const r = box.querySelector('.swatch').getBoundingClientRect(); openMenu(colorMenu(box), r.left, r.bottom + 4); } },
         { t: folderLocked(f) ? '🔓 解除锁定' : '🔒 锁定（AI 只看不动）', f: () => setFolderLock(f, !folderLocked(f)) },
@@ -2100,8 +2129,7 @@ chrome:// ⚙️`;
   let refreshTimer = null;
   // 🔴 自己刚挪完、DOM 已经就位 ⇒ 浏览器回来的那声 onMoved 别再重画一遍（实测就是它让一次点击重画了两次）
   store.onChange(() => {
-    if (Date.now() < selfWriteUntil) return;
-    clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 120);
+    clearTimeout(refreshTimer); refreshTimer = setTimeout(() => { refreshIfChanged(); }, 120);
   });
   await refresh();
   // 给 ai.js 的接口（同页其它脚本用）
