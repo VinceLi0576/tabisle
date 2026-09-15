@@ -759,9 +759,18 @@ chrome:// ⚙️`;
     box.append(fold, more);
     return box;
   }
+  // 两组之间那条分隔。名字跟着标签走（他把标签叫「待整理」就写「待整理」）
+  function dimDividerEl(n) {
+    const d = document.createElement('div');
+    d.className = 'dim-divider';
+    const name = deprecatedTags()[0]?.name || '待整理';
+    d.innerHTML = `<span class="dd-line"></span><span class="dd-txt">${esc(name)} · ${n} 个</span><span class="dd-line"></span>`;
+    d.title = `打了「${name}」标签的都排在这条线下面。要它回到上面，去详情侧栏把这个标签取消。`;
+    return d;
+  }
   function cardEl(f, opts = {}) {
     const card = document.createElement('div');
-    card.className = 'card'; card.id = 'sec-' + f.id;
+    card.className = 'card' + (opts.fixed ? '' : (isDeprecated(f) ? ' is-dim' : '')); card.id = 'sec-' + f.id;
     card.dataset.id = f.id; card.dataset.kind = opts.fixed ? 'bar' : 'folder';
     card.dataset.view = viewFor(f.id);
     markLevel(card, 1);
@@ -957,7 +966,15 @@ chrome:// ⚙️`;
     const ordered = [...folders.filter(f => !isDeprecated(f)), ...folders.filter(f => isDeprecated(f))];
     // 老徐 260914：根目录不放具体网址，散在根目录的就是「收集箱」—— 星号收藏落这儿，整理完归入文件夹就从这消失。
     // 它排第几由 prefs.inboxIndex 定（默认最顶上），头上的 ▲▼⇱ 只改这个数
-    ordered.forEach((f) => groups.appendChild(cardEl(f)));
+    // 老徐 260915：「我只用 7 个文件夹，这些属于正式的……其他的文件夹都是灰色的待整理，
+    //   相当给文件夹多了个分组。侧边栏就会分上下 2 组，页面就这么显示」
+    // ⇒ 没打「待整理」标签的就是正式的（默认状态，🚫 不用他给 7 个正式的逐个打标签）。
+    //   两组中间横一条，写清楚下面这些是什么、有几个。
+    const dim = ordered.filter((f) => isDeprecated(f));
+    ordered.forEach((f, i) => {
+      if (dim.length && f === dim[0]) groups.appendChild(dimDividerEl(dim.length));
+      groups.appendChild(cardEl(f));
+    });
     $('#empty').hidden = kids.length > 0;
     $('#total').textContent = `${flat.length} 条 · ${folders.length} 组`;
     domHl = '';
@@ -991,7 +1008,7 @@ chrome:// ⚙️`;
     const list = $('#side-list'); list.innerHTML = '';
     const add = (f, depth, parentId) => {
       const d = document.createElement('div');
-      d.className = 'side-item d' + depth; d.dataset.id = f.id; d.dataset.parent = parentId; d.dataset.kind = f.id === bar.id ? 'bar' : 'folder';
+      d.className = 'side-item d' + depth + (isDeprecated(f) ? ' is-dim' : ''); d.dataset.id = f.id; d.dataset.parent = parentId; d.dataset.kind = f.id === bar.id ? 'bar' : 'folder';
       d.draggable = f.id !== bar.id;
       markLevel(d, depth + 1);
       const color = groupColor(f.title); if (color) d.style.setProperty('--gc', color);
@@ -1009,7 +1026,16 @@ chrome:// ⚙️`;
     };
     const addInbox = () => { add({ id: bar.id, title: '收集箱', children: loose }, 0, bar.id); list.lastElementChild.classList.add('inbox'); };
     const orderedSide = [...folders.filter(f => !isDeprecated(f)), ...folders.filter(f => isDeprecated(f))];
-    orderedSide.forEach((f, i) => { if (looseId && i === prefs.inboxIndex) addInbox(); add(f, 0, bar.id); });
+    const sideDim = orderedSide.filter((f) => isDeprecated(f));
+    orderedSide.forEach((f, i) => {
+      if (looseId && i === prefs.inboxIndex) addInbox();
+      if (sideDim.length && f === sideDim[0]) {
+        const sep = document.createElement('div'); sep.className = 'side-sep';
+        sep.textContent = `${deprecatedTags()[0]?.name || '待整理'} · ${sideDim.length}`;
+        list.appendChild(sep);
+      }
+      add(f, 0, bar.id);
+    });
     if (looseId && prefs.inboxIndex >= orderedSide.length) addInbox();
     if (sideObserver) sideObserver.disconnect();
     const visible = new Set();

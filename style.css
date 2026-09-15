@@ -396,6 +396,18 @@ dialog .palette span.on { border-color: var(--text); }
 .tag-dim-row input { margin-top: 2px; flex: none; }
 .tag-dim-row b { color: var(--text); font-weight: 600; }
 
+/* 正式的一组 ／ 待整理的一组，中间横一条（老徐 260915：「侧边栏就会分上下 2 组，页面就这么显示」）*/
+.dim-divider { display: flex; align-items: center; gap: 10px; margin: 14px 2px 6px; user-select: none; }
+.dim-divider .dd-line { flex: 1; height: 1px; background: var(--border); }
+.dim-divider .dd-txt { flex: none; padding: 2px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--well); color: var(--muted-2); font-size: 11.5px; }
+.side-sep { margin: 10px 8px 4px; padding: 3px 8px; border-top: 1px solid var(--border);
+  color: var(--muted-2); font-size: 11px; padding-top: 8px; }
+/* 待整理那一组整体压淡一档 —— 他要的「其他的文件夹都是灰色的」 */
+.card[data-kind="folder"].is-dim { opacity: .62; }
+.card[data-kind="folder"].is-dim:hover { opacity: 1; }
+.side-item.is-dim .nm { color: var(--muted-2); }
+
 /* ── 段标题拖柄 ── */
 .grip { color: var(--muted-2); font-size: 12px; letter-spacing: -2px; cursor: grab; padding: 0 2px 0 4px; user-select: none; }
 .grip:active { cursor: grabbing; }
