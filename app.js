@@ -218,13 +218,12 @@ chrome:// ⚙️`;
   function migrateFolderTags() {
     let changed = false;
     if (!meta.folderTags) { meta.folderTags = DEFAULT_FOLDER_TAGS.map((t) => ({ ...t })); changed = true; }
-    // 上一版默认叫「已上线／待整理」，老徐 260915 改口叫「确定／待定」并给了配色 ⇒ 他没自己改过的就跟着换
+    // 🔴 260915 核实官实证：原来这儿靠「名字是不是叫『已上线／待整理』」来判断是不是上一版的默认值，
+    //   而它分不清「这是旧默认值」和「用户自己就想叫这个」⇒ 用户把标签改名成「待整理」，
+    //   每次打开页面都会被改回「待定」，连字形、说明、颜色一起盖掉。
+    //   ⇒ 只补缺的，🚫 不动已经存在的。（改名那一次性迁移已经过去了，他现在的名单要么是空的、要么已是新默认值。）
     for (const d of DEFAULT_FOLDER_TAGS) {
-      const cur = meta.folderTags.find((t) => t.id === d.id);
-      if (!cur) { meta.folderTags.push({ ...d }); changed = true; continue; }
-      if (['已上线', '待整理'].includes(cur.name?.trim()) && cur.name !== d.name) {
-        Object.assign(cur, { name: d.name, glyph: d.glyph, desc: d.desc, color: d.color }); changed = true;
-      }
+      if (!meta.folderTags.some((t) => t.id === d.id)) { meta.folderTags.push({ ...d }); changed = true; }
     }
     const dimId = meta.folderTags.find((t) => t.dim)?.id;
     const oldIds = new Set((meta.tags || []).filter((t) => t.dim || ['废弃', '待整理'].includes(t.name?.trim())).map((t) => t.id));
@@ -734,11 +733,43 @@ chrome:// ⚙️`;
     if (divider && !firstDim) divider.remove();   // 一个待定的都没了 ⇒ 分隔条也该走
     return true;
   }
+  // 首页把带「待定」的一级夹重排到最后 ⇒ 屏幕上的顺序 ≠ 书签栏里的真实顺序。
+  // 🔴 260915 核实官实证：原来上下移一律按真实顺序算，于是
+  //   · 沉在最底下的夹点「上移」会说「已经是第一个了」（它在真实顺序里确实是第一个）
+  //   · 点别的夹「上移」屏幕上一格不动，但书签栏里已经换了位置
+  //   · 点某个夹「上移」，掉下去的是屏幕上完全没挨着的另一个
+  //   每一次点击都实打实写回了书签树，写的却是他看不见的那份顺序 ⇒ 等他取消待定标记，
+  //   一级夹的排列就是乱的，而且回溯不了是哪几次点的。
+  //   ⇒ 一级夹的上下移改成按屏幕顺序算；子夹不受影响（只有一级能被标待定）。
+  function shownTopFolders() {
+    const folders = deprecatedLast((bar?.children || []).filter((f) => !f.url));
+    return [...folders.filter((f) => !isDeprecated(f)), ...folders.filter((f) => isDeprecated(f))];
+  }
+  function visualNudgeTarget(id, dir) {
+    if (dir !== 'up' && dir !== 'down') return undefined;      // 进出层级跟排序无关，交回原逻辑
+    const node = findNode(String(id));
+    if (!node || node.url || String(node.parentId) !== String(bar?.id)) return undefined;
+    // 🔴 260915 真机验出来的第二层：待定的夹**永远**被排在最后那一段，它不可能「往上走出那一段」。
+    //   第一版没管这个，结果「屏幕上纹丝不动、书签栏里从第 1 跳到第 12」—— 比原来还难察觉。
+    //   ⇒ 上下移只在自己所属的那一段内部走；到段边界就老实说「已经是第一个／最后一个了」。
+    const dim = isDeprecated(node);
+    const shown = shownTopFolders().filter((f) => isDeprecated(f) === dim);
+    const i = shown.findIndex((f) => String(f.id) === String(id));
+    const j = dir === 'up' ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= shown.length) return null;      // 这一段里已经到头了
+    const kids = bar.children || [];
+    const me = kids.findIndex((k) => String(k.id) === String(id));
+    const at = kids.findIndex((k) => String(k.id) === String(shown[j].id));
+    if (me < 0 || at < 0) return undefined;
+    // chrome.bookmarks.move 的下标语义：往后挪要 +1（自己先被抽走，后面整体前移一格）
+    return { parentId: String(bar.id), index: at > me ? at + 1 : at };
+  }
   async function nudge(id, dir) {
     const node = findNode(String(id));
     if (!node) { toast('这一条已经不在了，刷新一下'); return; }
     if (isLocked(id)) { toast('这一条在锁定的文件夹里，先解锁再挪'); return; }
-    const to = BmCore.nudgeTarget(bar, String(id), dir);
+    const visual = visualNudgeTarget(String(id), dir);
+    const to = visual === undefined ? BmCore.nudgeTarget(bar, String(id), dir) : visual;
     if (!to) { toast({ up: '已经是第一个了', down: '已经是最后一个了', out: '已经在最外层了', in: '上面紧挨着的不是文件夹，没法收进去' }[dir]); return; }
     if (isLocked(to.parentId)) { toast('目标文件夹已锁定'); return; }
     // 一级夹同级上下移＝最常用那条路：走轻量通道

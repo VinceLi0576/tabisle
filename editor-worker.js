@@ -1,3 +1,8 @@
+// 🔴 跟 app.js 的 DEFAULT_FOLDER_TAGS 必须一字不差（两处都要能独立把名单补回来）。
+// 260915：同步曾经把 meta.folderTags 整键吞掉，代码修好之后**数据还是空的**，要等首页被打开一次才自愈；
+// 在那之前侧栏这条路会一直报错 ⇒ 这儿也得能自己补回来。
+const DEFAULT_FOLDER_TAGS=[{id:'F1',glyph:'定',name:'确定',desc:'定下来的分组，排在上面',color:'#002FA7'},
+  {id:'F0',glyph:'待',name:'待定',desc:'还没定，排到最后并整组压淡',color:'#8A8F98',dim:true}];
 // 🔴 老徐 260915 给的颜色标准，跟 app.js 那份必须一字不差（两处都校验颜色合法性）
 const FOLDER_COLORS=[{c:'#002FA7',n:'克莱因蓝',rgb:'0,47,167'},{c:'#81D8D0',n:'蒂芙尼蓝',rgb:'129,216,208'},{c:'#003153',n:'普鲁士蓝',rgb:'0,49,83'},{c:'#B05923',n:'提香红',rgb:'176,89,35'},{c:'#E60000',n:'中国红',rgb:'230,0,0'},{c:'#900021',n:'勃艮第红',rgb:'144,0,33'},{c:'#FBD26A',n:'申布伦黄',rgb:'251,210,106'},{c:'#8F4B28',n:'凡戴克棕',rgb:'143,75,40'}];
 function draftKey(windowId,selection) { return 'editorDraft:'+windowId+':'+(selection.id||'new:'+selection.parentId); }
@@ -44,11 +49,9 @@ async function editorAction(m) {
       // 🔴 只有一级分组有「确定／待定」这回事（老徐 260915：「我们只针对根目录操作」）⇒ 子夹一律不收
       if(m.ftags!==undefined&&String(node.parentId)===String((await bookmarkBar()).id)){
         const name=(typeof m.title==='string'&&m.title.trim())?m.title.trim():node.title;
-        const known=new Set((fresh.folderTags||[]).map(t=>t.id));
-        // 🔴 260915 实撞：名单空着的时候，下面那句过滤会把传来的 id 全滤掉 ⇒ 直接 delete g.ftags，
-        //   等于「点一下状态，反而把这个夹已有的状态清了」，而且不报错。名单空＝数据出了问题，
-        //   这时候该停下来说清楚，🚫 别顺手删。（名单被同步吞掉那个根因已在 sync-core 修掉。）
-        if(!known.size)throw Error('文件夹标签名单是空的，先刷新一下页面（它会自动补回默认的两个）再试');
+        // 名单空了（历史上被同步吞过）⇒ 就地补回默认的两个，🚫 别把人卡在报错上、更🚫 别顺手 delete 掉已有的状态
+        if(!fresh.folderTags||!fresh.folderTags.length)fresh.folderTags=DEFAULT_FOLDER_TAGS.map(t=>({...t}));
+        const known=new Set(fresh.folderTags.map(t=>t.id));
         const ids=[...new Set((Array.isArray(m.ftags)?m.ftags:[]).map(String).filter(x=>known.has(x)))];
         const g={...(fresh.groups?.[name]||{})};
         if(ids.length)g.ftags=ids;else delete g.ftags;
