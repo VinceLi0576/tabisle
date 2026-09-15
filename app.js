@@ -147,15 +147,16 @@ chrome:// ⚙️`;
     { k: 'recent', t: '最近访问', note: '__recent',  c: '#1f9d55', e: '🕘' },
   ];
   // 老徐 260915 点名要这八个；知乎／小红书／抖音他说先不要
+  // home ＝ 那家的首页。老徐 260915：「这么多的搜的标签右边搞一小块，点击直接去那个官网页面」
   const WEB_ENGINES = [
-    { k: 'baidu',   t: '百度',    u: 'https://www.baidu.com/s?wd=' },
-    { k: 'bing',    t: '必应',    u: 'https://www.bing.com/search?q=' },
-    { k: 'google',  t: '谷歌',    u: 'https://www.google.com/search?q=' },
-    { k: 'sogou',   t: '搜狗',    u: 'https://www.sogou.com/web?query=' },
-    { k: 'bili',    t: 'B站',     u: 'https://search.bilibili.com/all?keyword=' },
-    { k: 'youtube', t: 'YouTube', u: 'https://www.youtube.com/results?search_query=' },
-    { k: 'github',  t: 'GitHub',  u: 'https://github.com/search?q=' },
-    { k: 'x',       t: 'Twitter', u: 'https://x.com/search?q=' },
+    { k: 'baidu',   t: '百度',    u: 'https://www.baidu.com/s?wd=',                    home: 'https://www.baidu.com' },
+    { k: 'bing',    t: '必应',    u: 'https://www.bing.com/search?q=',                 home: 'https://www.bing.com' },
+    { k: 'google',  t: '谷歌',    u: 'https://www.google.com/search?q=',               home: 'https://www.google.com' },
+    { k: 'sogou',   t: '搜狗',    u: 'https://www.sogou.com/web?query=',               home: 'https://www.sogou.com' },
+    { k: 'bili',    t: 'B站',     u: 'https://search.bilibili.com/all?keyword=',       home: 'https://www.bilibili.com' },
+    { k: 'youtube', t: 'YouTube', u: 'https://www.youtube.com/results?search_query=',  home: 'https://www.youtube.com' },
+    { k: 'github',  t: 'GitHub',  u: 'https://github.com/search?q=',                   home: 'https://github.com' },
+    { k: 'x',       t: 'Twitter', u: 'https://x.com/search?q=',                        home: 'https://x.com' },
   ];
   // 名单增删过之后，存着的那个可能已经没了 ⇒ 回落到第一个，否则一个都不亮、搜出来也不知道用的哪家
   const curEngine = () => WEB_ENGINES.find((x) => x.k === prefs.webEngine) || WEB_ENGINES[0];
@@ -677,7 +678,7 @@ chrome:// ⚙️`;
     // 🚫 这里不再挂 data-note —— 老徐 260915 定：说明只显示，要改走右边那一整条开侧栏。
     //    条数标题栏右边已经有一份，这儿不重复报数，只留一句「怎么写」。
     if (t) { btn.textContent = t; btn.title = t; }
-    else { btn.textContent = '还没写说明　·　点右边那一条「›」，在侧栏里写一句：这个夹是干什么的'; btn.title = btn.textContent; }
+    else { btn.textContent = ''; box.classList.add('is-empty'); }
     box.appendChild(btn);
     return box;
   }
@@ -1487,6 +1488,7 @@ chrome:// ⚙️`;
   // 搜网页：地址栏只认默认引擎，想临时换一个得进设置 ⇒ 这里放一排能一键切的。🚫 不要任何新权限，只是拼个网址
   function deckWebBody() {
     const body = document.createElement('div'); body.className = 'websearch';
+    const row = document.createElement('div'); row.className = 'eng-row';
     const seg = document.createElement('span'); seg.className = 'seg eng-seg';
     for (const e of WEB_ENGINES) {
       const b = document.createElement('button');
@@ -1494,6 +1496,14 @@ chrome:// ⚙️`;
       b.className = curEngine().k === e.k ? 'on' : '';
       seg.appendChild(b);
     }
+    // 右边那一小块：直接去这家的首页（老徐 260915）
+    // 🔴 别叫 go —— 这个函数下面已经有个 go 是提交按钮，重名会整份 app.js 加载失败（而 node --check 不报）
+    const homeLink = document.createElement('a');
+    homeLink.className = 'eng-home'; homeLink.href = curEngine().home;
+    homeLink.target = '_blank'; homeLink.rel = 'noopener';
+    homeLink.textContent = '去官网';
+    homeLink.title = `打开 ${curEngine().t} 首页`;
+    row.append(seg, homeLink);
     const form = document.createElement('form'); form.className = 'web-form';
     const input = document.createElement('input');
     input.type = 'search'; input.id = 'web-q'; input.autocomplete = 'off';
@@ -1505,7 +1515,7 @@ chrome:// ⚙️`;
       const q = input.value.trim(); if (!q) return;
       location.href = curEngine().u + encodeURIComponent(q);
     });
-    body.append(seg, form);
+    body.append(row, form);
     return body;
   }
   function deckHint(text) {

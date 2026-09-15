@@ -14,11 +14,19 @@
   }
   function tickClock() {
     const d = new Date();
-    // 🔴 260915 去掉秒：每秒重绘一次，而没人盯着秒看。跳秒还会让整页每秒发生一次布局计算。
-    $('#clock-time').textContent = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    // 老徐 260915：「时间我明确要秒，这感觉在动非常好」⇒ 秒留着。
+    // （我一度以为是噪音去掉了，他要的就是那个「在动」。）
+    $('#clock-time').textContent = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     $('#clock-date').textContent = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
     const w = isoWeek(d); const doy = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 86400000) + 1;
-    $('#clock-week').textContent = `第 ${w.week} 周 / 全年 ${w.total} 周 · 第 ${doy} 天`;
+    $('#clock-week').textContent = `第 ${w.week} 周 / 全年 ${w.total} 周`;
+    // 老徐 260915：「最后再倒计时几周倒计时几天，就过了几天剩下几天，两行」
+    const yearDays = ((y) => ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365)(d.getFullYear());
+    const leftDays = yearDays - doy;
+    const leftWeeks = Math.max(0, w.total - w.week);
+    const el1 = $('#clock-days'), el2 = $('#clock-weeks');
+    if (el1) el1.textContent = `过了 ${doy} 天 · 还剩 ${leftDays} 天`;
+    if (el2) el2.textContent = `过了 ${w.week} 周 · 还剩 ${leftWeeks} 周`;
   }
   tickClock(); setInterval(tickClock, 1000);
 
