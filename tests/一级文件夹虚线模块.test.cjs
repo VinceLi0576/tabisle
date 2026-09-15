@@ -52,10 +52,14 @@ test('说明小框在 DOM 里排在标题栏和内容区之间', () => {
   assert.ok(iHead >= 0 && iNote > iHead && iBody > iNote, `顺序不对：head ${iHead} / note ${iNote} / body ${iBody}`);
 });
 
-test('折叠状态下点说明要先展开，否则编辑框在藏起来的容器里看不见', () => {
-  const open = app.match(/function openNoteEditor\(id\) \{([\s\S]*?)\n  \}/)[1];
-  assert.match(open, /is-collapsed/, '没处理折叠状态');
-  assert.match(open, /toggleFolder\(section\)/);
+test('🔴 标题栏那颗「说明」按钮和就地编辑框整套退场（老徐 260915）', () => {
+  // 他原话：「这去掉，我们从侧边栏展开去填写就行了」
+  // ⇒ 说明只剩一条路：右边那整条 → 侧栏里填。🚫 别再留第二个入口
+  assert.doesNotMatch(app, /class="hd-note-btn/, '标题栏还挂着「说明」按钮');
+  assert.doesNotMatch(app, /function openNoteEditor/, '就地编辑框还在');
+  assert.doesNotMatch(app, /class="fn-input"/, '编辑框的输入区还在');
+  assert.doesNotMatch(app, /function noteEl\(/, '那个隐藏容器还在');
+  assert.doesNotMatch(app, /closest\('\.fn-edit'\)/, '还接着编辑入口的点击');
 });
 
 test('没写说明那一行的类名不许叫 .empty —— 全局有个 .empty 会把框撑到 116px', () => {

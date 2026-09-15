@@ -110,6 +110,13 @@ a { color: inherit; text-decoration: none; }
 .mini-seg { height: 20px; }
 .mini-seg button { height: 18px; padding: 0 7px; font-size: 11px; }
 .tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+/* 侧栏正在讲谁，谁右边那条竖条就亮着（老徐 260915 标的 1 和 2）*/
+.tile .strip3.on { background: var(--accent); }
+.tile .strip3.on .strip, .tile .strip3.on .nudge { color: #fff; }
+.card > .fstrip.on { background: color-mix(in srgb, var(--gc, var(--accent)) 26%, transparent);
+  border-left-color: var(--gc, var(--accent)); }
+.card > .fstrip.on > button { color: var(--gc, var(--accent)); }
+#organize .fchip.on { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-bg); }
 /* 卡片右侧窄条：点了开详情 */
 .tile .strip { position: absolute; right: 0; top: 0; bottom: 0; width: 22px; display: grid; place-items: center; color: var(--muted-2); background: color-mix(in srgb, var(--gc, var(--muted-2)) 8%, transparent); border-left: 1px solid var(--border); opacity: .9; }
 .tile .strip svg { width: 10px; height: 10px; transition: transform .15s; }
@@ -573,9 +580,7 @@ dialog .palette span.on { border-color: var(--text); }
 .side-item.scoped .nm::after{content:" ◂ AI 范围";font-size:9px;font-weight:400;opacity:.8}
 
 /* ── 文件夹说明：这个夹该放什么。写下来之后 AI 归类时照它办 ── */
-.hd-note-btn{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--muted-2);font-size:10px;cursor:pointer;white-space:nowrap}
-.hd-note-btn:hover{border-color:var(--accent);color:var(--accent)}
-.hd-note-btn.on{border-color:color-mix(in srgb,var(--accent) 40%,var(--border));color:var(--accent);background:var(--accent-bg)}
+/* 🔄 260915：标题栏那颗「说明」按钮和它那套就地编辑框整套去掉了 —— 说明改走右边竖条进侧栏填 */
 .folder-note{display:flex;align-items:flex-start;gap:8px;margin:0 14px 8px;padding:8px 10px;border-left:2px solid var(--accent);border-radius:0 7px 7px 0;background:var(--well);font-size:11.5px;line-height:1.6}
 .folder-note .fn-text{flex:1;min-width:0;color:var(--muted)}
 .folder-note .fn-edit{flex:none;height:20px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--muted-2);font-size:10px;cursor:pointer}

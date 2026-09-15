@@ -36,7 +36,8 @@ test('左栏点文件夹只安静设 AI 范围：🚫 不弹面板、🚫 不写
   // 老徐 260914：「我点左边的时候，不要给我弹出来这些东西，展现出来让我看得见就好了」
   const app = nocomment(fs.readFileSync(p('app.js'), 'utf8'));
   assert.match(app, /detail: \{ id: it\.dataset\.id, toggle: true, quiet: true \}/, '左栏那条没标安静');
-  assert.match(app, /detail: \{ id: String\(id\), quiet: false \}/, '「让 AI 看着写一条」那条该出声，它要把面板打开');
+  // 🔄 260915：「让 AI 看着写一条」那颗随就地编辑框一起退场了（说明改走侧栏填），
+  //    所以首页这边只剩左栏那一条安静调用。安静模式本身照旧要能用，下面两条继续钉。
   const ai = nocomment(fs.readFileSync(p('ai.js'), 'utf8'));
   assert.match(ai, /async function setScope\(id, quiet = false\)/, 'setScope 没有安静模式');
   assert.match(ai, /if \(quiet\) return;/, '安静模式没有真的跳过弹面板和写记录');

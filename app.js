@@ -579,7 +579,6 @@ chrome:// ⚙️`;
       (opts.tags && opts.level > 1 ? `<span class="hd-subs">${deprecatedLast((f.children || []).filter((c) => !c.url)).slice(0, 6).map((c) => `<button type="button" class="subchip" data-goto="${c.id}">${esc(c.title || '（未命名）')}</button>`).join('')}</span>` : '') +
       (opts.tags && opts.level > 1 ? `<span class="hd-tags">${tagList().filter((t) => counts[t.id] || gf.has(t.id)).map((t) => tagBtn(t, gf.has(t.id) ? 'on' : '') + `<span class="cnt">${counts[t.id]}</span></button>`).join('')}</span>` : '') +
       `<span class="hd-toggle"></span>` +
-      (opts.tags && !opts.fixed ? `<button class="hd-note-btn${folderNote(f.id) ? ' on' : ''}" type="button" data-note="${f.id}" title="这个文件夹该放什么">说明</button>` : '') +
       (opts.fixed
         ? `<span class="hd-nudge inbox-nudge">${[['up','▲','收集箱上移一格'],['down','▼','收集箱下移一格'],['top','⇱','复位：回到最顶上']].map(([d,g,t])=>`<button type="button" class="nudge" data-inbox="${d}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`
         : `<span class="hd-nudge">${[['up','▲','上移一格'],['down','▼','下移一格'],['out','⇤','移出去，升一层'],['in','⇥','收进上面那个夹，降一层']].map(([d,g,t])=>`<button type="button" class="nudge" data-nudge="${d}" data-id="${f.id}" title="${t}" aria-label="${t}">${g}</button>`).join('')}</span>`) +
@@ -593,12 +592,6 @@ chrome:// ⚙️`;
   // 老徐 260914：「折叠时回答『这个文件夹是干什么的』，展开时内容本身回答『里面有什么』」
   // ⇒ 说明的**只读**形态只出现在折叠那一行的右段（headEl 里的 .hd-note-line）；
   //   这个盒子从此只当编辑器用，平时是空的、不占版面。
-  function noteEl(f) {
-    const box = document.createElement('div');
-    box.className = 'folder-note'; box.dataset.id = f.id;
-    box.hidden = true; box.innerHTML = '';
-    return box;
-  }
   // 标题栏底下那一条说明小框。老徐 260914：「只折叠时留着」——展开之后标题栏下面直接是书签。
   // 内容来源两种：普通夹是他自己写的文件夹说明；收集箱和最近访问是写死的一句「这是什么」。
   function noteCardEl(f) {
@@ -617,30 +610,6 @@ chrome:// ⚙️`;
     else { btn.textContent = '还没写说明　·　点右边那一条「›」，在侧栏里写一句：这个夹是干什么的'; btn.title = btn.textContent; }
     box.appendChild(btn);
     return box;
-  }
-  function openNoteEditor(id) {
-    const box = document.querySelector(`.folder-note[data-id="${CSS.escape(String(id))}"]`)
-      || document.querySelector(`.note-card[data-id="${CSS.escape(String(id))}"]`);
-    if (!box) return;
-    const node = String(id) === RECENT_NOTE ? { id: RECENT_NOTE, title: '最近访问' } : findNode(String(id));
-    if (!node) return;
-    // 折起来的时候编辑框会连同内容区一起被藏掉 ⇒ 先展开这一个夹
-    const section = box.closest('.card, .sub');
-    if (section?.classList.contains('is-collapsed')) toggleFolder(section);
-    box.hidden = false;
-    box.innerHTML = `<textarea class="fn-input" rows="2" placeholder="一两句话写清楚这个夹该放哪类内容，例：只放能直接打开用的在线工具，教程和文章不放这儿"></textarea>` +
-      `<div class="fn-actions"><button type="button" class="btn fn-save">保存</button>` +
-      (String(id) === RECENT_NOTE ? '' : `<button type="button" class="btn ghost fn-ai">让 AI 看着写一条</button>`) +
-      `<button type="button" class="btn ghost fn-cancel">取消</button></div>`;
-    const input = box.querySelector('.fn-input');
-    input.value = folderNote(id); input.focus();
-    box.querySelector('.fn-save').onclick = () => { if (setFolderNote(id, input.value)) toast('说明已保存'); };
-    box.querySelector('.fn-cancel').onclick = () => render();
-    if (box.querySelector('.fn-ai')) box.querySelector('.fn-ai').onclick = () => {
-      // 把范围设成这个夹，再让 AI 照着里面的东西写 —— 它只看得到这一摊，不会拿别处的内容凑
-      window.dispatchEvent(new CustomEvent('bm-scope', { detail: { id: String(id), quiet: false } }));
-      window.dispatchEvent(new CustomEvent('bm-ask', { detail: { text: `看一眼「${node.title}」这个文件夹里都是些什么，用一两句话写清楚它该放哪类内容、哪类不该放，然后用 propose_changes 的 folder_note 提交给我确认。` } }));
-    };
   }
   // 挪一格：算好落点再动手，动不了就说清楚为什么，🚫 别默默没反应
   // 四个方向做成菜单项：动不了的直接不列，🚫 别让人点了才发现没反应
@@ -755,8 +724,6 @@ chrome:// ⚙️`;
       if (wheelMoved) { wheelMoved = false; return; }
       queueNudge(nb.dataset.id, nb.dataset.nudge); return;
     }
-    const b = e.target.closest('.hd-note-btn'); if (b && b.dataset.note) { e.preventDefault(); e.stopPropagation(); openNoteEditor(b.dataset.note); return; }
-    const ed = e.target.closest('.fn-edit'); if (ed) openNoteEditor(ed.closest('.folder-note').dataset.id);
   });
 
   function subEl(f, level) {
@@ -766,7 +733,6 @@ chrome:// ⚙️`;
     markLevel(sub, level);
     const color = groupColor(f.title); if (color) sub.style.setProperty('--gc', color);
     sub.appendChild(headEl(f, 'sub-head', { level }));
-    sub.appendChild(noteEl(f));
     sub.appendChild(bodyEl(f, false, level));
     initFold(sub, f);
     return sub;
@@ -802,7 +768,6 @@ chrome:// ⚙️`;
     const color = groupColor(f.title); if (color) card.style.setProperty('--gc', color);
     card.appendChild(headEl(f, 'head', { tags: true, fixed: opts.fixed }));
     card.appendChild(noteCardEl(f));
-    if (!opts.fixed) card.appendChild(noteEl(f));
     card.appendChild(bodyEl(f, !!opts.fixed));
     card.appendChild(folderStripEl(f));
     initFold(card, f);   // 收集箱也能折（老徐 260914「收件箱也可以折叠嘛」）
@@ -1766,6 +1731,8 @@ chrome:// ⚙️`;
     button.innerHTML = '<svg viewBox="0 0 12 12"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     return button;
   }
+  // 老徐 260915：「侧边栏显示那个，就高亮我标的 1 或者 2 这文件夹或者文件」
+  // ⇒ 侧栏现在显示谁，谁右边那条竖条就亮着 —— 否则开着侧栏不知道它讲的是哪一个
   function paintDetailState() {
     $$('.tile[data-id]').forEach((tile) => {
       const open = detailPanelOpen && tile.dataset.id === selectedId;
@@ -1776,7 +1743,14 @@ chrome:// ⚙️`;
         button.setAttribute('aria-label', button.title);
         button.setAttribute('aria-expanded', String(open));
       }
+      tile.querySelector('.strip3')?.classList.toggle('on', open);
     });
+    // 文件夹那条（整理页里的块也算一份）
+    for (const el of $$('.card[data-id] > .fstrip')) {
+      const open = detailPanelOpen && el.parentElement.dataset.id === selectedId;
+      el.classList.toggle('on', open);
+    }
+    $$('#organize .fchip[data-id]').forEach((c) => c.classList.toggle('on', detailPanelOpen && c.dataset.id === selectedId));
   }
   function openDetail(id, parentId = null, toggle = false) {
     if (store.kind !== 'chrome' || !chrome.sidePanel) { toast('请在 Chrome 扩展中打开详情编辑'); return; }
