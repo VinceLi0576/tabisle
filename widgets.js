@@ -19,14 +19,39 @@
     $('#clock-time').textContent = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     $('#clock-date').textContent = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
     const w = isoWeek(d); const doy = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 86400000) + 1;
-    $('#clock-week').textContent = `第 ${w.week} 周 / 全年 ${w.total} 周`;
-    // 老徐 260915：「最后再倒计时几周倒计时几天，就过了几天剩下几天，两行」
+    // 老徐 260915：「倒计时几周几天，过了几天剩下几天」。
+    // 🔴 260916 重排：原来四行平铺，而且周数说了两遍（「第 38 周」和「过了 38 周」是同一件事）。
+    //   现在去重 —— 上面一行只说「现在是第几周第几天」，下面用一条进度条 ＋ 一行「还剩」。
     const yearDays = ((y) => ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365)(d.getFullYear());
     const leftDays = yearDays - doy;
     const leftWeeks = Math.max(0, w.total - w.week);
-    const el1 = $('#clock-days'), el2 = $('#clock-weeks');
-    if (el1) el1.textContent = `过了 ${doy} 天 · 还剩 ${leftDays} 天`;
-    if (el2) el2.textContent = `过了 ${w.week} 周 · 还剩 ${leftWeeks} 周`;
+    $('#clock-week').textContent = `第 ${w.week} 周 · 第 ${doy} 天 · 还剩 ${leftDays} 天`;
+
+    // 老徐 260916：「加个进度条之类的显示就更好了，一年的、一个季度的、一个月的、一周的」
+    const y = d.getFullYear(), mo = d.getMonth(), day = d.getDate();
+    const qStart = new Date(y, Math.floor(mo / 3) * 3, 1);
+    const qEnd = new Date(y, Math.floor(mo / 3) * 3 + 3, 0);
+    const qDays = Math.round((qEnd - qStart) / 864e5) + 1;
+    const qDone = Math.round((d - qStart) / 864e5) + 1;
+    const mDays = new Date(y, mo + 1, 0).getDate();
+    const wDay = (d.getDay() + 6) % 7 + 1;          // 周一算第 1 天
+    const rows = [
+      ['年', doy, yearDays, `${y} 年`],
+      ['季', qDone, qDays, `第 ${Math.floor(mo / 3) + 1} 季度`],
+      ['月', day, mDays, `${mo + 1} 月`],
+      ['周', wDay, 7, `第 ${w.week} 周`],
+    ];
+    const box = $('#clock-bars');
+    if (box) {
+      const html = rows.map(([label, done, total, name]) => {
+        const p = Math.min(100, Math.max(0, (done / total) * 100));
+        const title = `${name}：过了 ${done} / ${total} 天，还剩 ${total - done} 天`;
+        return `<span class="sf-row" title="${title}"><b>${label}</b>`
+          + `<span class="sf-track"><i style="width:${p.toFixed(1)}%"></i></span>`
+          + `<u>${Math.round(p)}%</u></span>`;
+      }).join('');
+      if (box.dataset.sig !== html) { box.innerHTML = html; box.dataset.sig = html; }
+    }
   }
   tickClock(); setInterval(tickClock, 1000);
 

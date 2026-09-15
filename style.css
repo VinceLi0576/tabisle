@@ -81,10 +81,23 @@ a { color: inherit; text-decoration: none; }
 .side-foot { flex: none; display: flex; flex-direction: column; gap: var(--sp-0);
   padding: var(--sp-3) var(--sp-4) var(--sp-3); border-top: 1px solid var(--border);
   background: var(--bg); line-height: 1.35; user-select: none; }
-/* 老徐 260915：「显示太小了」⇒ 整体上调一档，日期用正文号加粗 */
-.side-foot .sf-date { font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--text); }
+/* 老徐 260915「显示太小了」⇒ 上调一档；260916「不好看」⇒ 去掉重复的一行，
+   把「过了多少」换成一条进度条 —— 数字重复三遍不如一条看得见的线 */
+.side-foot { gap: var(--sp-1); }
+.side-foot .sf-date { font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--text); letter-spacing: .01em; }
 .side-foot .sf-week { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.side-foot .sf-count { font-size: var(--fs-sm); color: var(--muted-2); font-variant-numeric: tabular-nums; }
+/* 四条进度条：年 / 季 / 月 / 周（老徐 260916）。一行一条，标签一个字 ＋ 条 ＋ 百分比 */
+.side-foot .sf-bars { display: flex; flex-direction: column; gap: var(--sp-0); margin-top: var(--sp-1); }
+.side-foot .sf-row { display: flex; align-items: center; gap: var(--sp-2); }
+.side-foot .sf-row b { flex: none; width: 12px; font-size: var(--fs-xs); font-weight: var(--fw-normal); color: var(--muted-2); }
+.side-foot .sf-track { flex: 1; min-width: 0; height: 4px; border-radius: var(--r-pill);
+  background: var(--border); overflow: hidden; }
+.side-foot .sf-track i { display: block; height: 100%; width: 0; border-radius: var(--r-pill);
+  background: var(--accent); opacity: .5; transition: width .6s ease; }
+.side-foot .sf-row u { flex: none; width: 30px; text-align: right; text-decoration: none;
+  font-size: var(--fs-2xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
+/* 越靠近走完，颜色越实 —— 一眼看出哪一档快用完了 */
+.side-foot .sf-row:last-child .sf-track i { opacity: .75; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--card); }
 .seg button { height: 30px; padding: 0 12px; border: 0; background: transparent; cursor: pointer; color: var(--muted); }
 .seg button + button { border-left: 1px solid var(--border); }
