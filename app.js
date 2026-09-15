@@ -1488,22 +1488,25 @@ chrome:// ⚙️`;
   // 搜网页：地址栏只认默认引擎，想临时换一个得进设置 ⇒ 这里放一排能一键切的。🚫 不要任何新权限，只是拼个网址
   function deckWebBody() {
     const body = document.createElement('div'); body.className = 'websearch';
-    const row = document.createElement('div'); row.className = 'eng-row';
+    // 老徐 260915 截图标的是**每个引擎自己右边**那一小块，点谁去谁的官网 ——
+    // 🔴 我先做成了「整排右边一个按钮、只对当前选中的那家生效」，他当场说「越搞越丑」。
+    //   而且那个按钮挤得引擎名变成 You… Git… Tw…。⇒ 每格自带一个。
     const seg = document.createElement('span'); seg.className = 'seg eng-seg';
     for (const e of WEB_ENGINES) {
+      const cell = document.createElement('span');
+      cell.className = 'eng-cell' + (curEngine().k === e.k ? ' on' : '');
       const b = document.createElement('button');
       b.type = 'button'; b.dataset.eng = e.k; b.textContent = e.t;
-      b.className = curEngine().k === e.k ? 'on' : '';
-      seg.appendChild(b);
+      b.className = 'eng-pick';
+      b.title = `用${e.t}搜`;
+      const home = document.createElement('a');
+      home.className = 'eng-go'; home.href = e.home; home.target = '_blank'; home.rel = 'noopener';
+      home.textContent = '↗';
+      home.title = `打开${e.t}首页`;
+      home.setAttribute('aria-label', home.title);
+      cell.append(b, home);
+      seg.appendChild(cell);
     }
-    // 右边那一小块：直接去这家的首页（老徐 260915）
-    // 🔴 别叫 go —— 这个函数下面已经有个 go 是提交按钮，重名会整份 app.js 加载失败（而 node --check 不报）
-    const homeLink = document.createElement('a');
-    homeLink.className = 'eng-home'; homeLink.href = curEngine().home;
-    homeLink.target = '_blank'; homeLink.rel = 'noopener';
-    homeLink.textContent = '去官网';
-    homeLink.title = `打开 ${curEngine().t} 首页`;
-    row.append(seg, homeLink);
     const form = document.createElement('form'); form.className = 'web-form';
     const input = document.createElement('input');
     input.type = 'search'; input.id = 'web-q'; input.autocomplete = 'off';
@@ -1515,7 +1518,7 @@ chrome:// ⚙️`;
       const q = input.value.trim(); if (!q) return;
       location.href = curEngine().u + encodeURIComponent(q);
     });
-    body.append(row, form);
+    body.append(seg, form);
     return body;
   }
   function deckHint(text) {

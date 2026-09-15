@@ -220,14 +220,20 @@ a { color: inherit; text-decoration: none; }
   background: var(--accent); color: #fff; font-size: var(--fs-md); font-weight: var(--fw-medium); cursor: pointer; }
 .web-go:hover { filter: brightness(1.06); }
 /* 引擎那一排 ＋ 右边「去官网」（老徐 260915：「这么多的搜的标签右边搞一小块，点击直接去那个官网页面」）*/
-/* 🔴 加了「去官网」之后 .eng-seg 不再自己撑满 ⇒ 名字会被挤成 You… Git… Tw…
-   （实测那一排只剩 369px，容器有 1400px）。得显式让它吃掉剩余宽度。 */
-.eng-row { display: flex; align-items: stretch; gap: var(--sp-3); }
-.eng-row .eng-seg { flex: 1 1 auto; min-width: 0; }
-.eng-home { flex: none; display: inline-flex; align-items: center; padding: 0 var(--sp-4);
-  border: 1px dashed var(--border-2); border-radius: var(--r-md); background: transparent;
-  color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; text-decoration: none; }
-.eng-home:hover { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+/* 每一格 ＝ 左边点了选这家搜 · 右边那个 ↗ 点了直接去这家官网（老徐 260915 截图标的就是这个位置）*/
+.eng-cell { flex: 1 1 0; min-width: 0; display: flex; align-items: stretch; }
+.eng-cell + .eng-cell { border-left: 1px solid var(--border); }
+.eng-cell .eng-pick { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 var(--sp-1) 0 var(--sp-3);
+  border: 0; background: transparent; color: var(--muted); font-size: var(--fs-md);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.eng-cell .eng-go { flex: none; display: grid; place-items: center; width: 22px;
+  color: var(--muted-2); font-size: var(--fs-sm); text-decoration: none; opacity: .45; transition: opacity .12s, color .12s; }
+.eng-cell:hover .eng-go { opacity: 1; }
+.eng-cell .eng-go:hover { color: var(--accent); background: var(--accent-bg); }
+.eng-cell:hover .eng-pick { color: var(--text); }
+.eng-cell.on { background: var(--accent-bg); }
+.eng-cell.on .eng-pick { color: var(--accent); font-weight: var(--fw-medium); }
+.eng-cell.on .eng-go { color: var(--accent); opacity: .7; }
 /* 卡片上那颗「捷」：一点就钉进快捷方式，再点取消。老徐 260915「我点了地址就是快捷方式来」
    没钉的平时不露（省得 800 张卡片上全是按钮），钉过的一直亮着 —— 一眼看出哪些已经钉了。
    🔴 位置在右【下】角，🚫 别放右上：上面那一行是标签徽章（官/自/备…），放上面会跟它们叠在一起，
